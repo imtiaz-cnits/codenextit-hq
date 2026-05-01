@@ -296,13 +296,13 @@ function UsersPanel() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 py-6">
             {MODULES.map((m) => {
               const has = userPerms.includes(m);
-              // Map icons to modules
-              const Icon = {
+              const icons: Record<string, any> = {
                 leads: TrendingUp, clients: Users, projects: FolderKanban, 
                 tasks: ListTodo, attendance: Clock, leave: CalendarDays, 
                 payroll: Wallet, finance: Receipt, accounts: Banknote, 
                 infrastructure: Globe, tickets: LifeBuoy, vault: FolderLock
-              }[m as keyof typeof Icon] || Shield;
+              };
+              const Icon = icons[m] || Shield;
 
               return (
                 <div 
