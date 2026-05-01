@@ -40,9 +40,9 @@ export default function PayrollPage() {
     let payQuery = supabase.from("payroll").select("*").order("created_at", { ascending: false });
     let empQuery = supabase.from("employees").select("id, profile_id, base_salary, profiles(full_name)");
     
-    if (!isSuperAdmin) {
+    if (!isSuperAdmin && user?.id) {
       // Find the employee ID for current user
-      const { data: selfEmp } = await supabase.from("employees").select("id").eq("profile_id", user?.id).maybeSingle();
+      const { data: selfEmp } = await supabase.from("employees").select("id").eq("profile_id", user.id).maybeSingle();
       if (selfEmp) {
         payQuery = payQuery.eq("employee_id", selfEmp.id);
         empQuery = empQuery.eq("id", selfEmp.id);
