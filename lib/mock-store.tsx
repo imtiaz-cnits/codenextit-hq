@@ -195,7 +195,7 @@ export function MockProvider({ children }: { children: ReactNode }) {
       }
       
       setCurrentEmployee((self as any) || null);
-      return (data || []) as Employee[];
+      return (data || []) as any;
     },
     enabled: !!user,
   });
