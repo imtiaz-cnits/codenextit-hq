@@ -183,15 +183,15 @@ export function MockProvider({ children }: { children: ReactNode }) {
       if (error) throw error;
       
       // Try to find self by profile_id first, then fallback to email
-      const selfByProfile = (data || []).find(e => e.profile_id === user?.id);
-      const selfByEmail = (data || []).find(e => e.email === user?.email);
+      const selfByProfile = (data || []).find(e => (e as any).profile_id === user?.id);
+      const selfByEmail = (data || []).find(e => (e as any).email === user?.email);
       const self = selfByProfile || selfByEmail;
 
       // Auto-link profile_id if missing but email matches
-      if (self && !self.profile_id && user?.id) {
-        console.log("Auto-linking employee record to profile:", self.id, user.id);
-        void supabase.from("employees").update({ profile_id: user.id }).eq("id", self.id);
-        self.profile_id = user.id;
+      if (self && !(self as any).profile_id && user?.id) {
+        console.log("Auto-linking employee record to profile:", (self as any).id, user.id);
+        void supabase.from("employees").update({ profile_id: user.id }).eq("id", (self as any).id);
+        (self as any).profile_id = user.id;
       }
       
       setCurrentEmployee(self || null);
