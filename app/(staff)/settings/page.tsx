@@ -619,14 +619,14 @@ function WorkspacePanel() {
 
   const save = async () => {
     setSaving(true);
-    const { error } = await supabase
+    const { error } = await (supabase
       .from("workspace_settings")
       .update({
-        currency_code: s.currency_code,
-        vat_rate: s.vat_rate,
-        timezone: s.timezone,
-      })
-      .eq("id", true);
+        currency_code: (s as any).currency_code,
+        vat_rate: (s as any).vat_rate,
+        timezone: (s as any).timezone,
+      } as any)
+      .eq("id", true as any));
     setSaving(false);
     if (error) return toast.error(error.message);
     invalidateWorkspaceSettings();
