@@ -77,7 +77,7 @@ export default function LeavePage() {
     setLoading(true);
     
     let leaveQuery = supabase.from("leave_requests").select("*").order("from_date", { ascending: false });
-    let empQuery = supabase.from("employees").select("id, profile_id, full_name, email, designation, department");
+    let empQuery = supabase.from("employees").select("id, profile_id, email, designation, department") as any;
     
     if (!isSuperAdmin) {
       // Find the employee ID for current user to filter their own leaves
@@ -104,13 +104,13 @@ export default function LeavePage() {
     
     type EmpRow = { id: string; profile_id: string; full_name: string; email: string; designation: string | null; department: string };
     setEmployees(
-      ((e ?? []) as EmpRow[]).map((r) => ({
+      ((e ?? []) as any[]).map((r) => ({
         id: r.id,
         profile_id: r.profile_id,
         designation: r.designation,
         department: r.department,
         email: r.email,
-        full_name: r.full_name || nameByProfile.get(r.profile_id) || "Unknown",
+        full_name: (r as any).full_name || nameByProfile.get(r.profile_id) || "Unknown",
       })),
     );
     setLoading(false);
