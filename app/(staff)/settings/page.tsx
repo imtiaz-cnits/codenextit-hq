@@ -160,17 +160,17 @@ function UsersPanel() {
   
   const loadPerms = async (user: UserRow) => {
     setPermUser(user);
-    const { data } = await supabase.from("user_permissions").select("module_name").eq("user_id", user.id).eq("is_enabled", true);
-    setUserPerms((data || []).map(p => p.module_name));
+    const { data } = await (supabase.from("user_permissions" as any) as any).select("module_name").eq("user_id", user.id).eq("is_enabled", true);
+    setUserPerms((data || []).map((p: any) => p.module_name));
   };
 
   const togglePerm = async (module: string, on: boolean) => {
     if (!permUser) return;
     if (on) {
-      await supabase.from("user_permissions").upsert({ user_id: permUser.id, module_name: module, is_enabled: true }, { onConflict: "user_id, module_name" });
+      await (supabase.from("user_permissions" as any) as any).upsert({ user_id: permUser.id, module_name: module, is_enabled: true }, { onConflict: "user_id, module_name" });
       setUserPerms(prev => [...prev, module]);
     } else {
-      await supabase.from("user_permissions").update({ is_enabled: false }).eq("user_id", permUser.id).eq("module_name", module);
+      await (supabase.from("user_permissions" as any) as any).update({ is_enabled: false }).eq("user_id", permUser.id).eq("module_name", module);
       setUserPerms(prev => prev.filter(p => p !== module));
     }
   };
