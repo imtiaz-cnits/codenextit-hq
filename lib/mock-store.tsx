@@ -69,6 +69,7 @@ export interface Quotation {
   id: string;
   number: string;
   client_name: string;
+  client_id?: string;
   amount: number;
   currency: "BDT" | "USD";
   status: "draft" | "sent" | "accepted" | "rejected";
@@ -86,6 +87,7 @@ export interface Invoice {
   id: string;
   number: string;
   client_name: string;
+  client_id?: string;
   amount: number;
   paid: number;
   currency: "BDT" | "USD";
