@@ -141,7 +141,7 @@ export default function ExpensePage() {
 function NewExpenseSheet({ onCreated }: { onCreated: () => void }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toLocalDateString();
   const [f, setF] = useState({
     date: today, purpose: "", type: "office" as ExpenseType,
     amount: "0", currency: "BDT" as "BDT" | "USD", vendor: "", comments: "",

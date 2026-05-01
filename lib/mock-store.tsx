@@ -5,6 +5,7 @@ import { supabase } from "../integrations/supabase/client";
 import { useAuth } from "./auth-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { toLocalDateString } from "./format";
 
 // ------------ Types ------------
 export interface Employee {
@@ -19,6 +20,7 @@ export interface Employee {
   emergency_contact: string;
   joined_at: string;
   base_salary: number;
+  registered_device_id?: string;
 }
 
 export interface AttendanceEntry {
@@ -27,6 +29,8 @@ export interface AttendanceEntry {
   date: string;
   clock_in: string | null;
   clock_out: string | null;
+  device_id?: string;
+  ip_address?: string;
 }
 
 export interface LeaveRequest {
@@ -156,7 +160,7 @@ interface MockActions {
 const MockCtx = createContext<(MockState & MockActions) | null>(null);
 
 const uid = () => Math.random().toString(36).slice(2, 11);
-const todayStr = () => new Date().toISOString().slice(0, 10);
+const todayStr = () => toLocalDateString();
 const nowIso = () => new Date().toISOString();
 
 export function MockProvider({ children }: { children: ReactNode }) {
@@ -174,7 +178,19 @@ export function MockProvider({ children }: { children: ReactNode }) {
       let query = supabase.from("employees").select("*").order("full_name");
       const { data, error } = await query;
       if (error) throw error;
-      const self = (data || []).find(e => e.profile_id === user?.id);
+      
+      // Try to find self by profile_id first, then fallback to email
+      const selfByProfile = (data || []).find(e => e.profile_id === user?.id);
+      const selfByEmail = (data || []).find(e => e.email === user?.email);
+      const self = selfByProfile || selfByEmail;
+
+      // Auto-link profile_id if missing but email matches
+      if (self && !self.profile_id && user?.id) {
+        console.log("Auto-linking employee record to profile:", self.id, user.id);
+        void supabase.from("employees").update({ profile_id: user.id }).eq("id", self.id);
+        self.profile_id = user.id;
+      }
+      
       setCurrentEmployee(self || null);
       return (data || []) as Employee[];
     },
@@ -182,9 +198,9 @@ export function MockProvider({ children }: { children: ReactNode }) {
   });
 
   const { data: attendance = [], isLoading: loadingAttendance } = useQuery({
-    queryKey: ["attendance", t, currentEmployee?.id],
+    queryKey: ["attendance", currentEmployee?.id],
     queryFn: async () => {
-      let query = supabase.from("attendance").select("*").eq("date", t);
+      let query = supabase.from("attendance").select("*").order("date", { ascending: false });
       if (!isSuperAdmin && currentEmployee) {
         query = query.eq("employee_id", currentEmployee.id);
       }
@@ -240,22 +256,62 @@ export function MockProvider({ children }: { children: ReactNode }) {
 
   const toggleClockMutation = useMutation({
     mutationFn: async (empId: string) => {
-      const existing = attendance.find((a) => a.employee_id === empId);
+      // 1. Get/Create Device ID
+      let deviceId = localStorage.getItem("cnit_device_id");
+      if (!deviceId) {
+        deviceId = crypto.randomUUID();
+        localStorage.setItem("cnit_device_id", deviceId);
+      }
+
+      // 2. Get IP Address
+      let ip = "unknown";
+      try {
+        const res = await fetch("https://api.ipify.org?format=json");
+        const d = await res.json();
+        ip = d.ip;
+      } catch (e) {
+        console.error("IP detection failed", e);
+      }
+
+      // 3. Verify Device
+      const emp = employees.find(e => e.id === empId);
+      if (emp?.registered_device_id && emp.registered_device_id !== deviceId) {
+        throw new Error("Device Mismatch! You can only give attendance from your registered device.");
+      }
+
+      // 4. Register device if not already set
+      if (emp && !emp.registered_device_id) {
+        const { error: regErr } = await supabase.from("employees").update({ registered_device_id: deviceId }).eq("id", empId);
+        if (regErr) console.error("Could not register device", regErr);
+      }
+
+      const existing = attendance.find((a) => a.employee_id === empId && a.date === t);
       if (!existing) {
         const { error } = await supabase.from("attendance").insert([
-          { employee_id: empId, date: t, clock_in: nowIso() },
+          { 
+            employee_id: empId, 
+            date: t, 
+            clock_in: nowIso(),
+            device_id: deviceId,
+            ip_address: ip
+          },
         ]);
         if (error) throw error;
       } else if (!existing.clock_out) {
         const { error } = await supabase
           .from("attendance")
-          .update({ clock_out: nowIso() })
+          .update({ 
+            clock_out: nowIso(),
+            device_id: deviceId,
+            ip_address: ip
+          })
           .eq("id", existing.id);
         if (error) throw error;
       }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["attendance"] });
+      queryClient.invalidateQueries({ queryKey: ["employees"] });
     },
     onError: (err: any) => toast.error(err.message),
   });

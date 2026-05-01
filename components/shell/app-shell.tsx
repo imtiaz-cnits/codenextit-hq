@@ -82,12 +82,6 @@ const STAFF_GROUPS: { label: string; items: NavItem[] }[] = [
     items: [
       { to: "/finance/quotes", label: "Quotations", icon: FileText, module: "finance" },
       { to: "/finance/invoices", label: "Invoices", icon: Receipt, module: "finance" },
-      { to: "/finance/expenses", label: "Expenses (legacy)", icon: FileSpreadsheet, module: "finance" },
-    ],
-  },
-  {
-    label: "Accounts",
-    items: [
       { to: "/accounts/income", label: "Income", icon: ArrowDownCircle, module: "accounts" },
       { to: "/accounts/expense", label: "Expense", icon: ArrowUpCircle, module: "accounts" },
       { to: "/accounts/investment", label: "Investment", icon: PiggyBank, module: "accounts" },

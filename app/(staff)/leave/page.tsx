@@ -43,6 +43,7 @@ interface EmployeeRow {
   designation: string | null;
   department: string;
   full_name: string;
+  email: string;
 }
 
 const LEAVE_TONE: Record<LeaveType, string> = {
@@ -67,19 +68,25 @@ export default function LeavePage() {
     to: new Date().toISOString().slice(0, 10),
   });
 
-  const currentUserEmp = employees.find(e => e.profile_id === user?.id);
+  const currentUserEmp = employees.find(e => e.profile_id === user?.id) || 
+                         employees.find(e => e.full_name === user?.user_metadata?.full_name); // Fallback to name if email unavailable in local state
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [user]);
   async function load() {
     if (!user) return;
     setLoading(true);
     
     let leaveQuery = supabase.from("leave_requests").select("*").order("from_date", { ascending: false });
-    let empQuery = supabase.from("employees").select("id, profile_id, designation, department");
+    let empQuery = supabase.from("employees").select("id, profile_id, full_name, email, designation, department");
     
     if (!isSuperAdmin) {
       // Find the employee ID for current user to filter their own leaves
-      const { data: selfEmp } = await supabase.from("employees").select("id").eq("profile_id", user?.id).maybeSingle();
+      const { data: selfEmp } = await supabase
+        .from("employees")
+        .select("id")
+        .or(`profile_id.eq.${user?.id},email.eq.${user?.email}`)
+        .maybeSingle();
+
       if (selfEmp) {
         leaveQuery = leaveQuery.eq("employee_id", selfEmp.id);
       }
@@ -94,14 +101,16 @@ export default function LeavePage() {
     if (ee) toast.error(ee.message);
     const nameByProfile = new Map(((profs ?? []) as { id: string; full_name: string }[]).map((p) => [p.id, p.full_name]));
     setLeaves((l ?? []) as Leave[]);
-    type EmpRow = { id: string; profile_id: string; designation: string | null; department: string };
+    
+    type EmpRow = { id: string; profile_id: string; full_name: string; email: string; designation: string | null; department: string };
     setEmployees(
       ((e ?? []) as EmpRow[]).map((r) => ({
         id: r.id,
         profile_id: r.profile_id,
         designation: r.designation,
         department: r.department,
-        full_name: nameByProfile.get(r.profile_id) ?? "Unknown",
+        email: r.email,
+        full_name: r.full_name || nameByProfile.get(r.profile_id) || "Unknown",
       })),
     );
     setLoading(false);

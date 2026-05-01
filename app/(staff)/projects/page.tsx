@@ -60,7 +60,8 @@ export default function ProjectsPage() {
     if (isClient) {
       query = query.eq("client_id", profile?.client_id);
     } else if (!isSuperAdmin) {
-      query = query.contains("team_members", [user.id]);
+      // Temporarily disabled until team_members column is added to Supabase
+      // query = query.contains("team_members", [user.id]);
     }
 
     const [{ data: p, error: e1 }, { data: c }] = await Promise.all([
