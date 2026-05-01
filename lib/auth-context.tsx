@@ -51,12 +51,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .select("id, full_name, email, designation, avatar_url, client_id")
         .eq("id", userId)
         .maybeSingle(),
-      supabase.from("user_roles").select("role").eq("user_id", userId),
-      supabase.from("user_permissions").select("module_name").eq("user_id", userId).eq("is_enabled", true),
+      supabase.from("user_roles" as any).select("role").eq("user_id", userId) as any,
+      supabase.from("user_permissions" as any).select("module_name").eq("user_id", userId).eq("is_enabled", true) as any,
     ]);
     setProfile(profileData ?? null);
-    setRoles((rolesData ?? []).map((r) => r.role as AppRole));
-    setPermissions((permissionsData ?? []).map((p) => p.module_name));
+    setRoles((rolesData ?? []).map((r: any) => r.role as AppRole));
+    setPermissions((permissionsData ?? []).map((p: any) => p.module_name));
   };
 
   useEffect(() => {
