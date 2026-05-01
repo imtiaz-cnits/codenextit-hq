@@ -57,8 +57,8 @@ export default function ProjectsPage() {
     
     let query = supabase.from("projects").select("*").order("created_at", { ascending: false });
     
-    if (isClient) {
-      query = query.eq("client_id", profile?.client_id);
+    if (isClient && profile?.client_id) {
+      query = query.eq("client_id", profile.client_id);
     } else if (!isSuperAdmin) {
       // Temporarily disabled until team_members column is added to Supabase
       // query = query.contains("team_members", [user.id]);
