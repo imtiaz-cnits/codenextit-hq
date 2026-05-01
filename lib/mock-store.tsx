@@ -21,6 +21,7 @@ export interface Employee {
   joined_at: string;
   base_salary: number;
   registered_device_id?: string;
+  profile_id?: string;
 }
 
 export interface AttendanceEntry {
