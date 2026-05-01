@@ -33,7 +33,7 @@ import autoTable from "jspdf-autotable";
 type RangeType = "daily" | "weekly" | "monthly" | "yearly" | "custom";
 
 export default function AttendancePage() {
-  const { employees, attendance, toggleClock, loading } = useMock();
+  const { employees, attendance, toggleClock, loading, updateEmployee } = useMock();
   const { user, hasRole } = useAuth();
   const isSuperAdmin = hasRole("super_admin");
 
