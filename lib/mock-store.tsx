@@ -220,7 +220,7 @@ export function MockProvider({ children }: { children: ReactNode }) {
     mutationFn: async (newEmp: Omit<Employee, "id">) => {
       const { data, error } = await supabase
         .from("employees")
-        .insert([newEmp])
+        .insert([newEmp] as any)
         .select()
         .single();
       if (error) throw error;
@@ -235,7 +235,7 @@ export function MockProvider({ children }: { children: ReactNode }) {
 
   const updateEmployeeMutation = useMutation({
     mutationFn: async ({ id, patch }: { id: string; patch: Partial<Employee> }) => {
-      const { error } = await supabase.from("employees").update(patch).eq("id", id);
+      const { error } = await (supabase.from("employees") as any).update(patch).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
