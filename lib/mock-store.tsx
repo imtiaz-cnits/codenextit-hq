@@ -183,8 +183,8 @@ export function MockProvider({ children }: { children: ReactNode }) {
       if (error) throw error;
       
       // Try to find self by profile_id first, then fallback to email
-      const selfByProfile = (data || []).find(e => (e as any).profile_id === user?.id);
-      const selfByEmail = (data || []).find(e => (e as any).email === user?.email);
+      const selfByProfile = (data || []).find((e: any) => e.profile_id === user?.id);
+      const selfByEmail = (data || []).find((e: any) => e.email === user?.email);
       const self = selfByProfile || selfByEmail;
 
       // Auto-link profile_id if missing but email matches
@@ -277,7 +277,7 @@ export function MockProvider({ children }: { children: ReactNode }) {
       }
 
       // 3. Verify Device
-      const emp = employees.find(e => e.id === empId);
+      const emp = employees.find((e: any) => e.id === empId);
       if (emp?.registered_device_id && emp.registered_device_id !== deviceId) {
         throw new Error("Device Mismatch! You can only give attendance from your registered device.");
       }
@@ -288,7 +288,7 @@ export function MockProvider({ children }: { children: ReactNode }) {
         if (regErr) console.error("Could not register device", regErr);
       }
 
-      const existing = attendance.find((a) => a.employee_id === empId && a.date === t);
+      const existing = attendance.find((a: any) => a.employee_id === empId && a.date === t);
       if (!existing) {
         const { error } = await supabase.from("attendance").insert([
           { 
