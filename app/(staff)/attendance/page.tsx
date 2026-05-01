@@ -100,7 +100,7 @@ export default function AttendancePage() {
     }
     const { data, error } = await supabase.from("company_holidays" as any).insert([{ date: newHDate, name: newHName }]).select();
     if (!error && data) {
-      setHolidays([...holidays, data[0]]);
+      setHolidays([...holidays, (data as any)[0]]);
       setNewHDate("");
       setNewHName("");
       toast.success("Holiday added");
