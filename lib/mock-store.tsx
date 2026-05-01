@@ -346,9 +346,9 @@ export function MockProvider({ children }: { children: ReactNode }) {
 
   const setRole = async (userId: string, role: string, active: boolean) => {
     if (active) {
-      await supabase.from("user_roles").insert({ user_id: userId, role });
+      await (supabase.from("user_roles") as any).insert({ user_id: userId, role });
     } else {
-      await supabase.from("user_roles").delete().eq("user_id", userId).eq("role", role);
+      await (supabase.from("user_roles") as any).delete().eq("user_id", userId).eq("role", role);
     }
     toast.success(`Role ${active ? "granted" : "removed"}`);
   };
