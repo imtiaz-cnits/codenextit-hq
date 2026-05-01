@@ -70,13 +70,13 @@ export default function AttendancePage() {
     setFetching(true);
     try {
       const { data: hData } = await supabase.from("company_holidays" as any).select("*").order("date", { ascending: true });
-      if (hData) setHolidays(hData);
+      if (hData) setHolidays(hData as any);
 
       const { data: sData } = await supabase.from("workspace_settings" as any).select("*").eq("key", "office_hours").maybeSingle();
-      if (sData) setOfficeSettings(sData.value);
+      if (sData) setOfficeSettings((sData as any)?.value);
 
       const { data: lData } = await supabase.from("leave_requests" as any).select("*").eq("status", "approved");
-      if (lData) setLeaves(lData || []);
+      if (lData) setLeaves(lData as any || []);
     } catch (err) {
       console.error("Error loading data:", err);
     } finally {
