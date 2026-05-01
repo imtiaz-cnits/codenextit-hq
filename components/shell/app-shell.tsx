@@ -38,6 +38,7 @@ interface NavItem {
   to: string;
   label: string;
   icon: typeof LayoutDashboard;
+  module?: string;
 }
 
 const STAFF_GROUPS: { label: string; items: NavItem[] }[] = [
@@ -48,56 +49,56 @@ const STAFF_GROUPS: { label: string; items: NavItem[] }[] = [
   {
     label: "Sales",
     items: [
-      { to: "/leads", label: "Leads Pipeline", icon: TrendingUp },
-      { to: "/clients", label: "Clients", icon: Users },
+      { to: "/leads", label: "Leads Pipeline", icon: TrendingUp, module: "leads" },
+      { to: "/clients", label: "Clients", icon: Users, module: "clients" },
     ],
   },
   {
     label: "Delivery",
     items: [
-      { to: "/projects", label: "Projects", icon: FolderKanban },
-      { to: "/tasks", label: "My Tasks", icon: ListTodo },
+      { to: "/projects", label: "Projects", icon: FolderKanban, module: "projects" },
+      { to: "/tasks", label: "My Tasks", icon: ListTodo, module: "tasks" },
     ],
   },
   {
     label: "Infrastructure",
     items: [
-      { to: "/infrastructure/domains", label: "Domain", icon: Globe },
-      { to: "/infrastructure/hosting", label: "Hosting", icon: HardDrive },
-      { to: "/tickets", label: "Tickets", icon: LifeBuoy },
+      { to: "/infrastructure/domains", label: "Domain", icon: Globe, module: "infrastructure" },
+      { to: "/infrastructure/hosting", label: "Hosting", icon: HardDrive, module: "infrastructure" },
+      { to: "/tickets", label: "Tickets", icon: LifeBuoy, module: "tickets" },
     ],
   },
   {
     label: "People",
     items: [
-      { to: "/team", label: "Team", icon: UserCircle },
-      { to: "/attendance", label: "Attendance", icon: Clock },
-      { to: "/leave", label: "Leave", icon: CalendarDays },
-      { to: "/payroll", label: "Payroll", icon: Wallet },
+      { to: "/team", label: "Team", icon: UserCircle, module: "team" },
+      { to: "/attendance", label: "Attendance", icon: Clock, module: "attendance" },
+      { to: "/leave", label: "Leave", icon: CalendarDays, module: "leave" },
+      { to: "/payroll", label: "Payroll", icon: Wallet, module: "payroll" },
     ],
   },
   {
     label: "Finance",
     items: [
-      { to: "/finance/quotes", label: "Quotations", icon: FileText },
-      { to: "/finance/invoices", label: "Invoices", icon: Receipt },
-      { to: "/finance/expenses", label: "Expenses (legacy)", icon: FileSpreadsheet },
+      { to: "/finance/quotes", label: "Quotations", icon: FileText, module: "finance" },
+      { to: "/finance/invoices", label: "Invoices", icon: Receipt, module: "finance" },
+      { to: "/finance/expenses", label: "Expenses (legacy)", icon: FileSpreadsheet, module: "finance" },
     ],
   },
   {
     label: "Accounts",
     items: [
-      { to: "/accounts/income", label: "Income", icon: ArrowDownCircle },
-      { to: "/accounts/expense", label: "Expense", icon: ArrowUpCircle },
-      { to: "/accounts/investment", label: "Investment", icon: PiggyBank },
-      { to: "/accounts/due", label: "Due", icon: AlertCircle },
-      { to: "/accounts/salary", label: "Salary Sheet", icon: Banknote },
+      { to: "/accounts/income", label: "Income", icon: ArrowDownCircle, module: "accounts" },
+      { to: "/accounts/expense", label: "Expense", icon: ArrowUpCircle, module: "accounts" },
+      { to: "/accounts/investment", label: "Investment", icon: PiggyBank, module: "accounts" },
+      { to: "/accounts/due", label: "Due", icon: AlertCircle, module: "accounts" },
+      { to: "/accounts/salary", label: "Salary Sheet", icon: Banknote, module: "accounts" },
     ],
   },
   {
     label: "Workspace",
     items: [
-      { to: "/vault", label: "File Vault", icon: FolderLock },
+      { to: "/vault", label: "File Vault", icon: FolderLock, module: "vault" },
       { to: "/settings", label: "Settings", icon: Settings },
     ],
   },
@@ -128,6 +129,7 @@ export function AppShell({ children, variant }: { children: ReactNode; variant: 
 function AppSidebar({ variant }: { variant: "staff" | "client" }) {
   const pathname = usePathname();
   const { state } = useSidebar();
+  const { canAccess } = useAuth();
   const collapsed = state === "collapsed";
 
   return (
@@ -150,30 +152,35 @@ function AppSidebar({ variant }: { variant: "staff" | "client" }) {
 
       <SidebarContent>
         {variant === "staff" ? (
-          STAFF_GROUPS.map((group) => (
-            <SidebarGroup key={group.label}>
-              {!collapsed && <SidebarGroupLabel>{group.label}</SidebarGroupLabel>}
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {group.items.map((item) => {
-                    const isActive =
-                      pathname === item.to ||
-                      (item.to !== "/dashboard" && pathname.startsWith(item.to));
-                    return (
-                      <SidebarMenuItem key={item.to}>
-                        <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
-                          <Link href={item.to}>
-                            <item.icon className="h-4 w-4" />
-                            <span>{item.label}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    );
-                  })}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          ))
+          STAFF_GROUPS.map((group) => {
+            const visibleItems = group.items.filter(i => !i.module || canAccess(i.module));
+            if (visibleItems.length === 0) return null;
+
+            return (
+              <SidebarGroup key={group.label}>
+                {!collapsed && <SidebarGroupLabel>{group.label}</SidebarGroupLabel>}
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {visibleItems.map((item) => {
+                      const isActive =
+                        pathname === item.to ||
+                        (item.to !== "/dashboard" && pathname.startsWith(item.to));
+                      return (
+                        <SidebarMenuItem key={item.to}>
+                          <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
+                            <Link href={item.to}>
+                              <item.icon className="h-4 w-4" />
+                              <span>{item.label}</span>
+                            </Link>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      );
+                    })}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            );
+          })
         ) : (
           <SidebarGroup>
             {!collapsed && <SidebarGroupLabel>Portal</SidebarGroupLabel>}

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
+import { useAuth } from "../../../lib/auth-context";
 import { Button } from "../../../components/ui/button";
 import { Badge } from "../../../components/ui/badge";
 import { Avatar, AvatarFallback } from "../../../components/ui/avatar";
@@ -12,7 +13,8 @@ import { Label } from "../../../components/ui/label";
 import { Textarea } from "../../../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui/tabs";
-import { Plus, Check, X, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Check, X, Loader2, ChevronLeft, ChevronRight, RotateCcw, FileText, Download, Calendar as CalendarIcon } from "lucide-react";
+import { FlatDatePicker } from "../../../components/ui/flat-date-picker";
 import { initials, avatarColor, formatDate } from "../../../lib/format";
 import { supabase } from "../../../integrations/supabase/client";
 import { toast } from "sonner";
@@ -51,17 +53,41 @@ const LEAVE_TONE: Record<LeaveType, string> = {
 };
 
 export default function LeavePage() {
+  const { user, hasRole } = useAuth();
+  const isSuperAdmin = hasRole("super_admin");
+  
   const [leaves, setLeaves] = useState<Leave[]>([]);
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+  
+  // Report Filters
+  const [reportRange, setReportRange] = useState({
+    from: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10),
+    to: new Date().toISOString().slice(0, 10),
+  });
+
+  const currentUserEmp = employees.find(e => e.profile_id === user?.id);
 
   useEffect(() => { void load(); }, []);
   async function load() {
+    if (!user) return;
     setLoading(true);
+    
+    let leaveQuery = supabase.from("leave_requests").select("*").order("from_date", { ascending: false });
+    let empQuery = supabase.from("employees").select("id, profile_id, designation, department");
+    
+    if (!isSuperAdmin) {
+      // Find the employee ID for current user to filter their own leaves
+      const { data: selfEmp } = await supabase.from("employees").select("id").eq("profile_id", user?.id).maybeSingle();
+      if (selfEmp) {
+        leaveQuery = leaveQuery.eq("employee_id", selfEmp.id);
+      }
+    }
+
     const [{ data: l, error: le }, { data: e, error: ee }, { data: profs }] = await Promise.all([
-      supabase.from("leave_requests").select("*").order("from_date", { ascending: false }),
-      supabase.from("employees").select("id, profile_id, designation, department"),
+      leaveQuery,
+      empQuery,
       supabase.from("profiles").select("id, full_name"),
     ]);
     if (le) toast.error(le.message);
@@ -97,6 +123,25 @@ export default function LeavePage() {
     void load();
   }
 
+  const filteredReports = useMemo(() => {
+    return leaves.filter((l) => l.from_date >= reportRange.from && l.from_date <= reportRange.to);
+  }, [leaves, reportRange]);
+
+  const exportCSV = () => {
+    const headers = ["Employee", "Type", "From", "To", "Reason", "Status"];
+    const rows = filteredReports.map(l => [
+      employee(l.employee_id)?.full_name ?? "Unknown",
+      l.type, l.from_date, l.to_date, l.reason ?? "", l.status
+    ]);
+    const csvContent = "data:text/csv;charset=utf-8," + [headers, ...rows].map(e => e.join(",")).join("\n");
+    const link = document.createElement("a");
+    link.setAttribute("href", encodeURI(csvContent));
+    link.setAttribute("download", `leave_report_${reportRange.from}_to_${reportRange.to}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-end justify-between flex-wrap gap-4">
@@ -104,7 +149,14 @@ export default function LeavePage() {
           <h1 className="text-3xl font-bold tracking-tight">Leave Requests</h1>
           <p className="text-muted-foreground mt-1">Approve or reject team leave applications.</p>
         </div>
-        <NewLeaveSheet open={open} onOpenChange={setOpen} employees={employees} onCreated={load} />
+        <NewLeaveSheet 
+          open={open} 
+          onOpenChange={setOpen} 
+          employees={employees} 
+          onCreated={load} 
+          isSuperAdmin={isSuperAdmin}
+          currentEmpId={currentUserEmp?.id}
+        />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -117,6 +169,7 @@ export default function LeavePage() {
         <TabsList>
           <TabsTrigger value="list">List</TabsTrigger>
           <TabsTrigger value="calendar">Calendar</TabsTrigger>
+          <TabsTrigger value="reports">Reports</TabsTrigger>
         </TabsList>
 
         <TabsContent value="list" className="mt-4">
@@ -159,12 +212,28 @@ export default function LeavePage() {
                             <Badge variant={l.status === "approved" ? "default" : l.status === "rejected" ? "destructive" : "secondary"} className="capitalize">{l.status}</Badge>
                           </TableCell>
                           <TableCell className="text-right">
-                            {l.status === "pending" ? (
-                              <div className="flex justify-end gap-1">
-                                <Button size="sm" variant="outline" onClick={() => setStatus(l.id, "approved")}><Check className="h-3.5 w-3.5" /></Button>
-                                <Button size="sm" variant="outline" onClick={() => setStatus(l.id, "rejected")}><X className="h-3.5 w-3.5" /></Button>
-                              </div>
-                            ) : <span className="text-xs text-muted-foreground">—</span>}
+                            <div className="flex justify-end gap-1">
+                              {isSuperAdmin && l.status === "pending" && (
+                                <>
+                                  <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => setStatus(l.id, "approved")} title="Approve">
+                                    <Check className="h-4 w-4 text-success" />
+                                  </Button>
+                                  <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => setStatus(l.id, "rejected")} title="Reject">
+                                    <X className="h-4 w-4 text-destructive" />
+                                  </Button>
+                                </>
+                              )}
+                              {isSuperAdmin && l.status !== "pending" && (
+                                <Button size="sm" variant="ghost" className="h-8 w-8 p-0 hover:bg-muted" onClick={() => setStatus(l.id, "pending")} title="Reset to Pending">
+                                  <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
+                                </Button>
+                              )}
+                              {!isSuperAdmin && (
+                                <Badge variant="outline" className="text-[10px] font-normal">
+                                  {l.status === 'pending' ? 'Awaiting' : 'Processed'}
+                                </Badge>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
@@ -179,7 +248,77 @@ export default function LeavePage() {
         <TabsContent value="calendar" className="mt-4">
           <LeaveCalendar leaves={leaves} employees={employees} />
         </TabsContent>
+
+        <TabsContent value="reports" className="mt-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <div>
+                <CardTitle className="text-lg">Leave Report</CardTitle>
+                <p className="text-xs text-muted-foreground">Detailed summary and history</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 mr-4">
+                  <FlatDatePicker 
+                    date={reportRange.from} 
+                    onChange={d => setReportRange({...reportRange, from: d})} 
+                    className="h-9 w-[180px]"
+                  />
+                  <span className="text-muted-foreground text-xs font-medium">to</span>
+                  <FlatDatePicker 
+                    date={reportRange.to} 
+                    onChange={d => setReportRange({...reportRange, to: d})} 
+                    className="h-9 w-[180px]"
+                  />
+                </div>
+                <Button size="sm" variant="outline" onClick={exportCSV} className="h-9"><Download className="h-3.5 w-3.5 mr-1" /> Excel</Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-4 gap-4 mb-6">
+                <SummaryCard label="Total Days" value={filteredReports.length} icon={FileText} />
+                <SummaryCard label="Approved" value={filteredReports.filter(r => r.status === 'approved').length} tone="success" />
+                <SummaryCard label="Pending" value={filteredReports.filter(r => r.status === 'pending').length} tone="warning" />
+                <SummaryCard label="Rejected" value={filteredReports.filter(r => r.status === 'rejected').length} tone="destructive" />
+              </div>
+              
+              <Table>
+                <TableHeader><TableRow>
+                  <TableHead>Employee</TableHead>
+                  <TableHead>Duration</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Reason</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow></TableHeader>
+                <TableBody>
+                  {filteredReports.map((l) => (
+                    <TableRow key={l.id}>
+                      <TableCell className="font-medium text-sm">{employee(l.employee_id)?.full_name ?? "—"}</TableCell>
+                      <TableCell className="text-xs">{formatDate(l.from_date)} - {formatDate(l.to_date)}</TableCell>
+                      <TableCell><Badge variant="outline" className={`text-[10px] uppercase ${LEAVE_TONE[l.type]}`}>{l.type}</Badge></TableCell>
+                      <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">{l.reason ?? "—"}</TableCell>
+                      <TableCell><Badge variant={l.status === 'approved' ? 'default' : 'secondary'} className="capitalize text-[10px]">{l.status}</Badge></TableCell>
+                    </TableRow>
+                  ))}
+                  {filteredReports.length === 0 && <TableRow><TableCell colSpan={5} className="text-center py-10 text-muted-foreground text-sm">No data for selected range.</TableCell></TableRow>}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+function SummaryCard({ label, value, icon: Icon, tone }: { label: string; value: number; icon?: any; tone?: string }) {
+  const color = tone === 'success' ? 'text-success' : tone === 'warning' ? 'text-warning' : tone === 'destructive' ? 'text-destructive' : 'text-primary';
+  return (
+    <div className="p-3 rounded-lg border bg-card">
+      <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">{label}</p>
+      <div className="flex items-center justify-between">
+        <span className={`text-xl font-bold ${color}`}>{value}</span>
+        {Icon && <Icon className="h-4 w-4 text-muted-foreground/50" />}
+      </div>
     </div>
   );
 }
@@ -247,9 +386,10 @@ function LeaveCalendar({ leaves, employees }: { leaves: Leave[]; employees: Empl
 }
 
 function NewLeaveSheet({
-  open, onOpenChange, employees, onCreated,
+  open, onOpenChange, employees, onCreated, isSuperAdmin, currentEmpId
 }: {
   open: boolean; onOpenChange: (v: boolean) => void; employees: EmployeeRow[]; onCreated: () => void;
+  isSuperAdmin: boolean; currentEmpId?: string;
 }) {
   const [submitting, setSubmitting] = useState(false);
   const [f, setF] = useState({
@@ -257,8 +397,12 @@ function NewLeaveSheet({
     from_date: "", to_date: "", reason: "",
   });
   useEffect(() => {
-    if (employees.length && !f.employee_id) setF((p) => ({ ...p, employee_id: employees[0].id }));
-  }, [employees, f.employee_id]);
+    if (isSuperAdmin) {
+      if (employees.length && !f.employee_id) setF((p) => ({ ...p, employee_id: employees[0].id }));
+    } else if (currentEmpId) {
+      setF((p) => ({ ...p, employee_id: currentEmpId }));
+    }
+  }, [employees, f.employee_id, isSuperAdmin, currentEmpId]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -283,7 +427,11 @@ function NewLeaveSheet({
         <SheetHeader><SheetTitle>New leave request</SheetTitle><SheetDescription>Submit on behalf of an employee.</SheetDescription></SheetHeader>
         <form onSubmit={submit} className="space-y-4 mt-6">
           <Fld label="Employee">
-            <Select value={f.employee_id} onValueChange={(v) => setF({ ...f, employee_id: v })}>
+            <Select 
+              value={f.employee_id} 
+              onValueChange={(v) => setF({ ...f, employee_id: v })}
+              disabled={!isSuperAdmin}
+            >
               <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
               <SelectContent>{employees.map((e) => <SelectItem key={e.id} value={e.id}>{e.full_name}</SelectItem>)}</SelectContent>
             </Select>
@@ -300,8 +448,18 @@ function NewLeaveSheet({
             </Select>
           </Fld>
           <div className="grid grid-cols-2 gap-3">
-            <Fld label="From"><Input required type="date" value={f.from_date} onChange={(e) => setF({ ...f, from_date: e.target.value })} /></Fld>
-            <Fld label="To"><Input required type="date" value={f.to_date} onChange={(e) => setF({ ...f, to_date: e.target.value })} /></Fld>
+            <Fld label="From">
+              <FlatDatePicker 
+                date={f.from_date} 
+                onChange={d => setF({...f, from_date: d})} 
+              />
+            </Fld>
+            <Fld label="To">
+              <FlatDatePicker 
+                date={f.to_date} 
+                onChange={d => setF({...f, to_date: d})} 
+              />
+            </Fld>
           </div>
           <Fld label="Reason"><Textarea value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} rows={3} /></Fld>
           <SheetFooter><Button type="submit" disabled={submitting}>{submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Submit request"}</Button></SheetFooter>

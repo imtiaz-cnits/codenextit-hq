@@ -1,16 +1,25 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Bricolage_Grotesque, Inter, Roboto_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "../components/providers";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const primaryFont = Bricolage_Grotesque({
+  variable: "--font-primary",
   subsets: ["latin"],
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const secondaryFont = Inter({
+  variable: "--font-secondary",
   subsets: ["latin"],
+  display: "swap",
+});
+
+const monoFont = Roboto_Mono({
+  variable: "--font-mono",
+  subsets: ["latin"],
+  display: "swap",
+  weight: ["400", "500", "700"],
 });
 
 export const metadata: Metadata = {
@@ -36,6 +45,8 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
+import Script from "next/script";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -45,10 +56,12 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+      className={`${primaryFont.variable} ${secondaryFont.variable} ${monoFont.variable} antialiased`}
     >
       <head>
-        <script
+        <Script
+          id="theme-detection"
+          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{
             __html: `
               (function() {
@@ -62,7 +75,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body>
+      <body suppressHydrationWarning>
         <Providers>
           {children}
         </Providers>

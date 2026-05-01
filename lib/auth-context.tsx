@@ -20,12 +20,14 @@ export interface AuthContextValue {
   session: Session | null;
   profile: AuthProfile | null;
   roles: AppRole[];
+  permissions: string[];
   loading: boolean;
   isAuthenticated: boolean;
   isStaff: boolean;
   isClient: boolean;
   hasRole: (role: AppRole) => boolean;
   hasAnyRole: (roles: AppRole[]) => boolean;
+  canAccess: (module: string) => boolean;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -39,19 +41,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<AuthProfile | null>(null);
   const [roles, setRoles] = useState<AppRole[]>([]);
+  const [permissions, setPermissions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadProfileAndRoles = async (userId: string) => {
-    const [{ data: profileData }, { data: rolesData }] = await Promise.all([
+    const [{ data: profileData }, { data: rolesData }, { data: permissionsData }] = await Promise.all([
       supabase
         .from("profiles")
         .select("id, full_name, email, designation, avatar_url, client_id")
         .eq("id", userId)
         .maybeSingle(),
       supabase.from("user_roles").select("role").eq("user_id", userId),
+      supabase.from("user_permissions").select("module_name").eq("user_id", userId).eq("is_enabled", true),
     ]);
     setProfile(profileData ?? null);
     setRoles((rolesData ?? []).map((r) => r.role as AppRole));
+    setPermissions((permissionsData ?? []).map((p) => p.module_name));
   };
 
   useEffect(() => {
@@ -67,6 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         setProfile(null);
         setRoles([]);
+        setPermissions([]);
       }
     });
 
@@ -90,12 +96,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     session,
     profile,
     roles,
+    permissions,
     loading,
     isAuthenticated: !!user,
     isStaff: roles.some((r) => STAFF_ROLES.includes(r)),
     isClient: roles.includes("client"),
     hasRole: (role) => roles.includes(role),
     hasAnyRole: (rs) => rs.some((r) => roles.includes(r)),
+    canAccess: (module) => {
+      if (roles.includes("super_admin")) return true;
+      return permissions.includes(module);
+    },
     signOut: async () => {
       await supabase.auth.signOut();
     },

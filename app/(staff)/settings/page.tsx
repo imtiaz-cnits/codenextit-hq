@@ -14,12 +14,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../../components/ui/tabs";
 import { Textarea } from "../../../components/ui/textarea";
 import { initials, avatarColor } from "../../../lib/format";
-import { Shield, User, Loader2, UserCog, Link as LinkIcon, Palette, Upload, Trash2, Webhook, Copy, RefreshCw, Eye, EyeOff } from "lucide-react";
+import { Shield, User, Users, Loader2, UserCog, Link as LinkIcon, Palette, Upload, Trash2, Webhook, Copy, RefreshCw, Eye, EyeOff, Globe, HardDrive, LifeBuoy, TrendingUp, FolderKanban, ListTodo, Clock, CalendarDays, Wallet, Receipt, Banknote, FolderLock } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "../../../integrations/supabase/client";
 import { fetchWorkspaceSettings, invalidateWorkspaceSettings, DEFAULT_SETTINGS, type WorkspaceSettings } from "../../../hooks/use-workspace-settings";
+import { cn } from "../../../lib/utils";
 
 const ROLES: AppRole[] = ["super_admin", "project_manager", "staff", "client"];
+const MODULES = [
+  "leads", "clients", "projects", "tasks", "attendance", "leave", 
+  "payroll", "finance", "accounts", "infrastructure", "tickets", "vault"
+];
 
 export default function SettingsPage() {
   const { hasRole } = useAuth();
@@ -101,12 +106,16 @@ interface UserRow {
   client_id: string | null; roles: AppRole[];
 }
 interface ClientRow { id: string; company_name: string }
+interface UserPermission { module_name: string; is_enabled: boolean }
 
 function UsersPanel() {
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<UserRow[]>([]);
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [active, setActive] = useState<UserRow | null>(null);
+  const [permUser, setPermUser] = useState<UserRow | null>(null);
+  const [userPerms, setUserPerms] = useState<string[]>([]);
+  const [savingPerms, setSavingPerms] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -147,6 +156,23 @@ function UsersPanel() {
     toast.success(clientId ? "Linked to client" : "Unlinked");
     await load();
     if (active?.id === user.id) setActive({ ...active, client_id: clientId });
+  };
+  
+  const loadPerms = async (user: UserRow) => {
+    setPermUser(user);
+    const { data } = await supabase.from("user_permissions").select("module_name").eq("user_id", user.id).eq("is_enabled", true);
+    setUserPerms((data || []).map(p => p.module_name));
+  };
+
+  const togglePerm = async (module: string, on: boolean) => {
+    if (!permUser) return;
+    if (on) {
+      await supabase.from("user_permissions").upsert({ user_id: permUser.id, module_name: module, is_enabled: true }, { onConflict: "user_id, module_name" });
+      setUserPerms(prev => [...prev, module]);
+    } else {
+      await supabase.from("user_permissions").update({ is_enabled: false }).eq("user_id", permUser.id).eq("module_name", module);
+      setUserPerms(prev => prev.filter(p => p !== module));
+    }
   };
 
   if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
@@ -192,7 +218,12 @@ function UsersPanel() {
                   </TableCell>
                   <TableCell className="text-sm">{clients.find((c) => c.id === u.client_id)?.company_name ?? "—"}</TableCell>
                   <TableCell className="text-right">
-                    <Button size="sm" variant="outline" onClick={() => setActive(u)}>Manage</Button>
+                    <div className="flex justify-end gap-2">
+                      <Button size="sm" variant="outline" onClick={() => loadPerms(u)}>
+                        <Shield className="h-3 w-3 mr-1.5" /> Permissions
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setActive(u)}>Manage</Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -244,6 +275,71 @@ function UsersPanel() {
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+      
+      {/* Permissions Dialog */}
+      <Dialog open={!!permUser} onOpenChange={(o) => !o && setPermUser(null)}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full gradient-primary flex items-center justify-center text-white">
+                <Shield className="h-5 w-5" />
+              </div>
+              <div>
+                <DialogTitle>Module Access: {permUser?.full_name || permUser?.email}</DialogTitle>
+                <DialogDescription>Control which features are visible in the sidebar for this user.</DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 py-6">
+            {MODULES.map((m) => {
+              const has = userPerms.includes(m);
+              // Map icons to modules
+              const Icon = {
+                leads: TrendingUp, clients: Users, projects: FolderKanban, 
+                tasks: ListTodo, attendance: Clock, leave: CalendarDays, 
+                payroll: Wallet, finance: Receipt, accounts: Banknote, 
+                infrastructure: Globe, tickets: LifeBuoy, vault: FolderLock
+              }[m as keyof typeof Icon] || Shield;
+
+              return (
+                <div 
+                  key={m} 
+                  className={cn(
+                    "flex items-center justify-between p-3.5 border rounded-xl transition-all duration-200",
+                    has ? "bg-primary/5 border-primary/20 shadow-sm" : "bg-muted/30 border-transparent hover:border-border"
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      "h-9 w-9 rounded-lg flex items-center justify-center transition-colors",
+                      has ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                    )}>
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold capitalize">{m}</div>
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-tight">Module</div>
+                    </div>
+                  </div>
+                  <Button 
+                    size="sm" 
+                    variant={has ? "default" : "outline"}
+                    className={cn("h-8 px-3 rounded-full text-[11px] font-bold uppercase tracking-wider", !has && "text-muted-foreground")}
+                    onClick={() => togglePerm(m, !has)}
+                  >
+                    {has ? "Active" : "Hidden"}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex items-center justify-center gap-2 py-3 px-4 bg-muted/50 rounded-lg border border-dashed border-border">
+            <RefreshCw className="h-3.5 w-3.5 text-muted-foreground animate-spin-slow" />
+            <p className="text-[11px] text-muted-foreground font-medium">Changes take effect after user refreshes their dashboard.</p>
+          </div>
         </DialogContent>
       </Dialog>
     </>
@@ -510,18 +606,82 @@ function IntegrationsPanel() {
 }
 
 function WorkspacePanel() {
+  const [s, setS] = useState<WorkspaceSettings>(DEFAULT_SETTINGS);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    void fetchWorkspaceSettings().then((data) => {
+      setS(data);
+      setLoading(false);
+    });
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    const { error } = await supabase
+      .from("workspace_settings")
+      .update({
+        currency_code: s.currency_code,
+        vat_rate: s.vat_rate,
+        timezone: s.timezone,
+      })
+      .eq("id", true);
+    setSaving(false);
+    if (error) return toast.error(error.message);
+    invalidateWorkspaceSettings();
+    toast.success("Workspace preferences saved");
+  };
+
+  if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Workspace</CardTitle>
         <CardDescription>Agency-wide preferences.</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4 text-sm">
-        <Row label="Default currency" value="BDT (৳)" />
-        <Row label="VAT rate" value="15%" />
-        <Row label="Time zone" value="Asia/Dhaka" />
-        <Row label="Locale" value="en-BD" />
-        <p className="text-xs text-muted-foreground pt-3 border-t border-border">
+      <CardContent className="space-y-6 max-w-2xl">
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label>Default Currency</Label>
+            <Select value={s.currency_code} onValueChange={(v) => setS({ ...s, currency_code: v })}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="BDT">BDT (৳)</SelectItem>
+                <SelectItem value="USD">USD ($)</SelectItem>
+                <SelectItem value="EUR">EUR (€)</SelectItem>
+                <SelectItem value="GBP">GBP (£)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>VAT Rate (%)</Label>
+            <Input type="number" value={s.vat_rate} onChange={(e) => setS({ ...s, vat_rate: Number(e.target.value) })} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label>Time Zone</Label>
+            <Select value={s.timezone} onValueChange={(v) => setS({ ...s, timezone: v })}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Asia/Dhaka">Asia/Dhaka</SelectItem>
+                <SelectItem value="UTC">UTC</SelectItem>
+                <SelectItem value="America/New_York">America/New_York</SelectItem>
+                <SelectItem value="Europe/London">Europe/London</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        
+        <div className="pt-4 border-t border-border">
+          <Button onClick={save} disabled={saving}>
+            {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Shield className="h-4 w-4 mr-2" />}
+            Save Workspace Changes
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
           Company name, contact info, and PDF appearance are configured in the Branding tab (super admin only).
         </p>
       </CardContent>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../../integrations/supabase/client";
+import { useAuth } from "../../../lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
 import { Button } from "../../../components/ui/button";
 import { Badge } from "../../../components/ui/badge";
@@ -23,6 +24,9 @@ interface PayrollRow {
 interface Employee { id: string; profile_id: string; base_salary: number; full_name: string }
 
 export default function PayrollPage() {
+  const { user, hasRole } = useAuth();
+  const isSuperAdmin = hasRole("super_admin");
+  
   const [payrolls, setPayrolls] = useState<PayrollRow[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,9 +36,28 @@ export default function PayrollPage() {
 
   async function load() {
     setLoading(true);
+    
+    let payQuery = supabase.from("payroll").select("*").order("created_at", { ascending: false });
+    let empQuery = supabase.from("employees").select("id, profile_id, base_salary, profiles(full_name)");
+    
+    if (!isSuperAdmin) {
+      // Find the employee ID for current user
+      const { data: selfEmp } = await supabase.from("employees").select("id").eq("profile_id", user?.id).maybeSingle();
+      if (selfEmp) {
+        payQuery = payQuery.eq("employee_id", selfEmp.id);
+        empQuery = empQuery.eq("id", selfEmp.id);
+      } else {
+        // No employee record found for this user
+        setPayrolls([]);
+        setEmployees([]);
+        setLoading(false);
+        return;
+      }
+    }
+
     const [{ data: pay }, { data: emp }] = await Promise.all([
-      supabase.from("payroll").select("*").order("created_at", { ascending: false }),
-      supabase.from("employees").select("id, profile_id, base_salary, profiles(full_name)"),
+      payQuery,
+      empQuery,
     ]);
 
     const formattedEmp = (emp ?? []).map((e: any) => ({
@@ -90,12 +113,16 @@ export default function PayrollPage() {
       <div className="flex items-end justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Payroll</h1>
-          <p className="text-muted-foreground mt-1">Generate payslips and mark them paid for the selected month.</p>
+          <p className="text-muted-foreground mt-1">{isSuperAdmin ? "Generate payslips and mark them paid." : "View your monthly salary slips and status."}</p>
         </div>
         <div className="flex items-center gap-2">
           <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="w-[170px]" />
-          <Button variant="outline" onClick={generateForMonth}>Generate run</Button>
-          <NewPayslipSheet month={month} employees={employees} onDone={load} />
+          {isSuperAdmin && (
+            <>
+              <Button variant="outline" onClick={generateForMonth}>Generate run</Button>
+              <NewPayslipSheet month={month} employees={employees} onDone={load} />
+            </>
+          )}
         </div>
       </div>
 
@@ -121,32 +148,35 @@ export default function PayrollPage() {
         <CardContent>
           <Table>
             <TableHeader><TableRow>
-              <TableHead>Employee</TableHead><TableHead>Base</TableHead><TableHead>Bonus</TableHead>
+              {isSuperAdmin && <TableHead>Employee</TableHead>}
+              <TableHead>Base</TableHead><TableHead>Bonus</TableHead>
               <TableHead>Deduction</TableHead><TableHead>Net</TableHead>
               <TableHead>Status</TableHead><TableHead className="text-right">Action</TableHead>
             </TableRow></TableHeader>
             <TableBody>
-              {filtered.length === 0 && <TableRow><TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">No payslips for {month}. Click "Generate run" to start.</TableCell></TableRow>}
+              {filtered.length === 0 && <TableRow><TableCell colSpan={isSuperAdmin ? 7 : 6} className="text-center text-sm text-muted-foreground py-8">No payslips for {month}.</TableCell></TableRow>}
               {filtered.map((p) => {
                 const e = employees.find((x) => x.id === p.employee_id);
                 const net = (p.base || 0) + (p.bonus || 0) - (p.deduction || 0);
                 return (
                   <TableRow key={p.id}>
-                    <TableCell>
-                      {e ? (
-                        <div className="flex items-center gap-2">
-                          <Avatar className="h-7 w-7"><AvatarFallback className={avatarColor(e.full_name)}>{initials(e.full_name)}</AvatarFallback></Avatar>
-                          <span className="font-medium text-sm">{e.full_name}</span>
-                        </div>
-                      ) : "—"}
-                    </TableCell>
+                    {isSuperAdmin && (
+                      <TableCell>
+                        {e ? (
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-7 w-7"><AvatarFallback className={avatarColor(e.full_name)}>{initials(e.full_name)}</AvatarFallback></Avatar>
+                            <span className="font-medium text-sm">{e.full_name}</span>
+                          </div>
+                        ) : "—"}
+                      </TableCell>
+                    )}
                     <TableCell className="font-mono text-xs">{formatCurrency(p.base, "BDT")}</TableCell>
                     <TableCell className="font-mono text-xs text-success">+{formatCurrency(p.bonus, "BDT")}</TableCell>
                     <TableCell className="font-mono text-xs text-destructive">-{formatCurrency(p.deduction, "BDT")}</TableCell>
                     <TableCell className="font-mono text-sm font-semibold">{formatCurrency(net, "BDT")}</TableCell>
                     <TableCell><Badge variant={p.status === "paid" ? "default" : "secondary"} className="capitalize">{p.status}</Badge></TableCell>
                     <TableCell className="text-right">
-                      {p.status === "draft" ? (
+                      {isSuperAdmin && p.status === "draft" ? (
                         <Button size="sm" onClick={() => { void setStatus(p.id, "paid"); toast.success("Marked as paid"); }}>
                           <DollarSign className="h-3.5 w-3.5 mr-1" /> Mark paid
                         </Button>

@@ -15,6 +15,9 @@ export interface WorkspaceSettings {
   footer_note: string | null;
   payment_instructions: string | null;
   terms: string | null;
+  currency_code: string;
+  vat_rate: number;
+  timezone: string;
 }
 
 export const DEFAULT_SETTINGS: WorkspaceSettings = {
@@ -31,6 +34,9 @@ export const DEFAULT_SETTINGS: WorkspaceSettings = {
   footer_note: "Thank you for your business.",
   payment_instructions: null,
   terms: null,
+  currency_code: "BDT",
+  vat_rate: 15,
+  timezone: "Asia/Dhaka",
 };
 
 let cached: WorkspaceSettings | null = null;

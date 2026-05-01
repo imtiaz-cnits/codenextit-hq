@@ -4,10 +4,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../..
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { useMock } from "../../../lib/mock-store";
+import { useAuth } from "../../../lib/auth-context";
 import { formatCurrency } from "../../../lib/format";
 import {
   TrendingUp, Users, Server, LifeBuoy, Plus, Receipt, Clock, FileText,
-  ArrowUpRight, Activity,
+  ArrowUpRight, Activity, Briefcase, CheckCircle, ListTodo, CalendarDays
 } from "lucide-react";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 
@@ -22,9 +23,17 @@ const burndownData = [
 ];
 
 export default function Dashboard() {
-  const { invoices } = useMock();
+  const { invoices, projects, tasks } = useMock();
+  const { hasRole, profile } = useAuth();
+  
+  const isSuperAdmin = hasRole("super_admin");
+  const isClient = hasRole("client");
+  
   const revenueBDT = invoices.filter((i) => i.currency === "BDT" && i.status === "paid").reduce((s, i) => s + i.paid, 0);
   const revenueUSD = invoices.filter((i) => i.currency === "USD" && i.status === "paid").reduce((s, i) => s + i.paid, 0);
+
+  const clientProjects = projects.filter(p => p.client_id === profile?.client_id);
+  const clientInvoices = invoices.filter(i => i.client_id === profile?.client_id);
 
   return (
     <div className="space-y-6">
@@ -40,10 +49,28 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard label="Monthly Revenue (BDT)" value={formatCurrency(revenueBDT, "BDT")} delta="+12.4%" icon={TrendingUp} accent="success" />
-        <KpiCard label="Monthly Revenue (USD)" value={formatCurrency(revenueUSD, "USD")} delta="+8.1%" icon={TrendingUp} accent="primary" />
-        <KpiCard label="Active Clients" value="14" delta="+2 this month" icon={Users} accent="info" />
-        <KpiCard label="Server Renewals < 30d" value="3" delta="2 critical" icon={Server} accent="warning" />
+        {isSuperAdmin ? (
+          <>
+            <KpiCard label="Monthly Revenue (BDT)" value={formatCurrency(revenueBDT, "BDT")} delta="+12.4%" icon={TrendingUp} accent="success" />
+            <KpiCard label="Monthly Revenue (USD)" value={formatCurrency(revenueUSD, "USD")} delta="+8.1%" icon={TrendingUp} accent="primary" />
+            <KpiCard label="Active Clients" value="14" delta="+2 this month" icon={Users} accent="info" />
+            <KpiCard label="Server Renewals < 30d" value="3" delta="2 critical" icon={Server} accent="warning" />
+          </>
+        ) : isClient ? (
+          <>
+            <KpiCard label="My Active Projects" value={clientProjects.length.toString()} delta="All on track" icon={Briefcase} accent="primary" />
+            <KpiCard label="Unpaid Invoices" value={clientInvoices.filter(i => i.status !== 'paid').length.toString()} delta="Action required" icon={Receipt} accent="warning" />
+            <KpiCard label="Open Tickets" value="2" delta="1 high priority" icon={LifeBuoy} accent="info" />
+            <KpiCard label="Total Spent" value={formatCurrency(clientInvoices.reduce((s, i) => s + i.total, 0), "USD")} delta="Lifetime" icon={TrendingUp} accent="success" />
+          </>
+        ) : (
+          <>
+            <KpiCard label="Today's Attendance" value="Present" delta="Clocked in 09:12" icon={Clock} accent="success" />
+            <KpiCard label="My Pending Tasks" value="8" delta="2 due today" icon={ListTodo} accent="warning" />
+            <KpiCard label="Active Projects" value="4" delta="Contributing" icon={Briefcase} accent="primary" />
+            <KpiCard label="Leave Balance" value="12 Days" delta="Remaining" icon={CalendarDays} accent="info" />
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

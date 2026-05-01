@@ -35,6 +35,12 @@ function Calendar({
         formatMonthDropdown: (date) => date.toLocaleString("default", { month: "short" }),
         ...formatters,
       }}
+      modifiers={{
+        friday: (date) => date.getDay() === 5,
+      }}
+      modifiersClassNames={{
+        friday: "text-destructive font-bold hover:text-destructive/80",
+      }}
       classNames={{
         root: cn("w-fit", defaultClassNames.root),
         months: cn("relative flex flex-col gap-4 md:flex-row", defaultClassNames.months),
@@ -65,7 +71,7 @@ function Calendar({
           "has-focus:border-ring border-input shadow-xs has-focus:ring-ring/50 has-focus:ring-[3px] relative rounded-md border",
           defaultClassNames.dropdown_root,
         ),
-        dropdown: cn("bg-popover absolute inset-0 opacity-0", defaultClassNames.dropdown),
+        dropdown: cn("bg-popover absolute inset-0 opacity-0 cursor-pointer z-10", defaultClassNames.dropdown),
         caption_label: cn(
           "select-none font-medium",
           captionLayout === "label"
@@ -76,7 +82,7 @@ function Calendar({
         table: "w-full border-collapse",
         weekdays: cn("flex", defaultClassNames.weekdays),
         weekday: cn(
-          "text-muted-foreground flex-1 select-none rounded-md text-[0.8rem] font-normal",
+          "text-muted-foreground flex-1 select-none rounded-md text-[0.8rem] font-normal aria-[label=Friday]:text-destructive aria-[label=Friday]:font-bold",
           defaultClassNames.weekday,
         ),
         week: cn("mt-2 flex w-full", defaultClassNames.week),
