@@ -21,7 +21,7 @@ interface Client {
   id: string; company_name: string; contact_person: string | null;
   email: string | null; phone: string | null; address: string | null;
   vat_bin: string | null; currency: "BDT" | "USD"; ltv: number; notes: string | null;
-  website: string | null; industry: string | null;
+  website?: string | null; industry?: string | null;
 }
 
 export default function ClientsPage() {
@@ -37,7 +37,7 @@ export default function ClientsPage() {
     setLoading(true);
     const { data, error } = await supabase.from("clients").select("*").order("ltv", { ascending: false });
     if (error) toast.error(error.message);
-    setClients((data ?? []) as Client[]);
+    setClients((data as any ?? []) as Client[]);
     setLoading(false);
   }
 
