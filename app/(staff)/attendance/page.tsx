@@ -69,13 +69,13 @@ export default function AttendancePage() {
   async function loadData() {
     setFetching(true);
     try {
-      const { data: hData } = await supabase.from("holidays").select("*").order("date", { ascending: true });
+      const { data: hData } = await supabase.from("company_holidays" as any).select("*").order("date", { ascending: true });
       if (hData) setHolidays(hData);
 
-      const { data: sData } = await supabase.from("office_settings").select("*").eq("key", "office_hours").maybeSingle();
+      const { data: sData } = await supabase.from("workspace_settings" as any).select("*").eq("key", "office_hours").maybeSingle();
       if (sData) setOfficeSettings(sData.value);
 
-      const { data: lData } = await supabase.from("leave_requests").select("*").eq("status", "approved");
+      const { data: lData } = await supabase.from("leave_requests" as any).select("*").eq("status", "approved");
       if (lData) setLeaves(lData || []);
     } catch (err) {
       console.error("Error loading data:", err);
@@ -98,7 +98,7 @@ export default function AttendancePage() {
       toast.error("Please fill both date and name");
       return;
     }
-    const { data, error } = await supabase.from("holidays").insert([{ date: newHDate, name: newHName }]).select();
+    const { data, error } = await supabase.from("company_holidays" as any).insert([{ date: newHDate, name: newHName }]).select();
     if (!error && data) {
       setHolidays([...holidays, data[0]]);
       setNewHDate("");
@@ -111,7 +111,7 @@ export default function AttendancePage() {
   }
 
   async function deleteHoliday(id: string) {
-    const { error } = await supabase.from("holidays").delete().eq("id", id);
+    const { error } = await supabase.from("company_holidays" as any).delete().eq("id", id);
     if (!error) {
       setHolidays(holidays.filter(h => h.id !== id));
       toast.success("Holiday removed");
@@ -123,7 +123,7 @@ export default function AttendancePage() {
   }
 
   async function saveSettings() {
-    const { error } = await supabase.from("office_settings").upsert({ key: "office_hours", value: officeSettings }, { onConflict: "key" });
+    const { error } = await supabase.from("workspace_settings" as any).upsert({ key: "office_hours", value: officeSettings }, { onConflict: "key" });
     if (!error) toast.success("Office settings updated");
     else toast.error("Error updating settings");
   }
