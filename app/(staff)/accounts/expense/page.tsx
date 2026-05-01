@@ -13,7 +13,7 @@ import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetT
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../components/ui/table";
 import { Badge } from "../../../../components/ui/badge";
 import { Plus, Loader2, ArrowUpCircle, Check, X } from "lucide-react";
-import { formatCurrency, formatDate } from "../../../../lib/format";
+import { formatCurrency, formatDate, toLocalDateString } from "../../../../lib/format";
 import { toast } from "sonner";
 
 type ExpenseType = "office" | "software" | "travel" | "salary" | "utility" | "marketing" | "other";
