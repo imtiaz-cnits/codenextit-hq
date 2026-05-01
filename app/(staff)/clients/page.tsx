@@ -237,8 +237,8 @@ function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
     };
 
     const { error } = editingClient 
-      ? await supabase.from("clients").update(clientData).eq("id", editingClient.id)
-      : await supabase.from("clients").insert(clientData);
+      ? await (supabase.from("clients") as any).update(clientData).eq("id", editingClient.id)
+      : await (supabase.from("clients") as any).insert(clientData);
 
     setSubmitting(false);
     if (error) return toast.error(error.message);
