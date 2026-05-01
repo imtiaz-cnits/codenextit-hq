@@ -284,13 +284,13 @@ export function MockProvider({ children }: { children: ReactNode }) {
 
       // 4. Register device if not already set
       if (emp && !emp.registered_device_id) {
-        const { error: regErr } = await supabase.from("employees").update({ registered_device_id: deviceId }).eq("id", empId);
+        const { error: regErr } = await (supabase.from("employees") as any).update({ registered_device_id: deviceId }).eq("id", empId);
         if (regErr) console.error("Could not register device", regErr);
       }
 
       const existing = attendance.find((a: any) => a.employee_id === empId && a.date === t);
       if (!existing) {
-        const { error } = await supabase.from("attendance").insert([
+        const { error } = await (supabase.from("attendance") as any).insert([
           { 
             employee_id: empId, 
             date: t, 
@@ -301,8 +301,7 @@ export function MockProvider({ children }: { children: ReactNode }) {
         ]);
         if (error) throw error;
       } else if (!existing.clock_out) {
-        const { error } = await supabase
-          .from("attendance")
+        const { error } = await (supabase.from("attendance") as any)
           .update({ 
             clock_out: nowIso(),
             device_id: deviceId,
