@@ -61,7 +61,7 @@ export default function Dashboard() {
             <KpiCard label="My Active Projects" value={clientProjects.length.toString()} delta="All on track" icon={Briefcase} accent="primary" />
             <KpiCard label="Unpaid Invoices" value={clientInvoices.filter(i => i.status !== 'paid').length.toString()} delta="Action required" icon={Receipt} accent="warning" />
             <KpiCard label="Open Tickets" value="2" delta="1 high priority" icon={LifeBuoy} accent="info" />
-            <KpiCard label="Total Spent" value={formatCurrency(clientInvoices.reduce((s, i) => s + i.total, 0), "USD")} delta="Lifetime" icon={TrendingUp} accent="success" />
+            <KpiCard label="Total Spent" value={formatCurrency(clientInvoices.reduce((s, i) => s + (i as any).amount, 0), "USD")} delta="Lifetime" icon={TrendingUp} accent="success" />
           </>
         ) : (
           <>
