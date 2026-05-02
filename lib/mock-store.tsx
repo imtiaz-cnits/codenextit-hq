@@ -466,6 +466,13 @@ export function MockProvider({ children }: { children: ReactNode }) {
         body: isClockOut ? `Good work today! You clocked out at ${new Date().toLocaleTimeString()}.` : `Welcome! You clocked in at ${new Date().toLocaleTimeString()}.`,
         type: "success"
       });
+
+      // 7. Notify Admins
+      await notifyAdmins({
+        title: isClockOut ? "Staff Clocked Out" : "Staff Clocked In",
+        body: `${emp?.full_name || "An employee"} just ${isClockOut ? "clocked out" : "clocked in"}.`,
+        type: "info"
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["attendance"] });
