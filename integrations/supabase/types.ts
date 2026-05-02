@@ -126,6 +126,12 @@ export type Database = {
       }
       employees: {
         Row: {
+          avatar_url: string | null
+          blood_group: string | null
+          emergency_contact: string | null
+          full_name: string | null
+          notes: string | null
+          phone: string | null
           base_salary: number
           created_at: string
           currency: Database["public"]["Enums"]["currency_code"]
@@ -140,6 +146,12 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          avatar_url?: string | null
+          blood_group?: string | null
+          emergency_contact?: string | null
+          full_name?: string | null
+          notes?: string | null
+          phone?: string | null
           base_salary?: number
           created_at?: string
           currency?: Database["public"]["Enums"]["currency_code"]
@@ -154,6 +166,12 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          avatar_url?: string | null
+          blood_group?: string | null
+          emergency_contact?: string | null
+          full_name?: string | null
+          notes?: string | null
+          phone?: string | null
           base_salary?: number
           created_at?: string
           currency?: Database["public"]["Enums"]["currency_code"]
