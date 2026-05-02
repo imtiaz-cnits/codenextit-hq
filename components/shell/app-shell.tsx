@@ -16,7 +16,7 @@ import {
   SidebarHeader, SidebarFooter, useSidebar,
 } from "../ui/sidebar";
 import { Button } from "../ui/button";
-import { Avatar, AvatarFallback } from "../ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
@@ -216,6 +216,7 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
       <DropdownMenuTrigger asChild>
         <button className="flex w-full items-center gap-2 rounded-md p-2 hover:bg-sidebar-accent transition-colors">
           <Avatar className="h-8 w-8 shrink-0">
+            {profile?.avatar_url && <AvatarImage src={profile.avatar_url} className="object-cover" />}
             <AvatarFallback className="bg-primary/15 text-primary text-xs">
               {initials(name)}
             </AvatarFallback>
@@ -358,6 +359,11 @@ function TopBar({ variant }: { variant: "staff" | "client" }) {
             </div>
           </PopoverContent>
         </Popover>
+
+        <div className="h-6 w-px bg-border mx-1" />
+        <div className="flex items-center">
+          <UserMenu collapsed={true} />
+        </div>
       </header>
 
       <CommandDialog open={cmdOpen} onOpenChange={setCmdOpen}>

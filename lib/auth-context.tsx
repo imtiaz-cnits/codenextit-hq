@@ -45,23 +45,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const loadProfileAndRoles = async (userId: string) => {
-    const [{ data: profileData }, { data: rolesData }, { data: permissionsData }] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("id, full_name, email, designation, avatar_url, client_id")
-        .eq("id", userId)
-        .maybeSingle(),
-      supabase.from("user_roles" as any).select("role").eq("user_id", userId) as any,
-      supabase.from("user_permissions" as any).select("module_name").eq("user_id", userId).eq("is_enabled", true) as any,
-    ]);
-    setProfile(profileData ?? null);
-    setRoles((rolesData ?? []).map((r: any) => r.role as AppRole));
-    setPermissions((permissionsData ?? []).map((p: any) => p.module_name));
+    try {
+      const [{ data: profileData }, { data: rolesData }, { data: permissionsData }] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("id, full_name, email, designation, avatar_url, client_id")
+          .eq("id", userId)
+          .maybeSingle(),
+        supabase.from("user_roles" as any).select("role").eq("user_id", userId) as any,
+        supabase.from("user_permissions" as any).select("module_name").eq("user_id", userId).eq("is_enabled", true) as any,
+      ]);
+      setProfile(profileData ?? null);
+      setRoles((rolesData ?? []).map((r: any) => r.role as AppRole));
+      setPermissions((permissionsData ?? []).map((p: any) => p.module_name));
+    } catch (error) {
+      console.error("Error loading profile and roles:", error);
+      // Don't throw, just let the app continue with empty roles/profile if needed
+      // or handle as appropriate
+    }
   };
 
   useEffect(() => {
     // Set up listener BEFORE getSession (per Supabase guidance)
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    const { data: subscription } = supabase.auth.onAuthStateChange((event, newSession) => {
+      console.log("Auth event:", event);
       setSession(newSession);
       setUser(newSession?.user ?? null);
       if (newSession?.user) {
@@ -73,18 +80,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile(null);
         setRoles([]);
         setPermissions([]);
-      }
-    });
-
-    void supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setUser(data.session?.user ?? null);
-      if (data.session?.user) {
-        void loadProfileAndRoles(data.session.user.id).finally(() => setLoading(false));
-      } else {
+        // If we get a SIGNED_OUT event but loading is true, we should stop loading
         setLoading(false);
       }
     });
+
+    const initializeAuth = async () => {
+      try {
+        const { data: { session: currentSession }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error("Auth initialization error:", error.message);
+          // If the refresh token is invalid or not found, we must sign out to clear local storage
+          if (error.message.includes("refresh_token_not_found") || 
+              error.message.includes("Refresh Token Not Found") ||
+              error.message.includes("Invalid Refresh Token")) {
+            console.warn("Invalid refresh token detected, signing out...");
+            await supabase.auth.signOut();
+          }
+          setLoading(false);
+          return;
+        }
+
+        if (currentSession) {
+          setSession(currentSession);
+          setUser(currentSession.user);
+          await loadProfileAndRoles(currentSession.user.id);
+        }
+      } catch (err) {
+        console.error("Unexpected auth error during initialization:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void initializeAuth();
 
     return () => {
       subscription.subscription.unsubscribe();

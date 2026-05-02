@@ -7,7 +7,7 @@ import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
-import { Avatar, AvatarFallback } from "../../../components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "../../../components/ui/avatar";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../../../components/ui/dialog";
@@ -57,7 +57,49 @@ function ProfilePanel() {
   const [name, setName] = useState(profile?.full_name || "");
   const [designation, setDesignation] = useState(profile?.designation || "");
   const [phone, setPhone] = useState("");
+  const [emergencyContact, setEmergencyContact] = useState("");
+  const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  const onUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !profile) return;
+
+    if (file.size > 2 * 1024 * 1024) return toast.error("Image must be under 2MB");
+
+    setUploading(true);
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${profile.id}-${Math.random()}.${fileExt}`;
+    const filePath = `${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(filePath, file);
+
+    if (uploadError) {
+      setUploading(false);
+      return toast.error(uploadError.message);
+    }
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('avatars')
+      .getPublicUrl(filePath);
+
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({ avatar_url: publicUrl })
+      .eq('id', profile.id);
+
+    // Sync to employees table as well
+    await supabase.from('employees').update({ avatar_url: publicUrl }).eq('profile_id', profile.id);
+
+    setUploading(false);
+    if (updateError) return toast.error(updateError.message);
+
+    toast.success("Profile picture updated");
+    await refresh();
+  };
 
   useEffect(() => {
     if (profile) {
@@ -66,15 +108,36 @@ function ProfilePanel() {
       void supabase.from("profiles").select("phone").eq("id", profile.id).maybeSingle().then(({ data }) => {
         if (data?.phone) setPhone(data.phone as string);
       });
+      // Fetch employee info
+      void supabase.from("employees").select("emergency_contact, notes").eq("profile_id", profile.id).maybeSingle().then(({ data }) => {
+        if (data) {
+          setEmergencyContact(data.emergency_contact || "");
+          setNotes(data.notes || "");
+        }
+      });
     }
   }, [profile]);
 
   const save = async () => {
     if (!profile) return;
     setSaving(true);
-    const { error } = await supabase.from("profiles").update({ full_name: name, designation, phone }).eq("id", profile.id);
+    const { error: pErr } = await supabase.from("profiles").update({ 
+      full_name: name, 
+      designation, 
+      phone,
+      avatar_url: profile.avatar_url // ensure sync
+    }).eq("id", profile.id);
+
+    const { error: eErr } = await supabase.from("employees").update({ 
+      full_name: name, // assuming it exists
+      designation,
+      phone,
+      emergency_contact: emergencyContact, 
+      notes,
+      avatar_url: profile.avatar_url // ensure sync
+    }).eq("profile_id", profile.id);
     setSaving(false);
-    if (error) return toast.error(error.message);
+    if (pErr || eErr) return toast.error(pErr?.message || eErr?.message);
     toast.success("Profile updated");
     await refresh();
   };
@@ -83,19 +146,40 @@ function ProfilePanel() {
     <Card>
       <CardHeader><CardTitle>Profile</CardTitle><CardDescription>How you appear across the workspace.</CardDescription></CardHeader>
       <CardContent className="space-y-4 max-w-2xl">
-        <div className="flex items-center gap-4">
-          <Avatar className="h-16 w-16"><AvatarFallback className={avatarColor(name || "U") + " text-lg"}>{initials(name || "U")}</AvatarFallback></Avatar>
-          <div>
-            <div className="font-medium">{profile?.email}</div>
-            <div className="flex flex-wrap gap-1 mt-1">{roles.map((r) => <Badge key={r} variant="secondary" className="capitalize">{r.replace("_", " ")}</Badge>)}</div>
+        <div className="flex flex-col sm:flex-row items-center gap-6 pb-6 border-b border-border">
+          <div className="relative group">
+            <Avatar className="h-24 w-24 border-4 border-muted shadow-lg">
+              {profile?.avatar_url && <AvatarImage src={profile.avatar_url} className="object-cover" />}
+              <AvatarFallback className={cn("text-2xl text-white", avatarColor(name || "U"))}>
+                {initials(name || "U")}
+              </AvatarFallback>
+            </Avatar>
+            <Label className="absolute bottom-0 right-0 p-1.5 bg-primary text-white rounded-full cursor-pointer shadow-md hover:scale-110 transition-transform">
+              {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              <input type="file" className="hidden" accept="image/*" onChange={onUpload} disabled={uploading} />
+            </Label>
+          </div>
+          <div className="text-center sm:text-left space-y-1">
+            <div className="text-xl font-bold">{name || "Your Name"}</div>
+            <div className="text-sm text-muted-foreground">{profile?.email}</div>
+            <div className="flex flex-wrap justify-center sm:justify-start gap-1.5 mt-2">
+              {roles.map((r) => (
+                <Badge key={r} variant="secondary" className="capitalize bg-primary/10 text-primary border-primary/20">
+                  {r.replace("_", " ")}
+                </Badge>
+              ))}
+            </div>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3">
           <div className="space-y-2"><Label>Full name</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
-          <div className="space-y-2"><Label>Designation</Label><Input value={designation} onChange={(e) => setDesignation(e.target.value)} placeholder="e.g. Senior Developer" /></div>
         </div>
-        <div className="space-y-2"><Label>Phone</Label><Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+880…" /></div>
-        <Button onClick={save} disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save changes"}</Button>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-2"><Label>Phone</Label><Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+880…" /></div>
+          <div className="space-y-2"><Label>Emergency Contact</Label><Input value={emergencyContact} onChange={(e) => setEmergencyContact(e.target.value)} placeholder="Name / Phone" /></div>
+        </div>
+        <div className="space-y-2"><Label>Professional Bio / Notes</Label><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Tell us about yourself..." rows={4} /></div>
+        <Button onClick={save} disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : "Save changes"}</Button>
       </CardContent>
     </Card>
   );
@@ -103,7 +187,7 @@ function ProfilePanel() {
 
 interface UserRow {
   id: string; email: string; full_name: string; designation: string | null;
-  client_id: string | null; roles: AppRole[];
+  client_id: string | null; roles: AppRole[]; avatar_url: string | null;
 }
 interface ClientRow { id: string; company_name: string }
 interface UserPermission { module_name: string; is_enabled: boolean }
@@ -120,7 +204,7 @@ function UsersPanel() {
   const load = async () => {
     setLoading(true);
     const [{ data: profs }, { data: rolesData }, { data: cs }] = await Promise.all([
-      supabase.from("profiles").select("id, email, full_name, designation, client_id"),
+      supabase.from("profiles").select("id, email, full_name, designation, client_id, avatar_url"),
       supabase.from("user_roles").select("user_id, role"),
       supabase.from("clients").select("id, company_name").order("company_name"),
     ]);
@@ -156,6 +240,15 @@ function UsersPanel() {
     toast.success(clientId ? "Linked to client" : "Unlinked");
     await load();
     if (active?.id === user.id) setActive({ ...active, client_id: clientId });
+  };
+
+  const updateDesignation = async (user: UserRow, val: string) => {
+    const { error: pErr } = await supabase.from("profiles").update({ designation: val }).eq("id", user.id);
+    const { error: eErr } = await supabase.from("employees").update({ designation: val }).eq("profile_id", user.id);
+    if (pErr || eErr) return toast.error(pErr?.message || eErr?.message);
+    toast.success("Designation updated");
+    await load();
+    if (active?.id === user.id) setActive({ ...active, designation: val });
   };
   
   const loadPerms = async (user: UserRow) => {
@@ -202,7 +295,10 @@ function UsersPanel() {
                 <TableRow key={u.id}>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <Avatar className="h-8 w-8"><AvatarFallback className={avatarColor(u.full_name)}>{initials(u.full_name || u.email)}</AvatarFallback></Avatar>
+                      <Avatar className="h-8 w-8">
+                        {u.avatar_url && <AvatarImage src={u.avatar_url} className="object-cover" />}
+                        <AvatarFallback className={avatarColor(u.full_name)}>{initials(u.full_name || u.email)}</AvatarFallback>
+                      </Avatar>
                       <div>
                         <div className="font-medium text-sm">{u.full_name || "—"}</div>
                         <div className="text-xs text-muted-foreground">{u.email}</div>

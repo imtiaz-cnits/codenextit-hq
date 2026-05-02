@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../..
 import { Button } from "../../../components/ui/button";
 import { Badge } from "../../../components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
-import { Avatar, AvatarFallback } from "../../../components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "../../../components/ui/avatar";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "../../../components/ui/sheet";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
@@ -38,7 +38,7 @@ export default function PayrollPage() {
     setLoading(true);
     
     let payQuery = supabase.from("payroll").select("*").order("created_at", { ascending: false });
-    let empQuery = supabase.from("employees").select("id, profile_id, base_salary, profiles(full_name)");
+    let empQuery = supabase.from("employees").select("id, profile_id, base_salary, profiles(full_name, avatar_url)");
     
     if (!isSuperAdmin && user?.id) {
       // Find the employee ID for current user
@@ -65,6 +65,7 @@ export default function PayrollPage() {
       profile_id: e.profile_id,
       base_salary: e.base_salary,
       full_name: e.profiles?.full_name || "Unknown",
+      avatar_url: e.profiles?.avatar_url,
     }));
 
     setEmployees(formattedEmp);
@@ -164,7 +165,10 @@ export default function PayrollPage() {
                       <TableCell>
                         {e ? (
                           <div className="flex items-center gap-2">
-                            <Avatar className="h-7 w-7"><AvatarFallback className={avatarColor(e.full_name)}>{initials(e.full_name)}</AvatarFallback></Avatar>
+                            <Avatar className="h-7 w-7">
+                              {e.avatar_url && <AvatarImage src={e.avatar_url} className="object-cover" />}
+                              <AvatarFallback className={avatarColor(e.full_name)}>{initials(e.full_name)}</AvatarFallback>
+                            </Avatar>
                             <span className="font-medium text-sm">{e.full_name}</span>
                           </div>
                         ) : "—"}

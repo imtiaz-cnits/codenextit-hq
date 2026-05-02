@@ -22,6 +22,7 @@ export interface Employee {
   base_salary: number;
   registered_device_id?: string;
   profile_id?: string;
+  avatar_url?: string | null;
 }
 
 export interface AttendanceEntry {
@@ -180,6 +181,8 @@ interface MockActions {
   addVaultFile: (f: Omit<VaultFile, "id">) => void;
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
+  addNotification: (userId: string, n: { title: string; body: string; type?: Notification["type"] }) => Promise<void>;
+  notifyAdmins: (n: { title: string; body: string; type?: Notification["type"] }) => Promise<void>;
   setRole: (userId: string, role: string, active: boolean) => Promise<void>;
 }
 
@@ -191,7 +194,7 @@ const nowIso = () => new Date().toISOString();
 
 export function MockProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
-  const { user, hasRole } = useAuth();
+  const { user, hasRole, profile } = useAuth();
   const isSuperAdmin = hasRole("super_admin");
   const [currentEmployee, setCurrentEmployee] = useState<Employee | null>(null);
   const t = todayStr();
@@ -223,8 +226,41 @@ export function MockProvider({ children }: { children: ReactNode }) {
     enabled: !!user,
   });
 
+  // Auto-create employee record for Super Admin if missing
+  useEffect(() => {
+    const shouldCreate = 
+      !loadingEmployees && 
+      user && 
+      isSuperAdmin && 
+      !currentEmployee;
+
+    if (shouldCreate) {
+      console.log("Super Admin detected without employee record. Creating one...");
+      const newEmp: Omit<Employee, "id"> = {
+        full_name: profile?.full_name || user.email?.split('@')[0] || "Super Admin",
+        email: user.email!,
+        designation: profile?.designation || "Super Admin",
+        department: "Management",
+        phone: "",
+        blood_group: "Unknown",
+        emergency_contact: "",
+        joined_at: new Date().toISOString().split('T')[0],
+        base_salary: 0,
+        profile_id: user.id
+      };
+      
+      void supabase.from("employees").insert([newEmp] as any).then(({ error }) => {
+        if (!error) {
+          queryClient.invalidateQueries({ queryKey: ["employees"] });
+        } else {
+          console.error("Failed to auto-create employee record:", error);
+        }
+      });
+    }
+  }, [loadingEmployees, user, isSuperAdmin, currentEmployee, profile, employees, queryClient]);
+
   const { data: attendance = [], isLoading: loadingAttendance } = useQuery({
-    queryKey: ["attendance", currentEmployee?.id],
+    queryKey: ["attendance", currentEmployee?.id, isSuperAdmin],
     queryFn: async () => {
       let query = supabase.from("attendance").select("*").order("date", { ascending: false });
       if (!isSuperAdmin && currentEmployee) {
@@ -295,6 +331,36 @@ export function MockProvider({ children }: { children: ReactNode }) {
     enabled: !!user && isSuperAdmin,
   });
 
+  const { data: notifications = [], isLoading: loadingNotifs } = useQuery({
+    queryKey: ["notifications", user?.id],
+    queryFn: async () => {
+      if (!user) return [];
+      const { data, error } = await supabase.from("notifications").select("*").order("created_at", { ascending: false }).limit(20);
+      if (error) throw error;
+      return (data || []) as Notification[];
+    },
+    enabled: !!user,
+  });
+
+  const addNotification = async (userId: string, n: { title: string; body: string; type?: Notification["type"] }) => {
+    await supabase.from("notifications").insert({
+      user_id: userId,
+      title: n.title,
+      body: n.body,
+      type: n.type || "info",
+    });
+    queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
+  };
+
+  const notifyAdmins = async (n: { title: string; body: string; type?: Notification["type"] }) => {
+    const { data: admins } = await supabase.from("user_roles" as any).select("user_id").eq("role", "super_admin");
+    if (admins) {
+      for (const a of admins) {
+        await addNotification((a as any).user_id, n);
+      }
+    }
+  };
+
   // --- Supabase Mutations ---
 
   const addEmployeeMutation = useMutation({
@@ -316,8 +382,18 @@ export function MockProvider({ children }: { children: ReactNode }) {
 
   const updateEmployeeMutation = useMutation({
     mutationFn: async ({ id, patch }: { id: string; patch: Partial<Employee> }) => {
+      const { data: emp } = await supabase.from("employees").select("profile_id").eq("id", id).maybeSingle();
       const { error } = await (supabase.from("employees") as any).update(patch).eq("id", id);
       if (error) throw error;
+
+      // Sync key fields to profile table if profile_id exists
+      if (emp?.profile_id && (patch.avatar_url || patch.full_name || patch.designation)) {
+        await supabase.from("profiles").update({
+          avatar_url: patch.avatar_url,
+          full_name: patch.full_name,
+          designation: patch.designation
+        }).eq("id", emp.profile_id);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["employees"] });
@@ -369,32 +445,78 @@ export function MockProvider({ children }: { children: ReactNode }) {
         if (regErr) console.error("Could not register device", regErr);
       }
 
-      const existing = attendance.find((a: any) => a.employee_id === empId && a.date === t);
-      if (!existing) {
-        const { error } = await (supabase.from("attendance") as any).insert([
-          { 
-            employee_id: empId, 
-            date: t, 
-            clock_in: nowIso(),
-            device_id: deviceId,
-            ip_address: ip
-          },
-        ]);
-        if (error) throw error;
-      } else if (!existing.clock_out) {
-        const { error } = await (supabase.from("attendance") as any)
-          .update({ 
-            clock_out: nowIso(),
-            device_id: deviceId,
-            ip_address: ip
-          })
-          .eq("id", existing.id);
-        if (error) throw error;
-      }
+      // 5. Toggle status
+      const existing = attendance.find((a: any) => a.employee_id === empId && a.date === todayStr());
+      const isClockOut = !!(existing && !existing.clock_out);
+      
+      const { error: clockError } = await (supabase.from("attendance") as any).upsert({
+        id: existing?.id || crypto.randomUUID(),
+        employee_id: empId,
+        date: todayStr(),
+        clock_in: existing?.clock_in || nowIso(),
+        clock_out: isClockOut ? nowIso() : null,
+        ip_address: ip,
+        device_id: deviceId
+      });
+      if (clockError) throw clockError;
+
+      // 6. Notify user
+      await addNotification(user!.id, {
+        title: isClockOut ? "Clocked Out" : "Clocked In",
+        body: isClockOut ? `Good work today! You clocked out at ${new Date().toLocaleTimeString()}.` : `Welcome! You clocked in at ${new Date().toLocaleTimeString()}.`,
+        type: "success"
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["attendance"] });
       queryClient.invalidateQueries({ queryKey: ["employees"] });
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const addLeaveMutation = useMutation({
+    mutationFn: async (l: any) => {
+      const { error } = await supabase.from("leave_requests").insert(l);
+      if (error) throw error;
+
+      // Notify Admins
+      await notifyAdmins({
+        title: "New Leave Request",
+        body: `${currentEmployee?.full_name || user?.email} has requested a ${l.type} leave.`,
+        type: "info"
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["leaves"] });
+      toast.success("Leave request submitted");
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const setLeaveStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: LeaveRequest["status"] }) => {
+      const { data: leave } = await supabase.from("leave_requests").select("employee_id").eq("id", id).maybeSingle();
+      const { error } = await supabase.from("leave_requests").update({ 
+        status, 
+        approved_at: status !== "pending" ? nowIso() : null 
+      }).eq("id", id);
+      if (error) throw error;
+
+      // Notify Employee
+      if (leave && (leave as any).employee_id) {
+        const { data: emp } = await supabase.from("employees").select("profile_id").eq("id", (leave as any).employee_id).maybeSingle();
+        if (emp?.profile_id) {
+          await addNotification(emp.profile_id, {
+            title: `Leave ${status.charAt(0).toUpperCase() + status.slice(1)}`,
+            body: `Your leave request has been ${status}.`,
+            type: status === "approved" ? "success" : "error"
+          });
+        }
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["leaves"] });
+      toast.success("Leave status updated");
     },
     onError: (err: any) => toast.error(err.message),
   });
@@ -405,7 +527,6 @@ export function MockProvider({ children }: { children: ReactNode }) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [vault, setVault] = useState<VaultFile[]>([]);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
 
   // ... Mock Actions for non-persisted modules ...
   const addLeave = useCallback((l: any) => {}, []);
@@ -417,10 +538,16 @@ export function MockProvider({ children }: { children: ReactNode }) {
   const updateInvoiceStatus = useCallback((id: string, status: any, paid?: number) => {}, []);
   const addExpense = useCallback((e: any) => {}, []);
   const addVaultFile = useCallback((f: any) => {}, []);
-  const markNotificationRead = useCallback((id: string) => {}, []);
-  const markAllNotificationsRead = useCallback(() => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-  }, []);
+  const markNotificationRead = useCallback(async (id: string) => {
+    await supabase.from("notifications").update({ read: true }).eq("id", id);
+    queryClient.invalidateQueries({ queryKey: ["notifications", user?.id] });
+  }, [user]);
+
+  const markAllNotificationsRead = useCallback(async () => {
+    if (!user) return;
+    await supabase.from("notifications").update({ read: true }).eq("user_id", user.id);
+    queryClient.invalidateQueries({ queryKey: ["notifications", user.id] });
+  }, [user]);
 
   const setRole = async (userId: string, role: string, active: boolean) => {
     if (active) {
@@ -436,16 +563,17 @@ export function MockProvider({ children }: { children: ReactNode }) {
       value={{
         employees, attendance, leaves, payrolls, quotations, invoices, expenses, vault, notifications,
         projects, tasks, clients, infrastructure, currentEmployee,
-        loading: loadingEmployees || loadingAttendance || loadingProjects || loadingTasks || loadingLeaves || loadingClients || loadingInfra,
+        loading: loadingEmployees || loadingAttendance || loadingProjects || loadingTasks || loadingLeaves || loadingClients || loadingInfra || loadingNotifs,
         addEmployee: (e) => addEmployeeMutation.mutate(e),
         updateEmployee: (id, patch) => updateEmployeeMutation.mutate({ id, patch }),
         removeEmployee: (id) => removeEmployeeMutation.mutate(id),
         toggleClock: (id) => toggleClockMutation.mutate(id),
-        addLeave, setLeaveStatus,
+        addLeave: (l) => addLeaveMutation.mutate(l),
+        setLeaveStatus: (id, status) => setLeaveStatusMutation.mutate({ id, status }),
         addPayroll, setPayrollStatus,
         addQuotation, addInvoice, updateInvoiceStatus,
         addExpense, addVaultFile,
-        markNotificationRead, markAllNotificationsRead,
+        markNotificationRead, markAllNotificationsRead, addNotification, notifyAdmins,
         setRole,
       }}
     >

@@ -12,7 +12,7 @@ import { supabase } from "../../../integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
 import { Button } from "../../../components/ui/button";
 import { Badge } from "../../../components/ui/badge";
-import { Avatar, AvatarFallback } from "../../../components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "../../../components/ui/avatar";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
@@ -240,6 +240,7 @@ export default function AttendancePage() {
                           <TableCell>
                             <div className="flex items-center gap-3">
                               <Avatar className="h-9 w-9 border-2 border-background shadow-sm">
+                                {e.avatar_url && <AvatarImage src={e.avatar_url} className="object-cover" />}
                                 <AvatarFallback className={cn("text-white font-bold", avatarColor(e.full_name))}>{initials(e.full_name)}</AvatarFallback>
                               </Avatar>
                               <div>

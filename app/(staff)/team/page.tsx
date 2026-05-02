@@ -8,7 +8,7 @@ import { Button } from "../../../components/ui/button";
 import { Badge } from "../../../components/ui/badge";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
-import { Avatar, AvatarFallback } from "../../../components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "../../../components/ui/avatar";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "../../../components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../../../components/ui/dialog";
@@ -17,8 +17,9 @@ import {
 } from "../../../components/ui/dropdown-menu";
 import { 
   Plus, Phone, Mail, Heart, Search, MoreVertical, Edit, Trash2, Eye, 
-  ShieldAlert, Briefcase, Calendar, Banknote, Shield 
+  ShieldAlert, Briefcase, Calendar, Banknote, Shield, Upload, Camera, X 
 } from "lucide-react";
+import { FlatDatePicker } from "../../../components/ui/flat-date-picker";
 import { initials, avatarColor, formatCurrency, formatDate } from "../../../lib/format";
 import { cn } from "../../../lib/utils";
 import { toast } from "sonner";
@@ -123,6 +124,7 @@ export default function TeamPage() {
             <CardHeader className="pb-3">
               <div className="flex items-start gap-3">
                 <Avatar className="h-12 w-12 border-2 border-background shadow-sm">
+                  {e.avatar_url && <AvatarImage src={e.avatar_url} className="object-cover" />}
                   <AvatarFallback className={cn("text-white", avatarColor(e.full_name))}>
                     {initials(e.full_name)}
                   </AvatarFallback>
@@ -155,6 +157,7 @@ export default function TeamPage() {
               <DialogHeader>
                 <div className="flex items-center gap-4 mb-4">
                   <Avatar className="h-16 w-16 border-4 border-muted">
+                    {selectedEmp.avatar_url && <AvatarImage src={selectedEmp.avatar_url} className="object-cover" />}
                     <AvatarFallback className={cn("text-xl text-white", avatarColor(selectedEmp.full_name))}>
                       {initials(selectedEmp.full_name)}
                     </AvatarFallback>
@@ -280,7 +283,57 @@ function EmployeeSheet({
     emergency_contact: initialData?.emergency_contact ?? "",
     joined_at: initialData?.joined_at ?? new Date().toISOString().slice(0, 10),
     base_salary: initialData?.base_salary?.toString() ?? "0",
+    avatar_url: initialData?.avatar_url ?? "",
   });
+
+  const [uploading, setUploading] = useState(false);
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setUploading(true);
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Math.random()}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      const { data, error } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file);
+
+      if (error) {
+        // If bucket is missing, use local preview and warn user
+        if (error.message.toLowerCase().includes("bucket not found")) {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            setF({ ...f, avatar_url: reader.result as string });
+          };
+          reader.readAsDataURL(file);
+          toast.warning("Storage bucket 'avatars' not found. Please create it in Supabase dashboard for permanent storage.", {
+            duration: 5000,
+          });
+          return;
+        }
+        throw error;
+      }
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath);
+
+      setF({ ...f, avatar_url: publicUrl });
+      toast.success("Image uploaded successfully");
+    } catch (err: any) {
+      // Only log if it's not the expected bucket-not-found error
+      if (!err.message?.toLowerCase().includes("bucket not found")) {
+        console.error("Storage Error:", err);
+        toast.error("Upload failed: " + err.message);
+      }
+    } finally {
+      setUploading(false);
+    }
+  }
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -291,7 +344,8 @@ function EmployeeSheet({
         employee_code: "",
         full_name: "", email: "", designation: "", department: "Engineering", 
         phone: "", blood_group: "", emergency_contact: "", 
-        joined_at: new Date().toISOString().slice(0, 10), base_salary: "0" 
+        joined_at: new Date().toISOString().slice(0, 10), base_salary: "0",
+        avatar_url: ""
       });
     }
   }
@@ -313,6 +367,45 @@ function EmployeeSheet({
           </SheetDescription>
         </SheetHeader>
         <form onSubmit={submit} className="space-y-4 mt-8">
+          <div className="flex flex-col items-center gap-4 mb-6">
+            <div className="relative group">
+              <Avatar className="h-24 w-24 border-4 border-muted shadow-lg">
+                {f.avatar_url && <AvatarImage src={f.avatar_url} className="object-cover" />}
+                <AvatarFallback className="text-2xl bg-primary/10 text-primary">
+                  <Camera className="h-8 w-8" />
+                </AvatarFallback>
+              </Avatar>
+              <label 
+                className="absolute inset-0 flex items-center justify-center bg-black/40 text-white rounded-full opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity"
+                htmlFor="avatar-upload"
+              >
+                {uploading ? "..." : <Upload className="h-6 w-6" />}
+              </label>
+              <input 
+                id="avatar-upload"
+                type="file" 
+                accept="image/*" 
+                className="hidden" 
+                onChange={handleUpload}
+                disabled={uploading}
+              />
+              {f.avatar_url && (
+                <Button 
+                  type="button"
+                  variant="destructive" 
+                  size="icon" 
+                  className="absolute -top-1 -right-1 h-6 w-6 rounded-full"
+                  onClick={() => setF({ ...f, avatar_url: "" })}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              )}
+            </div>
+            <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest">
+              {f.avatar_url ? "Profile Picture Set" : "Upload Profile Picture"}
+            </p>
+          </div>
+
           <Fld label="Employee ID (Custom)">
             <Input placeholder="e.g. CNDEV-101" value={f.employee_code} onChange={(e) => setF({ ...f, employee_code: e.target.value })} />
           </Fld>
@@ -347,7 +440,7 @@ function EmployeeSheet({
               <Input value={f.blood_group} onChange={(e) => setF({ ...f, blood_group: e.target.value })} />
             </Fld>
             <Fld label="Joining Date">
-              <Input type="date" value={f.joined_at} onChange={(e) => setF({ ...f, joined_at: e.target.value })} />
+              <FlatDatePicker date={f.joined_at} onChange={(v) => setF({ ...f, joined_at: v })} />
             </Fld>
           </div>
           <Fld label="Emergency Contact Info">

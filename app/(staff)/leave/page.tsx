@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui
 import { useAuth } from "../../../lib/auth-context";
 import { Button } from "../../../components/ui/button";
 import { Badge } from "../../../components/ui/badge";
-import { Avatar, AvatarFallback } from "../../../components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "../../../components/ui/avatar";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "../../../components/ui/sheet";
 import { Input } from "../../../components/ui/input";
@@ -18,6 +18,7 @@ import { FlatDatePicker } from "../../../components/ui/flat-date-picker";
 import { initials, avatarColor, formatDate } from "../../../lib/format";
 import { supabase } from "../../../integrations/supabase/client";
 import { toast } from "sonner";
+import { useMock } from "../../../lib/mock-store";
 import {
   format, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths,
   startOfWeek, endOfWeek, isSameMonth, isWithinInterval, parseISO,
@@ -44,6 +45,7 @@ interface EmployeeRow {
   department: string;
   full_name: string;
   email: string;
+  avatar_url?: string | null;
 }
 
 const LEAVE_TONE: Record<LeaveType, string> = {
@@ -55,6 +57,7 @@ const LEAVE_TONE: Record<LeaveType, string> = {
 
 export default function LeavePage() {
   const { user, hasRole } = useAuth();
+  const { addNotification, notifyAdmins } = useMock();
   const isSuperAdmin = hasRole("super_admin");
   
   const [leaves, setLeaves] = useState<Leave[]>([]);
@@ -95,14 +98,16 @@ export default function LeavePage() {
     const [{ data: l, error: le }, { data: e, error: ee }, { data: profs }] = await Promise.all([
       leaveQuery,
       empQuery,
-      supabase.from("profiles").select("id, full_name"),
+      supabase.from("profiles").select("id, full_name, avatar_url"),
     ]);
     if (le) toast.error(le.message);
     if (ee) toast.error(ee.message);
-    const nameByProfile = new Map(((profs ?? []) as { id: string; full_name: string }[]).map((p) => [p.id, p.full_name]));
+    const profData = (profs ?? []) as { id: string; full_name: string; avatar_url: string | null }[];
+    const nameByProfile = new Map(profData.map((p) => [p.id, p.full_name]));
+    const avatarByProfile = new Map(profData.map((p) => [p.id, p.avatar_url]));
     setLeaves((l ?? []) as Leave[]);
     
-    type EmpRow = { id: string; profile_id: string; full_name: string; email: string; designation: string | null; department: string };
+    type EmpRow = { id: string; profile_id: string; full_name: string; email: string; designation: string | null; department: string; avatar_url?: string | null };
     setEmployees(
       ((e ?? []) as any[]).map((r) => ({
         id: r.id,
@@ -111,6 +116,7 @@ export default function LeavePage() {
         department: r.department,
         email: r.email,
         full_name: (r as any).full_name || nameByProfile.get(r.profile_id) || "Unknown",
+        avatar_url: avatarByProfile.get(r.profile_id),
       })),
     );
     setLoading(false);
@@ -124,10 +130,24 @@ export default function LeavePage() {
   };
 
   async function setStatus(id: string, status: LeaveStatus) {
+    const { data: leave } = await supabase.from("leave_requests").select("employee_id").eq("id", id).maybeSingle();
     const { error } = await supabase.from("leave_requests").update({
       status, approved_at: status !== "pending" ? new Date().toISOString() : null,
     }).eq("id", id);
     if (error) return toast.error(error.message);
+
+    // Notify Employee
+    if (leave && leave.employee_id) {
+      const emp = employees.find(e => e.id === leave.employee_id);
+      if (emp?.profile_id) {
+        await addNotification(emp.profile_id, {
+          title: `Leave ${status.charAt(0).toUpperCase() + status.slice(1)}`,
+          body: `Your leave request has been ${status}.`,
+          type: status === "approved" ? "success" : "error"
+        });
+      }
+    }
+
     toast.success(status === "approved" ? "Approved" : status === "rejected" ? "Rejected" : "Updated");
     void load();
   }
@@ -205,7 +225,10 @@ export default function LeavePage() {
                           <TableCell>
                             {e ? (
                               <div className="flex items-center gap-2">
-                                <Avatar className="h-7 w-7"><AvatarFallback className={avatarColor(e.full_name)}>{initials(e.full_name)}</AvatarFallback></Avatar>
+                              <Avatar className="h-7 w-7">
+                                {e.avatar_url && <AvatarImage src={e.avatar_url} className="object-cover" />}
+                                <AvatarFallback className={avatarColor(e.full_name)}>{initials(e.full_name)}</AvatarFallback>
+                              </Avatar>
                                 <div>
                                   <div className="font-medium text-sm">{e.full_name}</div>
                                   <div className="text-xs text-muted-foreground">{e.department}</div>
@@ -413,22 +436,31 @@ function NewLeaveSheet({
     }
   }, [employees, f.employee_id, isSuperAdmin, currentEmpId]);
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!f.employee_id) return toast.error("Select an employee");
-    setSubmitting(true);
-    const { error } = await supabase.from("leave_requests").insert([{
-      employee_id: f.employee_id, type: f.type,
-      from_date: f.from_date, to_date: f.to_date,
-      reason: f.reason || null, status: "pending" as const,
-    }]);
-    setSubmitting(false);
-    if (error) return toast.error(error.message);
-    toast.success("Leave request submitted");
-    onOpenChange(false);
-    setF((p) => ({ ...p, from_date: "", to_date: "", reason: "" }));
-    onCreated();
-  }
+    async function submit(e: React.FormEvent) {
+      e.preventDefault();
+      if (!f.employee_id) return toast.error("Select an employee");
+      setSubmitting(true);
+      const { error } = await supabase.from("leave_requests").insert([{
+        employee_id: f.employee_id, type: f.type,
+        from_date: f.from_date, to_date: f.to_date,
+        reason: f.reason || null, status: "pending" as const,
+      }]);
+      setSubmitting(false);
+      if (error) return toast.error(error.message);
+      
+      // Notify Admins
+      const emp = employees.find(e => e.id === f.employee_id);
+      await notifyAdmins({
+        title: "New Leave Request",
+        body: `${emp?.full_name || "An employee"} has requested a ${f.type} leave.`,
+        type: "info"
+      });
+
+      toast.success("Leave request submitted");
+      onOpenChange(false);
+      setF((p) => ({ ...p, from_date: "", to_date: "", reason: "" }));
+      onCreated();
+    }
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetTrigger asChild><Button><Plus className="h-4 w-4 mr-1.5" /> New request</Button></SheetTrigger>

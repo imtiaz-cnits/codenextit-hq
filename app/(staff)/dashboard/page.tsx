@@ -5,12 +5,14 @@ import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { useMock } from "../../../lib/mock-store";
 import { useAuth } from "../../../lib/auth-context";
-import { formatCurrency } from "../../../lib/format";
+import { formatCurrency, toLocalDateString } from "../../../lib/format";
 import {
   TrendingUp, Users, Server, LifeBuoy, Plus, Receipt, Clock, FileText,
-  ArrowUpRight, Activity, Briefcase, CheckCircle, ListTodo, CalendarDays
+  ArrowUpRight, Activity, Briefcase, CheckCircle, ListTodo, CalendarDays,
+  LogIn, LogOut
 } from "lucide-react";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
+import { cn } from "../../../lib/utils";
 
 const burndownData = [
   { day: "Mon", planned: 100, actual: 100 },
@@ -25,13 +27,14 @@ const burndownData = [
 export default function Dashboard() {
   const { 
     invoices, projects, tasks, employees, attendance, 
-    leaves, clients, infrastructure, currentEmployee 
+    leaves, clients, infrastructure, currentEmployee,
+    toggleClock
   } = useMock();
-  const { hasRole, profile } = useAuth();
+  const { hasRole, profile, user } = useAuth();
   
   const isSuperAdmin = hasRole("super_admin");
   const isClient = hasRole("client");
-  const t = new Date().toISOString().split('T')[0];
+  const t = toLocalDateString();
   
   // Super Admin Stats
   const revenueBDT = invoices.filter((i) => i.currency === "BDT" && i.status === "paid").reduce((s, i) => s + i.paid, 0);
@@ -94,15 +97,17 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {isSuperAdmin ? (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+        {isSuperAdmin && (
           <>
             <KpiCard label="Monthly Revenue (BDT)" value={formatCurrency(revenueBDT, "BDT")} delta="+12.4%" icon={TrendingUp} accent="success" />
             <KpiCard label="Monthly Revenue (USD)" value={formatCurrency(revenueUSD, "USD")} delta="+8.1%" icon={TrendingUp} accent="primary" />
             <KpiCard label="Active Clients" value={clients.length.toString()} delta="Total registered" icon={Users} accent="info" />
             <KpiCard label="Server Renewals < 30d" value={upcomingRenewals.length.toString()} delta={`${upcomingRenewals.filter(r => (new Date(r.expires_at!).getTime() - new Date().getTime()) / 86400000 < 7).length} critical`} icon={Server} accent="warning" />
           </>
-        ) : isClient ? (
+        )}
+        
+        {isClient ? (
           <>
             <KpiCard label="My Active Projects" value={clientProjects.length.toString()} delta="All on track" icon={Briefcase} accent="primary" />
             <KpiCard label="Unpaid Invoices" value={clientInvoices.filter(i => i.status !== 'paid').length.toString()} delta="Action required" icon={Receipt} accent="warning" />
@@ -114,13 +119,23 @@ export default function Dashboard() {
             <KpiCard 
               label="Today's Attendance" 
               value={isOnLeaveToday ? "On Leave" : (todayAttendance ? (todayAttendance.clock_out ? "Logged Out" : "Present") : "Absent")} 
-              delta={isOnLeaveToday ? "Approved Leave" : (todayAttendance ? `Clocked in ${todayAttendance.clock_in?.split('T')[1].slice(0,5)}` : "Not yet clocked in")} 
+              delta={isOnLeaveToday 
+                ? "Approved Leave" 
+                : (todayAttendance 
+                    ? (todayAttendance.clock_out 
+                        ? `Clocked out at ${new Date(todayAttendance.clock_out).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`
+                        : `Clocked in at ${new Date(todayAttendance.clock_in!).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`)
+                    : "Not yet clocked in")} 
               icon={Clock} 
-              accent={isOnLeaveToday ? "info" : (todayAttendance ? "success" : "warning")} 
+              accent={isOnLeaveToday ? "info" : (todayAttendance ? (todayAttendance.clock_out ? "warning" : "success") : "warning")} 
             />
-            <KpiCard label="My Pending Tasks" value={myPendingTasks.length.toString()} delta={`${myPendingTasks.filter(tk => tk.due_date === t).length} due today`} icon={ListTodo} accent="warning" />
-            <KpiCard label="Active Projects" value={myActiveProjects.length.toString()} delta="Assigned to me" icon={Briefcase} accent="primary" />
-            <KpiCard label="Leave Balance" value={`${leaveBalance} Days`} delta={`${monthlyBalanceRemaining} left this month`} icon={CalendarDays} accent="info" />
+            {!isSuperAdmin && (
+              <>
+                <KpiCard label="My Pending Tasks" value={myPendingTasks.length.toString()} delta={`${myPendingTasks.filter(tk => tk.due_date === t).length} due today`} icon={ListTodo} accent="warning" />
+                <KpiCard label="Active Projects" value={myActiveProjects.length.toString()} delta="Assigned to me" icon={Briefcase} accent="primary" />
+                <KpiCard label="Leave Balance" value={`${leaveBalance} Days`} delta={`${monthlyBalanceRemaining} left this month`} icon={CalendarDays} accent="info" />
+              </>
+            )}
           </>
         )}
       </div>
@@ -166,9 +181,34 @@ export default function Dashboard() {
             <CardDescription>Jump right in</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
+            {currentEmployee && (
+              <Button 
+                variant={todayAttendance && !todayAttendance.clock_out ? "outline" : "default"} 
+                className={cn(
+                  "w-full justify-start font-bold mb-2",
+                  todayAttendance && !todayAttendance.clock_out ? "border-primary text-primary hover:bg-primary/5" : "bg-primary hover:bg-primary/90"
+                )}
+                onClick={() => toggleClock(currentEmployee.id)}
+              >
+                {todayAttendance && !todayAttendance.clock_out ? (
+                  <>
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Clock Out
+                  </>
+                ) : (
+                  <>
+                    <LogIn className="h-4 w-4 mr-2" />
+                    Clock In
+                  </>
+                )}
+                <Badge variant="secondary" className="ml-auto text-[10px] h-5">Today</Badge>
+              </Button>
+            )}
             {[
-              { icon: TrendingUp, label: "Add New Lead" },
-              { icon: Receipt, label: "Create Invoice" },
+              ...(isSuperAdmin ? [
+                { icon: TrendingUp, label: "Add New Lead" },
+                { icon: Receipt, label: "Create Invoice" },
+              ] : []),
               { icon: Clock, label: "Log Time" },
               { icon: LifeBuoy, label: "New Ticket" },
               { icon: FileText, label: "New Quotation" },
