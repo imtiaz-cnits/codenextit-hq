@@ -21,7 +21,13 @@ interface PayrollRow {
   base: number; bonus: number; deduction: number; net: number | null;
   status: string; paid_at: string | null;
 }
-interface Employee { id: string; profile_id: string; base_salary: number; full_name: string }
+interface Employee { 
+  id: string; 
+  profile_id: string; 
+  base_salary: number; 
+  full_name: string;
+  avatar_url?: string | null;
+}
 
 export default function PayrollPage() {
   const { user, hasRole } = useAuth();
