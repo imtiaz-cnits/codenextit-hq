@@ -23,28 +23,74 @@ const burndownData = [
 ];
 
 export default function Dashboard() {
-  const { invoices, projects, tasks } = useMock();
+  const { 
+    invoices, projects, tasks, employees, attendance, 
+    leaves, clients, infrastructure, currentEmployee 
+  } = useMock();
   const { hasRole, profile } = useAuth();
   
   const isSuperAdmin = hasRole("super_admin");
   const isClient = hasRole("client");
+  const t = new Date().toISOString().split('T')[0];
   
+  // Super Admin Stats
   const revenueBDT = invoices.filter((i) => i.currency === "BDT" && i.status === "paid").reduce((s, i) => s + i.paid, 0);
   const revenueUSD = invoices.filter((i) => i.currency === "USD" && i.status === "paid").reduce((s, i) => s + i.paid, 0);
+  
+  const upcomingRenewals = infrastructure.filter(a => {
+    if (!a.expires_at) return false;
+    const days = (new Date(a.expires_at).getTime() - new Date().getTime()) / (1000 * 3600 * 24);
+    return days > 0 && days < 30;
+  });
 
+  // Client Stats
   const clientProjects = projects.filter(p => p.client_id === profile?.client_id);
   const clientInvoices = invoices.filter(i => i.client_id === profile?.client_id);
+
+  // Staff Stats
+  const todayAttendance = attendance.find(a => a.employee_id === currentEmployee?.id && a.date === t);
+  const myPendingTasks = tasks.filter(tk => tk.assignee_id === currentEmployee?.id && tk.status !== 'done');
+  const myActiveProjects = projects.filter(p => p.team_members?.includes(currentEmployee?.id || ""));
+
+  // Leave Stats (20 days per year, 2 days per month logic)
+  const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().getMonth();
+  const myApprovedLeaves = leaves.filter(l => 
+    l.employee_id === currentEmployee?.id && 
+    l.status === 'approved' &&
+    new Date(l.from_date).getFullYear() === currentYear
+  );
+
+  const calculateDays = (start: string, end: string) => {
+    const s = new Date(start);
+    const e = new Date(end);
+    return Math.ceil(Math.abs(e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1;
+  };
+
+  const usedYearly = myApprovedLeaves.reduce((acc, l) => acc + calculateDays(l.from_date, l.to_date), 0);
+  const usedMonthly = myApprovedLeaves
+    .filter(l => new Date(l.from_date).getMonth() === currentMonth)
+    .reduce((acc, l) => acc + calculateDays(l.from_date, l.to_date), 0);
+
+  const leaveBalance = 20 - usedYearly;
+  const monthlyBalanceRemaining = 2 - usedMonthly;
+
+  const isOnLeaveToday = myApprovedLeaves.find(l => t >= l.from_date && t <= l.to_date);
 
   return (
     <div className="space-y-6">
       <div className="flex items-end justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Command Center</h1>
-          <p className="text-muted-foreground mt-1">Welcome back. Here's what's happening across the agency.</p>
+          <p className="text-muted-foreground mt-1">Welcome back, {profile?.full_name || 'User'}. Here's what's happening.</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm"><Plus className="h-4 w-4 mr-1.5" /> New lead</Button>
-          <Button size="sm"><Receipt className="h-4 w-4 mr-1.5" /> Create invoice</Button>
+          {isSuperAdmin && (
+            <>
+              <Button variant="outline" size="sm"><Plus className="h-4 w-4 mr-1.5" /> New lead</Button>
+              <Button size="sm"><Receipt className="h-4 w-4 mr-1.5" /> Create invoice</Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -53,22 +99,28 @@ export default function Dashboard() {
           <>
             <KpiCard label="Monthly Revenue (BDT)" value={formatCurrency(revenueBDT, "BDT")} delta="+12.4%" icon={TrendingUp} accent="success" />
             <KpiCard label="Monthly Revenue (USD)" value={formatCurrency(revenueUSD, "USD")} delta="+8.1%" icon={TrendingUp} accent="primary" />
-            <KpiCard label="Active Clients" value="14" delta="+2 this month" icon={Users} accent="info" />
-            <KpiCard label="Server Renewals < 30d" value="3" delta="2 critical" icon={Server} accent="warning" />
+            <KpiCard label="Active Clients" value={clients.length.toString()} delta="Total registered" icon={Users} accent="info" />
+            <KpiCard label="Server Renewals < 30d" value={upcomingRenewals.length.toString()} delta={`${upcomingRenewals.filter(r => (new Date(r.expires_at!).getTime() - new Date().getTime()) / 86400000 < 7).length} critical`} icon={Server} accent="warning" />
           </>
         ) : isClient ? (
           <>
             <KpiCard label="My Active Projects" value={clientProjects.length.toString()} delta="All on track" icon={Briefcase} accent="primary" />
             <KpiCard label="Unpaid Invoices" value={clientInvoices.filter(i => i.status !== 'paid').length.toString()} delta="Action required" icon={Receipt} accent="warning" />
-            <KpiCard label="Open Tickets" value="2" delta="1 high priority" icon={LifeBuoy} accent="info" />
+            <KpiCard label="Open Tickets" value="0" delta="No active tickets" icon={LifeBuoy} accent="info" />
             <KpiCard label="Total Spent" value={formatCurrency(clientInvoices.reduce((s, i) => s + (i as any).amount, 0), "USD")} delta="Lifetime" icon={TrendingUp} accent="success" />
           </>
         ) : (
           <>
-            <KpiCard label="Today's Attendance" value="Present" delta="Clocked in 09:12" icon={Clock} accent="success" />
-            <KpiCard label="My Pending Tasks" value="8" delta="2 due today" icon={ListTodo} accent="warning" />
-            <KpiCard label="Active Projects" value="4" delta="Contributing" icon={Briefcase} accent="primary" />
-            <KpiCard label="Leave Balance" value="12 Days" delta="Remaining" icon={CalendarDays} accent="info" />
+            <KpiCard 
+              label="Today's Attendance" 
+              value={isOnLeaveToday ? "On Leave" : (todayAttendance ? (todayAttendance.clock_out ? "Logged Out" : "Present") : "Absent")} 
+              delta={isOnLeaveToday ? "Approved Leave" : (todayAttendance ? `Clocked in ${todayAttendance.clock_in?.split('T')[1].slice(0,5)}` : "Not yet clocked in")} 
+              icon={Clock} 
+              accent={isOnLeaveToday ? "info" : (todayAttendance ? "success" : "warning")} 
+            />
+            <KpiCard label="My Pending Tasks" value={myPendingTasks.length.toString()} delta={`${myPendingTasks.filter(tk => tk.due_date === t).length} due today`} icon={ListTodo} accent="warning" />
+            <KpiCard label="Active Projects" value={myActiveProjects.length.toString()} delta="Assigned to me" icon={Briefcase} accent="primary" />
+            <KpiCard label="Leave Balance" value={`${leaveBalance} Days`} delta={`${monthlyBalanceRemaining} left this month`} icon={CalendarDays} accent="info" />
           </>
         )}
       </div>

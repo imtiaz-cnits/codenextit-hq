@@ -126,6 +126,26 @@ export interface Notification {
   type: "info" | "warning" | "success" | "error";
 }
 
+export interface Client {
+  id: string;
+  company_name: string;
+  contact_person: string | null;
+  email: string | null;
+  phone: string | null;
+  ltv: number;
+  currency: "BDT" | "USD";
+}
+
+export interface InfrastructureAsset {
+  id: string;
+  name: string;
+  asset_type: "domain" | "ssl" | "hosting" | "vps" | "subscription";
+  expires_at: string | null;
+  cost: number;
+  currency: "BDT" | "USD";
+  client_id: string | null;
+}
+
 interface MockState {
   employees: Employee[];
   attendance: AttendanceEntry[];
@@ -138,6 +158,9 @@ interface MockState {
   notifications: Notification[];
   projects: Project[];
   tasks: Task[];
+  clients: Client[];
+  infrastructure: InfrastructureAsset[];
+  currentEmployee: Employee | null;
   loading: boolean;
 }
 
@@ -212,6 +235,64 @@ export function MockProvider({ children }: { children: ReactNode }) {
       return (data || []) as AttendanceEntry[];
     },
     enabled: !!user && (isSuperAdmin || !!currentEmployee),
+  });
+
+  const { data: projects = [], isLoading: loadingProjects } = useQuery({
+    queryKey: ["projects"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("projects").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data || []) as any;
+    },
+    enabled: !!user,
+  });
+
+  const { data: tasks = [], isLoading: loadingTasks } = useQuery({
+    queryKey: ["tasks"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("tasks").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data || []) as any;
+    },
+    enabled: !!user,
+  });
+
+  const { data: leaves = [], isLoading: loadingLeaves } = useQuery({
+    queryKey: ["leaves", currentEmployee?.id],
+    queryFn: async () => {
+      let query = supabase.from("leave_requests").select("*").order("created_at", { ascending: false });
+      if (!isSuperAdmin && currentEmployee) {
+        query = query.eq("employee_id", currentEmployee.id);
+      }
+      const { data, error } = await query;
+      if (error) throw error;
+      return (data || []).map(l => ({
+        ...l,
+        type: l.type as any,
+        status: l.status as any,
+      })) as LeaveRequest[];
+    },
+    enabled: !!user && (isSuperAdmin || !!currentEmployee),
+  });
+
+  const { data: clients = [], isLoading: loadingClients } = useQuery({
+    queryKey: ["clients"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("clients").select("*").order("company_name");
+      if (error) throw error;
+      return (data || []) as Client[];
+    },
+    enabled: !!user && isSuperAdmin,
+  });
+
+  const { data: infrastructure = [], isLoading: loadingInfra } = useQuery({
+    queryKey: ["infrastructure"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("infrastructure_assets").select("*").order("expires_at");
+      if (error) throw error;
+      return (data || []) as any;
+    },
+    enabled: !!user && isSuperAdmin,
   });
 
   // --- Supabase Mutations ---
@@ -319,15 +400,12 @@ export function MockProvider({ children }: { children: ReactNode }) {
   });
 
   // --- Remaining Mock States ---
-  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [payrolls, setPayrolls] = useState<PayrollRun[]>([]);
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [vault, setVault] = useState<VaultFile[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
 
   // ... Mock Actions for non-persisted modules ...
   const addLeave = useCallback((l: any) => {}, []);
@@ -357,8 +435,8 @@ export function MockProvider({ children }: { children: ReactNode }) {
     <MockCtx.Provider
       value={{
         employees, attendance, leaves, payrolls, quotations, invoices, expenses, vault, notifications,
-        projects, tasks,
-        loading: loadingEmployees || loadingAttendance,
+        projects, tasks, clients, infrastructure, currentEmployee,
+        loading: loadingEmployees || loadingAttendance || loadingProjects || loadingTasks || loadingLeaves || loadingClients || loadingInfra,
         addEmployee: (e) => addEmployeeMutation.mutate(e),
         updateEmployee: (id, patch) => updateEmployeeMutation.mutate({ id, patch }),
         removeEmployee: (id) => removeEmployeeMutation.mutate(id),
