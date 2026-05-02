@@ -423,6 +423,7 @@ function NewLeaveSheet({
   open: boolean; onOpenChange: (v: boolean) => void; employees: EmployeeRow[]; onCreated: () => void;
   isSuperAdmin: boolean; currentEmpId?: string;
 }) {
+  const { notifyAdmins } = useMock();
   const [submitting, setSubmitting] = useState(false);
   const [f, setF] = useState({
     employee_id: "", type: "casual" as LeaveType,
