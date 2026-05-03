@@ -11,6 +11,7 @@ import { Globe, Search, Loader2, ExternalLink, AlertTriangle } from "lucide-reac
 import { formatCurrency, formatDate } from "../../../../lib/format";
 import { toast } from "sonner";
 import Link from "next/link";
+import { TableSkeleton } from "../../../../components/loading-skeletons";
 
 interface Asset {
   id: string; name: string; asset_type: string; provider: string | null;
@@ -99,7 +100,7 @@ export default function DomainsPage() {
       </div>
 
       {loading ? (
-        <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        <TableSkeleton rows={8} cols={7} />
       ) : (
         <Card>
           <CardHeader><CardTitle className="text-base">All domains & SSL</CardTitle></CardHeader>

@@ -24,6 +24,7 @@ import { initials, avatarColor, formatCurrency, formatDate } from "../../../lib/
 import { cn } from "../../../lib/utils";
 import { toast } from "sonner";
 import { supabase } from "../../../integrations/supabase/client";
+import { CardGridSkeleton } from "../../../components/loading-skeletons";
 
 const DEPARTMENTS = ["All", "Engineering", "Design", "SEO", "Management"];
 
@@ -39,9 +40,7 @@ export default function TeamPage() {
   const [userRoles, setUserRoles] = useState<string[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
 
-  if (loading) {
-    return <div className="h-[400px] flex items-center justify-center text-muted-foreground animate-pulse">Loading directory...</div>;
-  }
+  const isLoading = loading;
 
   const filtered = employees.filter((e) => {
     const matchQ = !q || `${e.full_name} ${e.email} ${e.designation}`.toLowerCase().includes(q.toLowerCase());
@@ -73,81 +72,85 @@ export default function TeamPage() {
         </Select>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {filtered.map((e) => (
-          <Card 
-            key={e.id} 
-            className="group relative hover:shadow-elegant transition-all cursor-pointer border-transparent hover:border-primary/20"
-            onClick={() => setSelectedEmp(e)}
-          >
-            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild onClick={(ev) => ev.stopPropagation()}>
-                  <Button variant="ghost" size="icon" className="h-8 w-8">
-                    <MoreVertical className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={(ev) => { ev.stopPropagation(); setSelectedEmp(e); }}>
-                    <Eye className="h-4 w-4 mr-2" /> View Details
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={(ev) => { ev.stopPropagation(); setEditingEmp(e); }}>
-                    <Edit className="h-4 w-4 mr-2" /> Edit Employee
-                  </DropdownMenuItem>
-                  <DropdownMenuItem 
-                    className="text-destructive focus:text-destructive"
-                    onClick={(ev) => { ev.stopPropagation(); removeEmployee(e.id); }}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" /> Delete
-                  </DropdownMenuItem>
-                  {hasRole("super_admin") && (
-                    <DropdownMenuItem onClick={async (ev) => { 
-                      ev.stopPropagation(); 
-                      // Find user ID by email
-                      const { data } = await supabase.from("profiles").select("id").eq("email", e.email).maybeSingle();
-                      if (data) {
-                        setUserId(data.id);
-                        const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", data.id);
-                        setUserRoles((roles || []).map(r => r.role));
-                        setManagingRole(e);
-                      } else {
-                        toast.error("This employee doesn't have a user account yet.");
-                      }
-                    }}>
-                      <Shield className="h-4 w-4 mr-2" /> Manage Access
+      {isLoading ? (
+        <CardGridSkeleton count={8} />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {filtered.map((e) => (
+            <Card 
+              key={e.id} 
+              className="group relative hover:shadow-elegant transition-all cursor-pointer border-transparent hover:border-primary/20"
+              onClick={() => setSelectedEmp(e)}
+            >
+              <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild onClick={(ev) => ev.stopPropagation()}>
+                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                      <MoreVertical className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={(ev) => { ev.stopPropagation(); setSelectedEmp(e); }}>
+                      <Eye className="h-4 w-4 mr-2" /> View Details
                     </DropdownMenuItem>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+                    <DropdownMenuItem onClick={(ev) => { ev.stopPropagation(); setEditingEmp(e); }}>
+                      <Edit className="h-4 w-4 mr-2" /> Edit Employee
+                    </DropdownMenuItem>
+                    <DropdownMenuItem 
+                      className="text-destructive focus:text-destructive"
+                      onClick={(ev) => { ev.stopPropagation(); removeEmployee(e.id); }}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" /> Delete
+                    </DropdownMenuItem>
+                    {hasRole("super_admin") && (
+                      <DropdownMenuItem onClick={async (ev) => { 
+                        ev.stopPropagation(); 
+                        // Find user ID by email
+                        const { data } = await supabase.from("profiles").select("id").eq("email", e.email).maybeSingle();
+                        if (data) {
+                          setUserId(data.id);
+                          const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", data.id);
+                          setUserRoles((roles || []).map(r => r.role));
+                          setManagingRole(e);
+                        } else {
+                          toast.error("This employee doesn't have a user account yet.");
+                        }
+                      }}>
+                        <Shield className="h-4 w-4 mr-2" /> Manage Access
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
 
-            <CardHeader className="pb-3">
-              <div className="flex items-start gap-3">
-                <Avatar className="h-12 w-12 border-2 border-background shadow-sm">
-                  {e.avatar_url && <AvatarImage src={e.avatar_url} className="object-cover" />}
-                  <AvatarFallback className={cn("text-white", avatarColor(e.full_name))}>
-                    {initials(e.full_name)}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="min-w-0 flex-1">
-                  <CardTitle className="text-base truncate group-hover:text-primary transition-colors">{e.full_name}</CardTitle>
-                  <CardDescription className="text-xs truncate font-medium">{e.designation}</CardDescription>
-                  <Badge variant="secondary" className="mt-1.5 text-[10px] h-5">{e.department}</Badge>
+              <CardHeader className="pb-3">
+                <div className="flex items-start gap-3">
+                  <Avatar className="h-12 w-12 border-2 border-background shadow-sm">
+                    {e.avatar_url && <AvatarImage src={e.avatar_url} className="object-cover" />}
+                    <AvatarFallback className={cn("text-white", avatarColor(e.full_name))}>
+                      {initials(e.full_name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <CardTitle className="text-base truncate group-hover:text-primary transition-colors">{e.full_name}</CardTitle>
+                    <CardDescription className="text-xs truncate font-medium">{e.designation}</CardDescription>
+                    <Badge variant="secondary" className="mt-1.5 text-[10px] h-5">{e.department}</Badge>
+                  </div>
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-2 text-xs text-muted-foreground">
-              <div className="flex items-center gap-2 truncate"><Mail className="h-3.5 w-3.5 shrink-0 text-primary/60" />{e.email}</div>
-              <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 shrink-0 text-primary/60" />{e.phone}</div>
-              <div className="flex items-center gap-2"><Heart className="h-3.5 w-3.5 shrink-0 text-destructive/60" /> {e.blood_group} · joined {formatDate(e.joined_at)}</div>
-              <div className="text-foreground font-semibold pt-2 border-t mt-2 flex justify-between items-center">
-                <span>{formatCurrency(e.base_salary, "BDT")}/mo</span>
-                <span className="text-[10px] text-muted-foreground font-normal bg-muted px-1.5 py-0.5 rounded">ID: {e.employee_code || e.id.slice(0, 8)}</span>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+              </CardHeader>
+              <CardContent className="space-y-2 text-xs text-muted-foreground">
+                <div className="flex items-center gap-2 truncate"><Mail className="h-3.5 w-3.5 shrink-0 text-primary/60" />{e.email}</div>
+                <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 shrink-0 text-primary/60" />{e.phone}</div>
+                <div className="flex items-center gap-2"><Heart className="h-3.5 w-3.5 shrink-0 text-destructive/60" /> {e.blood_group} · joined {formatDate(e.joined_at)}</div>
+                <div className="text-foreground font-semibold pt-2 border-t mt-2 flex justify-between items-center">
+                  <span>{formatCurrency(e.base_salary, "BDT")}/mo</span>
+                  <span className="text-[10px] text-muted-foreground font-normal bg-muted px-1.5 py-0.5 rounded">ID: {e.employee_code || e.id.slice(0, 8)}</span>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {/* Details Dialog */}
       <Dialog open={!!selectedEmp} onOpenChange={(o) => !o && setSelectedEmp(null)}>

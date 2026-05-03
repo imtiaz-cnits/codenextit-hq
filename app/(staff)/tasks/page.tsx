@@ -20,6 +20,7 @@ import { Plus, GripVertical, Loader2, Play, Pause, Tag, Calendar, AlertTriangle 
 import { formatDate, formatDuration } from "../../../lib/format";
 import { toast } from "sonner";
 import { FlatDatePicker } from "../../../components/ui/flat-date-picker";
+import { TableSkeleton } from "../../../components/loading-skeletons";
 
 type Status = "todo" | "in_progress" | "qa_testing" | "client_review" | "done";
 type Priority = "low" | "normal" | "high" | "critical";
@@ -165,7 +166,7 @@ function TasksContent() {
       )}
 
       {loading ? (
-        <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        <TableSkeleton rows={8} cols={6} />
       ) : viewMode === "kanban" ? (
         <DndContext
           sensors={sensors}

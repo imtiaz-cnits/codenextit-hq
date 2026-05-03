@@ -2,26 +2,29 @@
 
 import { useAuth } from "../../lib/auth-context";
 import { AppShell } from "../../components/shell/app-shell";
-import { Loader2 } from "lucide-react";
+import { Preloader } from "../../components/ui/preloader";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   const { loading, isAuthenticated } = useAuth();
   const router = useRouter();
 
+  const [minLoading, setMinLoading] = useState(true);
+
   useEffect(() => {
-    if (!loading && !isAuthenticated) {
+    const timer = setTimeout(() => setMinLoading(false), 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!loading && !minLoading && !isAuthenticated) {
       router.push("/login");
     }
-  }, [loading, isAuthenticated, router]);
+  }, [loading, minLoading, isAuthenticated, router]);
 
-  if (loading || !isAuthenticated) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
+  if (loading || minLoading || !isAuthenticated) {
+    return <Preloader message="Loading client portal..." />;
   }
 
   return (

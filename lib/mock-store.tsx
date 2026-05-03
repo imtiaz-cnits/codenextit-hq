@@ -204,9 +204,26 @@ export function MockProvider({ children }: { children: ReactNode }) {
   const { data: employees = [], isLoading: loadingEmployees } = useQuery({
     queryKey: ["employees", user?.id],
     queryFn: async () => {
-      let query = supabase.from("employees").select("*").order("full_name");
-      const { data, error } = await query;
+      // Fetch both tables to ensure data is in sync
+      const [{ data: empData, error }, { data: profData }] = await Promise.all([
+        supabase.from("employees").select("*").order("full_name"),
+        supabase.from("profiles").select("id, email, avatar_url, full_name")
+      ]);
+
       if (error) throw error;
+
+      // Merge profile data (like avatar) into employee records
+      const data = (empData || []).map((emp: any) => {
+        const profile = (profData || []).find(p => 
+          p.id === emp.profile_id || 
+          (p.email && emp.email && p.email.toLowerCase() === emp.email.toLowerCase())
+        );
+        return {
+          ...emp,
+          avatar_url: profile?.avatar_url || emp.avatar_url,
+          profile_id: emp.profile_id || profile?.id
+        };
+      });
       
       // Try to find self by profile_id first, then fallback to email
       const selfByProfile = (data || []).find((e: any) => e.profile_id === user?.id);
@@ -221,7 +238,7 @@ export function MockProvider({ children }: { children: ReactNode }) {
       }
       
       setCurrentEmployee((self as any) || null);
-      return (data || []) as any;
+      return data as any;
     },
     enabled: !!user,
   });

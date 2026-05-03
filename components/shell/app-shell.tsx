@@ -61,14 +61,6 @@ const STAFF_GROUPS: { label: string; items: NavItem[] }[] = [
     ],
   },
   {
-    label: "Infrastructure",
-    items: [
-      { to: "/infrastructure/domains", label: "Domain", icon: Globe, module: "infrastructure" },
-      { to: "/infrastructure/hosting", label: "Hosting", icon: HardDrive, module: "infrastructure" },
-      { to: "/tickets", label: "Tickets", icon: LifeBuoy, module: "tickets" },
-    ],
-  },
-  {
     label: "People",
     items: [
       { to: "/team", label: "Team", icon: UserCircle, module: "team" },
@@ -87,6 +79,14 @@ const STAFF_GROUPS: { label: string; items: NavItem[] }[] = [
       { to: "/accounts/investment", label: "Investment", icon: PiggyBank, module: "accounts" },
       { to: "/accounts/due", label: "Due", icon: AlertCircle, module: "accounts" },
       { to: "/accounts/salary", label: "Salary Sheet", icon: Banknote, module: "accounts" },
+    ],
+  },
+  {
+    label: "Infrastructure",
+    items: [
+      { to: "/infrastructure/domains", label: "Domain", icon: Globe, module: "infrastructure" },
+      { to: "/infrastructure/hosting", label: "Hosting", icon: HardDrive, module: "infrastructure" },
+      { to: "/tickets", label: "Tickets", icon: LifeBuoy, module: "tickets" },
     ],
   },
   {

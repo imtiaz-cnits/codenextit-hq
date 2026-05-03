@@ -15,6 +15,7 @@ import { Badge } from "../../../../components/ui/badge";
 import { Plus, Loader2, ArrowUpCircle, Check, X } from "lucide-react";
 import { formatCurrency, formatDate, toLocalDateString } from "../../../../lib/format";
 import { toast } from "sonner";
+import { TableSkeleton } from "../../../../components/loading-skeletons";
 
 type ExpenseType = "office" | "software" | "travel" | "salary" | "utility" | "marketing" | "other";
 type Approval = "pending" | "approved" | "rejected";
@@ -92,7 +93,7 @@ export default function ExpensePage() {
         <CardHeader><CardTitle className="text-base">Ledger</CardTitle></CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex h-40 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+            <TableSkeleton rows={8} cols={7} />
           ) : visible.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground"><ArrowUpCircle className="h-10 w-10 mx-auto mb-3 opacity-40" />Nothing here.</div>
           ) : (

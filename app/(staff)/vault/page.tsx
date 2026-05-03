@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { FileText, Image as ImageIcon, FileCode, Palette, File as FileIcon, Upload, Search, Download, Loader2, Trash2, FolderOpen } from "lucide-react";
 import { formatDate } from "../../../lib/format";
 import { toast } from "sonner";
+import { TableSkeleton } from "../../../components/loading-skeletons";
 
 type VaultType = "logo" | "srs" | "api_doc" | "design" | "other";
 interface VaultRow {
@@ -182,7 +183,7 @@ export default function VaultPage() {
             <CardHeader><CardTitle className="text-base">Files</CardTitle></CardHeader>
             <CardContent>
               {loading ? (
-                <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+                <TableSkeleton rows={8} cols={8} />
               ) : (
                 <Table>
                   <TableHeader><TableRow>

@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { DollarSign, Plus, Download, Loader2 } from "lucide-react";
 import { formatCurrency, initials, avatarColor } from "../../../lib/format";
 import { toast } from "sonner";
+import { TableSkeleton } from "../../../components/loading-skeletons";
 
 interface PayrollRow {
   id: string; employee_id: string; month: string;
@@ -113,7 +114,7 @@ export default function PayrollPage() {
     void load();
   }
 
-  if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+  if (loading) return <TableSkeleton rows={8} cols={6} />;
 
   return (
     <div className="space-y-6">

@@ -18,6 +18,7 @@ import { supabase } from "../../../../integrations/supabase/client";
 import { useAuth } from "../../../../lib/auth-context";
 import { formatCurrency, formatDate } from "../../../../lib/format";
 import { toast } from "sonner";
+import { TableSkeleton } from "../../../../components/loading-skeletons";
 
 interface Invoice {
   id: string; number: string; client_id: string | null; title: string;
@@ -134,7 +135,7 @@ export default function InvoicesPage() {
   const getVariant = (s: string) =>
     s === "paid" ? "default" : s === "overdue" ? "destructive" : s === "partial" ? "secondary" : "outline";
 
-  if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+  const isLoading = loading;
 
   const clientName = (id: string | null) => clients.find((c) => c.id === id)?.company_name ?? "—";
 
@@ -198,54 +199,58 @@ export default function InvoicesPage() {
           </div>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-8">
-                  <Checkbox
-                    checked={filtered.length > 0 && filtered.every((i) => selected.has(i.id))}
-                    onCheckedChange={(c) => {
-                      const next = new Set(selected);
-                      if (c) filtered.forEach((i) => next.add(i.id));
-                      else filtered.forEach((i) => next.delete(i.id));
-                      setSelected(next);
-                    }}
-                    aria-label="Select all"
-                  />
-                </TableHead>
-                <TableHead>Number</TableHead><TableHead>Client</TableHead><TableHead>Title</TableHead>
-                <TableHead className="text-right">Total</TableHead>
-                <TableHead className="text-right">Paid</TableHead>
-                <TableHead>Due</TableHead><TableHead>Status</TableHead><TableHead></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.length === 0 && <TableRow><TableCell colSpan={9} className="text-center text-sm text-muted-foreground py-8">No invoices.</TableCell></TableRow>}
-              {filtered.map((i) => (
-                <TableRow key={i.id} className="cursor-pointer" onClick={() => openInvoice(i)}>
-                  <TableCell onClick={(e) => e.stopPropagation()}>
+          {isLoading ? (
+            <TableSkeleton rows={10} cols={8} />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-8">
                     <Checkbox
-                      checked={selected.has(i.id)}
+                      checked={filtered.length > 0 && filtered.every((i) => selected.has(i.id))}
                       onCheckedChange={(c) => {
                         const next = new Set(selected);
-                        if (c) next.add(i.id); else next.delete(i.id);
+                        if (c) filtered.forEach((i) => next.add(i.id));
+                        else filtered.forEach((i) => next.delete(i.id));
                         setSelected(next);
                       }}
-                      aria-label={`Select invoice ${i.number}`}
+                      aria-label="Select all"
                     />
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">{i.number}</TableCell>
-                  <TableCell className="text-sm">{clientName(i.client_id)}</TableCell>
-                  <TableCell className="text-sm max-w-[240px] truncate">{i.title}</TableCell>
-                  <TableCell className="text-right font-mono">{formatCurrency(i.total, i.currency)}</TableCell>
-                  <TableCell className="text-right font-mono text-success">{formatCurrency(i.paid_amount, i.currency)}</TableCell>
-                  <TableCell className="text-sm">{i.due_at ? formatDate(i.due_at) : "—"}</TableCell>
-                  <TableCell><Badge variant={getVariant(i.status) as any} className="capitalize">{i.status}</Badge></TableCell>
-                  <TableCell className="text-right"><Button size="sm" variant="ghost"><Eye className="h-3.5 w-3.5" /></Button></TableCell>
+                  </TableHead>
+                  <TableHead>Number</TableHead><TableHead>Client</TableHead><TableHead>Title</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead className="text-right">Paid</TableHead>
+                  <TableHead>Due</TableHead><TableHead>Status</TableHead><TableHead></TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {filtered.length === 0 && <TableRow><TableCell colSpan={9} className="text-center text-sm text-muted-foreground py-8">No invoices.</TableCell></TableRow>}
+                {filtered.map((i) => (
+                  <TableRow key={i.id} className="cursor-pointer" onClick={() => openInvoice(i)}>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selected.has(i.id)}
+                        onCheckedChange={(c) => {
+                          const next = new Set(selected);
+                          if (c) next.add(i.id); else next.delete(i.id);
+                          setSelected(next);
+                        }}
+                        aria-label={`Select invoice ${i.number}`}
+                      />
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">{i.number}</TableCell>
+                    <TableCell className="text-sm">{clientName(i.client_id)}</TableCell>
+                    <TableCell className="text-sm max-w-[240px] truncate">{i.title}</TableCell>
+                    <TableCell className="text-right font-mono">{formatCurrency(i.total, i.currency)}</TableCell>
+                    <TableCell className="text-right font-mono text-success">{formatCurrency(i.paid_amount, i.currency)}</TableCell>
+                    <TableCell className="text-sm">{i.due_at ? formatDate(i.due_at) : "—"}</TableCell>
+                    <TableCell><Badge variant={getVariant(i.status) as any} className="capitalize">{i.status}</Badge></TableCell>
+                    <TableCell className="text-right"><Button size="sm" variant="ghost"><Eye className="h-3.5 w-3.5" /></Button></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 

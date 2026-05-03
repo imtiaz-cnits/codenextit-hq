@@ -16,6 +16,7 @@ import { Edit, Trash2, MoreHorizontal, Mail, Phone, Building2, MapPin, Loader2, 
 import { formatCurrency, avatarColor } from "../../../lib/format";
 import { toast } from "sonner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../../components/ui/dropdown-menu";
+import { Skeleton } from "../../../components/ui/skeleton";
 
 interface Client {
   id: string; company_name: string; contact_person: string | null;
@@ -64,7 +65,28 @@ export default function ClientsPage() {
       </div>
 
       {loading ? (
-        <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <Card key={i} className="p-6 space-y-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <Skeleton className="h-12 w-12 rounded-full" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-5 w-3/4" />
+                  <Skeleton className="h-3 w-1/2" />
+                </div>
+                <Skeleton className="h-5 w-10 rounded-full" />
+              </div>
+              <div className="space-y-3 pt-2">
+                <Skeleton className="h-3 w-full" />
+                <Skeleton className="h-3 w-5/6" />
+              </div>
+              <div className="flex items-center justify-between pt-3 mt-2 border-t">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-5 w-24" />
+              </div>
+            </Card>
+          ))}
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {clients.map((c) => (

@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { cn } from "../../../lib/utils";
+import { DashboardSkeleton } from "../../../components/loading-skeletons";
 
 const burndownData = [
   { day: "Mon", planned: 100, actual: 100 },
@@ -28,9 +29,11 @@ export default function Dashboard() {
   const { 
     invoices, projects, tasks, employees, attendance, 
     leaves, clients, infrastructure, currentEmployee,
-    toggleClock
+    toggleClock, loading
   } = useMock();
   const { hasRole, profile, user } = useAuth();
+  
+  if (loading) return <DashboardSkeleton />;
   
   const isSuperAdmin = hasRole("super_admin");
   const isClient = hasRole("client");

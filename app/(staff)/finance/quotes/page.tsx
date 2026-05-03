@@ -13,9 +13,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Plus, Download } from "lucide-react";
 import { formatCurrency, formatDate } from "../../../../lib/format";
 import { toast } from "sonner";
+import { TableSkeleton } from "../../../../components/loading-skeletons";
 
 export default function QuotesPage() {
-  const { quotations, addQuotation } = useMock();
+  const { quotations, addQuotation, loading } = useMock();
+  
+  if (loading) return <TableSkeleton rows={8} cols={7} />;
   const totalSent = quotations.filter((q) => q.status === "sent" || q.status === "accepted").reduce((s, q) => q.currency === "BDT" ? s + q.amount : s, 0);
   const totalAccepted = quotations.filter((q) => q.status === "accepted").length;
 

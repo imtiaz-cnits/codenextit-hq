@@ -2,30 +2,33 @@
 
 import { useAuth } from "../../lib/auth-context";
 import { AppShell } from "../../components/shell/app-shell";
-import { Loader2 } from "lucide-react";
+import { Preloader } from "../../components/ui/preloader";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 export default function StaffLayout({ children }: { children: React.ReactNode }) {
   const { loading, isAuthenticated, isStaff, isClient } = useAuth();
   const router = useRouter();
 
+  const [minLoading, setMinLoading] = useState(true);
+
   useEffect(() => {
-    if (!loading) {
+    const timer = setTimeout(() => setMinLoading(false), 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!loading && !minLoading) {
       if (!isAuthenticated) {
         router.push("/login");
       } else if (isClient && !isStaff) {
         router.push("/portal");
       }
     }
-  }, [loading, isAuthenticated, isStaff, isClient, router]);
+  }, [loading, minLoading, isAuthenticated, isStaff, isClient, router]);
 
-  if (loading || !isAuthenticated || (isClient && !isStaff)) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
+  if (loading || minLoading || !isAuthenticated || (isClient && !isStaff)) {
+    return <Preloader message="Authenticating session..." />;
   }
 
   return (

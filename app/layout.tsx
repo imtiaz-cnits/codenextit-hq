@@ -46,6 +46,7 @@ export const viewport: Viewport = {
 };
 
 import Script from "next/script";
+import NextTopLoader from "nextjs-toploader";
 
 export default function RootLayout({
   children,
@@ -76,6 +77,11 @@ export default function RootLayout({
         />
       </head>
       <body suppressHydrationWarning>
+        <NextTopLoader 
+          color="#7c3aed"
+          showSpinner={false}
+          shadow="0 0 10px #7c3aed,0 0 5px #7c3aed"
+        />
         <Providers>
           {children}
         </Providers>

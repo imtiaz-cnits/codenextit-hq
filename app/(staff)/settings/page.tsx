@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { supabase } from "../../../integrations/supabase/client";
 import { fetchWorkspaceSettings, invalidateWorkspaceSettings, DEFAULT_SETTINGS, type WorkspaceSettings } from "../../../hooks/use-workspace-settings";
 import { cn } from "../../../lib/utils";
+import { TableSkeleton, CardGridSkeleton } from "../../../components/loading-skeletons";
 
 const ROLES: AppRole[] = ["super_admin", "project_manager", "staff", "client"];
 const MODULES = [
@@ -268,7 +269,7 @@ function UsersPanel() {
     }
   };
 
-  if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
+  if (loading) return <TableSkeleton rows={8} cols={5} />;
 
   const roleColor: Record<AppRole, string> = {
     super_admin: "bg-destructive/15 text-destructive border-destructive/20",
@@ -505,7 +506,7 @@ function BrandingPanel() {
     toast.success("Logo removed");
   };
 
-  if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
+  if (loading) return <CardGridSkeleton count={2} />;
 
   return (
     <Card>
@@ -634,7 +635,7 @@ function IntegrationsPanel() {
     toast.success(val ? "Webhook enabled" : "Webhook disabled");
   };
 
-  if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
+  if (loading) return <CardGridSkeleton count={1} />;
 
   const curlExample = `curl -X POST ${webhookUrl} \\
   -H "Content-Type: application/json" \\
@@ -729,7 +730,7 @@ function WorkspacePanel() {
     toast.success("Workspace preferences saved");
   };
 
-  if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
+  if (loading) return <CardGridSkeleton count={1} />;
 
   return (
     <Card>

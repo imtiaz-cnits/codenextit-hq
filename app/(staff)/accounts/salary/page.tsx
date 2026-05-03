@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Plus, Loader2, Banknote } from "lucide-react";
 import { formatCurrency, formatDate } from "../../../../lib/format";
 import { toast } from "sonner";
+import { TableSkeleton } from "../../../../components/loading-skeletons";
 
 interface SalaryRow {
   id: string; date: string; purpose: string; amount: number;
@@ -69,7 +70,7 @@ export default function SalaryPage() {
         <CardHeader><CardTitle className="text-base">Payouts</CardTitle></CardHeader>
         <CardContent className="overflow-x-auto">
           {loading ? (
-            <div className="flex h-40 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+            <TableSkeleton rows={8} cols={5} />
           ) : rows.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground"><Banknote className="h-10 w-10 mx-auto mb-3 opacity-40" />No salary entries yet.</div>
           ) : (

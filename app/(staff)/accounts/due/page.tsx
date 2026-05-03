@@ -9,6 +9,7 @@ import { Loader2, AlertCircle } from "lucide-react";
 import { formatCurrency, formatDate } from "../../../../lib/format";
 import { toast } from "sonner";
 import Link from "next/link";
+import { TableSkeleton } from "../../../../components/loading-skeletons";
 
 interface InvoiceRow {
   id: string; number: string; title: string;
@@ -61,7 +62,7 @@ export default function DuePage() {
         <CardHeader><CardTitle className="text-base">Outstanding invoices</CardTitle></CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex h-40 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+            <TableSkeleton rows={8} cols={8} />
           ) : rows.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground"><AlertCircle className="h-10 w-10 mx-auto mb-3 opacity-40" />Nothing due — well done!</div>
           ) : (

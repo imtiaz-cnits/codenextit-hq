@@ -23,6 +23,7 @@ import {
   format, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths,
   startOfWeek, endOfWeek, isSameMonth, isWithinInterval, parseISO,
 } from "date-fns";
+import { TableSkeleton } from "../../../components/loading-skeletons";
 
 type LeaveType = "sick" | "casual" | "annual" | "unpaid";
 type LeaveStatus = "pending" | "approved" | "rejected";
@@ -206,7 +207,7 @@ export default function LeavePage() {
             <CardHeader><CardTitle className="text-base">All requests</CardTitle></CardHeader>
             <CardContent>
               {loading ? (
-                <div className="flex h-40 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+                <TableSkeleton rows={8} cols={7} />
               ) : leaves.length === 0 ? (
                 <div className="text-center text-muted-foreground py-12 text-sm">No leave requests yet.</div>
               ) : (

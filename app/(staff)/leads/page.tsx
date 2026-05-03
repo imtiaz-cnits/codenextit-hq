@@ -19,6 +19,7 @@ import { supabase } from "../../../integrations/supabase/client";
 import { formatCurrency } from "../../../lib/format";
 import { Plus, GripVertical, Mail, Phone, Building2, Loader2, TrendingUp, Trash2, UserPlus } from "lucide-react";
 import { toast } from "sonner";
+import { KanbanSkeleton } from "../../../components/loading-skeletons";
 
 type LeadStage = "new_inquiry" | "meeting_scheduled" | "proposal_sent" | "negotiation" | "won" | "lost";
 interface Lead {
@@ -103,7 +104,7 @@ export default function LeadsPage() {
       </div>
 
       {loading ? (
-        <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        <KanbanSkeleton columns={6} />
       ) : (
         <DndContext
           sensors={sensors}

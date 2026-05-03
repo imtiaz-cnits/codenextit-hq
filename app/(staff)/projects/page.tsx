@@ -20,6 +20,7 @@ import { format } from "date-fns";
 import { cn } from "../../../lib/utils";
 import { toast } from "sonner";
 import Link from "next/link";
+import { CardGridSkeleton } from "../../../components/loading-skeletons";
 
 type Status = "planning" | "active" | "on_hold" | "completed" | "cancelled";
 type Category = "mern" | "laravel_php" | "wordpress" | "ui_ux" | "technical_seo" | "geo" | "aeo" | "schema_audit" | "other";
@@ -89,7 +90,7 @@ export default function ProjectsPage() {
       </div>
 
       {loading ? (
-        <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        <CardGridSkeleton count={6} />
       ) : projects.length === 0 ? (
         <Card><CardContent className="p-12 text-center text-muted-foreground"><Briefcase className="h-10 w-10 mx-auto mb-3 opacity-50" />No projects yet.</CardContent></Card>
       ) : (

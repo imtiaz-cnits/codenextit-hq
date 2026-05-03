@@ -13,6 +13,7 @@ import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetT
 import { Plus, AlertCircle, Loader2, MessageSquare, ArrowRight } from "lucide-react";
 import { formatDate } from "../../../lib/format";
 import { toast } from "sonner";
+import { TableSkeleton } from "../../../components/loading-skeletons";
 
 type Status = "open" | "in_progress" | "waiting_client" | "resolved" | "closed";
 type Priority = "low" | "normal" | "high" | "critical";
@@ -87,7 +88,7 @@ export default function TicketsPage() {
       </div>
 
       {loading ? (
-        <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        <TableSkeleton rows={8} cols={5} />
       ) : visible.length === 0 ? (
         <Card><CardContent className="p-12 text-center text-muted-foreground"><MessageSquare className="h-10 w-10 mx-auto mb-3 opacity-50" />No tickets here.</CardContent></Card>
       ) : (
