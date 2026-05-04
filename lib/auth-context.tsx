@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useMemo, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "../integrations/supabase/client";
 
@@ -121,7 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const value: AuthContextValue = {
+  const value = useMemo<AuthContextValue>(() => ({
     user,
     session,
     profile,
@@ -143,7 +143,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refresh: async () => {
       if (user) await loadProfileAndRoles(user.id);
     },
-  };
+  }), [user, session, profile, roles, permissions, loading]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

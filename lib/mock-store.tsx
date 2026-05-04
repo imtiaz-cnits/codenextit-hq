@@ -184,6 +184,9 @@ interface MockActions {
   addNotification: (userId: string, n: { title: string; body: string; type?: Notification["type"] }) => Promise<void>;
   notifyAdmins: (n: { title: string; body: string; type?: Notification["type"] }) => Promise<void>;
   setRole: (userId: string, role: string, active: boolean) => Promise<void>;
+  updateAttendance: (id: string, patch: Partial<AttendanceEntry>) => Promise<void>;
+  deleteAttendance: (id: string) => Promise<void>;
+  addManualAttendance: (employeeId: string, date: string, clockIn: string, clockOut: string | null) => Promise<void>;
 }
 
 const MockCtx = createContext<(MockState & MockActions) | null>(null);
@@ -498,6 +501,47 @@ export function MockProvider({ children }: { children: ReactNode }) {
     onError: (err: any) => toast.error(err.message),
   });
 
+  const updateAttendanceMutation = useMutation({
+    mutationFn: async ({ id, patch }: { id: string; patch: Partial<AttendanceEntry> }) => {
+      const { error } = await supabase.from("attendance").update(patch).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["attendance"] });
+      toast.success("Attendance updated");
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const deleteAttendanceMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("attendance").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["attendance"] });
+      toast.success("Attendance record removed");
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const addManualAttendanceMutation = useMutation({
+    mutationFn: async ({ employeeId, date, clockIn, clockOut }: { employeeId: string; date: string; clockIn: string; clockOut: string | null }) => {
+      const { error } = await supabase.from("attendance").insert({
+        employee_id: employeeId,
+        date,
+        clock_in: clockIn,
+        clock_out: clockOut,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["attendance"] });
+      toast.success("Attendance entry added");
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
   const addLeaveMutation = useMutation({
     mutationFn: async (l: any) => {
       const { error } = await supabase.from("leave_requests").insert(l);
@@ -599,6 +643,9 @@ export function MockProvider({ children }: { children: ReactNode }) {
         addExpense, addVaultFile,
         markNotificationRead, markAllNotificationsRead, addNotification, notifyAdmins,
         setRole,
+        updateAttendance: (id, patch) => updateAttendanceMutation.mutateAsync({ id, patch }),
+        deleteAttendance: (id) => deleteAttendanceMutation.mutateAsync(id),
+        addManualAttendance: (employeeId, date, clockIn, clockOut) => addManualAttendanceMutation.mutateAsync({ employeeId, date, clockIn, clockOut }),
       }}
     >
       {children}

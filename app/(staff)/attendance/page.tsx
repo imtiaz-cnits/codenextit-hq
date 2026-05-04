@@ -22,7 +22,7 @@ import {
   Clock, LogIn, LogOut, FileDown, FileSpreadsheet,
   Calendar as CalendarIcon, Coffee, Settings2,
   CalendarCheck2, Trash2, Save, Plus, AlertCircle,
-  ChevronLeft, ChevronRight, Smartphone, RotateCcw
+  ChevronLeft, ChevronRight, Smartphone, RotateCcw, Edit3, Trash
 } from "lucide-react";
 import { initials, avatarColor, formatDate, toLocalDateString } from "../../../lib/format";
 import { cn } from "../../../lib/utils";
@@ -30,11 +30,22 @@ import { toast } from "sonner";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { Skeleton } from "../../../components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../../../components/ui/dialog";
 
 type RangeType = "daily" | "weekly" | "monthly" | "yearly" | "custom";
 
 export default function AttendancePage() {
-  const { employees, attendance, toggleClock, loading, updateEmployee } = useMock();
+  const { 
+    employees, attendance, toggleClock, loading, updateEmployee,
+    updateAttendance, deleteAttendance, addManualAttendance 
+  } = useMock();
   const { user, hasRole } = useAuth();
   const isSuperAdmin = hasRole("super_admin");
 
@@ -63,9 +74,73 @@ export default function AttendancePage() {
   const [startDate, setStartDate] = useState(toLocalDateString(new Date(new Date().getFullYear(), new Date().getMonth(), 1)));
   const [endDate, setEndDate] = useState(today);
 
+  // Edit States
+  const [editingEntry, setEditingEntry] = useState<any>(null);
+  const [manualEntry, setManualEntry] = useState<any>(null);
+  const [editForm, setEditForm] = useState({ clockIn: "", clockOut: "", date: "", employeeId: "" });
+
   useEffect(() => {
     void loadData();
   }, []);
+
+  const handleEditClick = (entry: any) => {
+    setEditingEntry(entry);
+    const cin = entry.clock_in ? new Date(entry.clock_in) : null;
+    const cout = entry.clock_out ? new Date(entry.clock_out) : null;
+    
+    setEditForm({
+      clockIn: cin ? `${String(cin.getHours()).padStart(2, "0")}:${String(cin.getMinutes()).padStart(2, "0")}` : "",
+      clockOut: cout ? `${String(cout.getHours()).padStart(2, "0")}:${String(cout.getMinutes()).padStart(2, "0")}` : "",
+      date: entry.date,
+      employeeId: entry.employee_id
+    });
+  };
+
+  const handleManualClick = () => {
+    setManualEntry(true);
+    setEditForm({
+      clockIn: "09:00",
+      clockOut: "18:00",
+      date: today,
+      employeeId: employees[0]?.id || ""
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editForm.clockIn) {
+      toast.error("Clock in time is required");
+      return;
+    }
+
+    try {
+      const [hIn, mIn] = editForm.clockIn.split(":");
+      const [y, mo, d] = editForm.date.split("-");
+      
+      const clockInDate = new Date(Number(y), Number(mo) - 1, Number(d), Number(hIn), Number(mIn));
+      const clockInIso = clockInDate.toISOString();
+      
+      let clockOutIso = null;
+      if (editForm.clockOut) {
+        const [hOut, mOut] = editForm.clockOut.split(":");
+        const clockOutDate = new Date(Number(y), Number(mo) - 1, Number(d), Number(hOut), Number(mOut));
+        clockOutIso = clockOutDate.toISOString();
+      }
+
+      if (editingEntry) {
+        await updateAttendance(editingEntry.id, {
+          clock_in: clockInIso,
+          clock_out: clockOutIso,
+          date: editForm.date
+        });
+      } else {
+        await addManualAttendance(editForm.employeeId, editForm.date, clockInIso, clockOutIso);
+      }
+      setEditingEntry(null);
+      setManualEntry(null);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   async function loadData() {
     setFetching(true);
@@ -348,9 +423,16 @@ export default function AttendancePage() {
                   <CardTitle className="text-lg">Attendance Reports</CardTitle>
                   <CardDescription>View and export historical attendance data.</CardDescription>
                 </div>
-                <Button variant="outline" size="sm" className="h-9 font-semibold" onClick={exportPDF}>
-                  <FileDown className="h-4 w-4 mr-2 text-red-500" /> Export PDF
-                </Button>
+                <div className="flex items-center gap-2">
+                  {isSuperAdmin && (
+                    <Button variant="outline" size="sm" className="h-9 font-semibold border-primary text-primary" onClick={handleManualClick}>
+                      <Plus className="h-4 w-4 mr-2" /> Manual Entry
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" className="h-9 font-semibold" onClick={exportPDF}>
+                    <FileDown className="h-4 w-4 mr-2 text-red-500" /> Export PDF
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="pt-6 space-y-6">
@@ -389,7 +471,8 @@ export default function AttendancePage() {
                     <TableHead className="font-bold">Clock In</TableHead>
                     <TableHead className="font-bold">Clock Out</TableHead>
                     <TableHead className="font-bold text-center">IP Address</TableHead>
-                    <TableHead className="text-right font-bold">Status</TableHead>
+                    <TableHead className="font-bold">Status</TableHead>
+                    {isSuperAdmin && <TableHead className="text-right font-bold">Actions</TableHead>}
                   </TableRow></TableHeader>
                   <TableBody>
                     {reportData.length === 0 ? (
@@ -420,6 +503,18 @@ export default function AttendancePage() {
                               {r.isOnLeave ? "ON LEAVE" : (r.clock_out ? "PRESENT" : "ACTIVE")}
                             </Badge>
                           </TableCell>
+                          {isSuperAdmin && (
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-1">
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => handleEditClick(r)}>
+                                  <Edit3 className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => deleteAttendance(r.id)}>
+                                  <Trash className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          )}
                         </TableRow>
                       ))
                     )}
@@ -566,6 +661,61 @@ export default function AttendancePage() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Edit / Manual Entry Dialog */}
+      <Dialog open={!!editingEntry || !!manualEntry} onOpenChange={(open) => { if (!open) { setEditingEntry(null); setManualEntry(null); } }}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>{editingEntry ? "Edit Attendance" : "Manual Attendance Entry"}</DialogTitle>
+            <DialogDescription>
+              {editingEntry ? "Modify clock-in and clock-out times for this record." : "Create a new attendance record manually."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            {manualEntry && (
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label className="text-right">Staff</Label>
+                <div className="col-span-3">
+                  <Select value={editForm.employeeId} onValueChange={(v) => setEditForm({ ...editForm, employeeId: v })}>
+                    <SelectTrigger><SelectValue placeholder="Select staff member" /></SelectTrigger>
+                    <SelectContent>
+                      {employees.map(e => <SelectItem key={e.id} value={e.id}>{e.full_name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">Date</Label>
+              <div className="col-span-3">
+                <FlatDatePicker date={editForm.date} onChange={(d) => setEditForm({ ...editForm, date: d })} />
+              </div>
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">Clock In</Label>
+              <Input
+                type="time"
+                value={editForm.clockIn}
+                onChange={(e) => setEditForm({ ...editForm, clockIn: e.target.value })}
+                className="col-span-3"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">Clock Out</Label>
+              <Input
+                type="time"
+                value={editForm.clockOut}
+                onChange={(e) => setEditForm({ ...editForm, clockOut: e.target.value })}
+                className="col-span-3"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setEditingEntry(null); setManualEntry(null); }}>Cancel</Button>
+            <Button onClick={handleSaveEdit}>Save changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
