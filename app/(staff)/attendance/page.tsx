@@ -224,6 +224,25 @@ export default function AttendancePage() {
     }).sort((a, b) => b.date.localeCompare(a.date));
   }, [attendance, leaves, rangeType, startDate, endDate, employees, today]);
 
+  const isLate = (clockIn: string | null, emp: any) => {
+    if (!clockIn || !emp) return false;
+    
+    // Skip for Management department or Super Admin designation
+    if (emp.department === "Management" || emp.designation === "Super Admin") return false;
+
+    // Use employee's custom office_start if available, else fallback to global setting
+    const officeStart = emp.office_start || officeSettings.start;
+    const [startH, startM] = officeStart.split(":").map(Number);
+    const d = new Date(clockIn);
+    const clockInH = d.getHours();
+    const clockInM = d.getMinutes();
+    
+    const startTimeInMinutes = startH * 60 + startM;
+    const clockInTimeInMinutes = clockInH * 60 + clockInM;
+    
+    return clockInTimeInMinutes > (startTimeInMinutes + 15);
+  };
+
   const fmtTime = (iso: string | null) => iso ? new Date(iso).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : "—";
 
   const exportPDF = () => {
@@ -375,10 +394,15 @@ export default function AttendancePage() {
                           <TableCell className="font-mono text-xs font-bold">{fmtTime(a?.clock_in ?? null)}</TableCell>
                           <TableCell className="font-mono text-xs font-bold">{fmtTime(a?.clock_out ?? null)}</TableCell>
                           <TableCell>
-                            {status === "in" && <Badge className="bg-green-500/10 text-green-600 border-green-500/20 px-2 py-0.5">Working</Badge>}
-                            {status === "out" && <Badge variant="secondary" className="px-2 py-0.5">Done</Badge>}
-                            {status === "absent" && <Badge variant="outline" className="text-muted-foreground opacity-60 px-2 py-0.5">Not in</Badge>}
-                            {status === "leave" && <Badge variant="outline" className="bg-orange-500/10 text-orange-600 border-orange-500/20 px-2 py-0.5">On Leave</Badge>}
+                            <div className="flex items-center gap-2">
+                              {status === "in" && <Badge className="bg-green-500/10 text-green-600 border-green-500/20 px-2 py-0.5">Working</Badge>}
+                              {status === "out" && <Badge variant="secondary" className="px-2 py-0.5">Done</Badge>}
+                              {status === "absent" && <Badge variant="outline" className="text-muted-foreground opacity-60 px-2 py-0.5">Not in</Badge>}
+                              {status === "leave" && <Badge variant="outline" className="bg-orange-500/10 text-orange-600 border-orange-500/20 px-2 py-0.5">On Leave</Badge>}
+                              {(status === "in" || status === "out") && isLate(a?.clock_in ?? null, e) && (
+                                <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-500/20 px-2 py-0.5 animate-pulse">Late</Badge>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="text-right">
                             {status === "leave" ? (
@@ -492,16 +516,21 @@ export default function AttendancePage() {
                           <TableCell className="font-mono text-xs font-bold">{fmtTime(r.clock_in)}</TableCell>
                           <TableCell className="font-mono text-xs font-bold">{fmtTime(r.clock_out)}</TableCell>
                           <TableCell className="text-center font-mono text-[10px] text-muted-foreground">{r.ip_address || "—"}</TableCell>
-                          <TableCell className="text-right">
-                            <Badge
-                              variant={r.isOnLeave ? "outline" : "secondary"}
-                              className={cn(
-                                "px-2 py-0.5 text-[10px] font-bold",
-                                r.isOnLeave && "bg-orange-500/10 text-orange-600 border-orange-500/20"
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                variant={r.isOnLeave ? "outline" : "secondary"}
+                                className={cn(
+                                  "px-2 py-0.5 text-[10px] font-bold",
+                                  r.isOnLeave && "bg-orange-500/10 text-orange-600 border-orange-500/20"
+                                )}
+                              >
+                                {r.isOnLeave ? "ON LEAVE" : (r.clock_out ? "PRESENT" : "ACTIVE")}
+                              </Badge>
+                              {!r.isOnLeave && isLate(r.clock_in, r.employee) && (
+                                <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-500/20 px-2 py-0.5 text-[10px] font-bold">LATE</Badge>
                               )}
-                            >
-                              {r.isOnLeave ? "ON LEAVE" : (r.clock_out ? "PRESENT" : "ACTIVE")}
-                            </Badge>
+                            </div>
                           </TableCell>
                           {isSuperAdmin && (
                             <TableCell className="text-right">

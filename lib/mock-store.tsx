@@ -23,6 +23,8 @@ export interface Employee {
   registered_device_id?: string;
   profile_id?: string;
   avatar_url?: string | null;
+  office_start?: string;
+  office_end?: string;
 }
 
 export interface AttendanceEntry {
@@ -266,7 +268,9 @@ export function MockProvider({ children }: { children: ReactNode }) {
         emergency_contact: "",
         joined_at: new Date().toISOString().split('T')[0],
         base_salary: 0,
-        profile_id: user.id
+        profile_id: user.id,
+        office_start: "09:00",
+        office_end: "18:00"
       };
       
       void supabase.from("employees").insert([newEmp] as any).then(({ error }) => {
@@ -453,14 +457,14 @@ export function MockProvider({ children }: { children: ReactNode }) {
         console.error("IP detection failed", e);
       }
 
-      // 3. Verify Device
+      // 3. Verify Device (Skip for Super Admins)
       const emp = employees.find((e: any) => e.id === empId);
-      if (emp?.registered_device_id && emp.registered_device_id !== deviceId) {
+      if (!isSuperAdmin && emp?.registered_device_id && emp.registered_device_id !== deviceId) {
         throw new Error("Device Mismatch! You can only give attendance from your registered device.");
       }
 
-      // 4. Register device if not already set
-      if (emp && !emp.registered_device_id) {
+      // 4. Register device if not already set (Skip for Super Admins)
+      if (!isSuperAdmin && emp && !emp.registered_device_id) {
         const { error: regErr } = await (supabase.from("employees") as any).update({ registered_device_id: deviceId }).eq("id", empId);
         if (regErr) console.error("Could not register device", regErr);
       }
@@ -480,19 +484,24 @@ export function MockProvider({ children }: { children: ReactNode }) {
       });
       if (clockError) throw clockError;
 
-      // 6. Notify user
-      await addNotification(user!.id, {
+      // 6. Notify targeted employee (and admin if acting on self)
+      const targetProfileId = emp?.profile_id || user!.id;
+      await addNotification(targetProfileId, {
         title: isClockOut ? "Clocked Out" : "Clocked In",
-        body: isClockOut ? `Good work today! You clocked out at ${new Date().toLocaleTimeString()}.` : `Welcome! You clocked in at ${new Date().toLocaleTimeString()}.`,
+        body: isSuperAdmin && targetProfileId !== user!.id 
+          ? `An administrator has ${isClockOut ? "clocked you out" : "clocked you in"} at ${new Date().toLocaleTimeString()}.`
+          : (isClockOut ? `Good work today! You clocked out at ${new Date().toLocaleTimeString()}.` : `Welcome! You clocked in at ${new Date().toLocaleTimeString()}.`),
         type: "success"
       });
 
-      // 7. Notify Admins
-      await notifyAdmins({
-        title: isClockOut ? "Staff Clocked Out" : "Staff Clocked In",
-        body: `${emp?.full_name || "An employee"} just ${isClockOut ? "clocked out" : "clocked in"}.`,
-        type: "info"
-      });
+      // 7. Notify Admins (only if a regular staff performed the action)
+      if (!isSuperAdmin) {
+        await notifyAdmins({
+          title: isClockOut ? "Staff Clocked Out" : "Staff Clocked In",
+          body: `${emp?.full_name || "An employee"} just ${isClockOut ? "clocked out" : "clocked in"}.`,
+          type: "info"
+        });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["attendance"] });

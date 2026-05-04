@@ -17,7 +17,7 @@ import {
 } from "../../../components/ui/dropdown-menu";
 import { 
   Plus, Phone, Mail, Heart, Search, MoreVertical, Edit, Trash2, Eye, 
-  ShieldAlert, Briefcase, Calendar, Banknote, Shield, Upload, Camera, X 
+  ShieldAlert, Briefcase, Calendar, Banknote, Shield, Upload, Camera, X, Clock
 } from "lucide-react";
 import { FlatDatePicker } from "../../../components/ui/flat-date-picker";
 import { initials, avatarColor, formatCurrency, formatDate } from "../../../lib/format";
@@ -287,6 +287,8 @@ function EmployeeSheet({
     joined_at: initialData?.joined_at ?? new Date().toISOString().slice(0, 10),
     base_salary: initialData?.base_salary?.toString() ?? "0",
     avatar_url: initialData?.avatar_url ?? "",
+    office_start: initialData?.office_start ?? "09:00",
+    office_end: initialData?.office_end ?? "18:00",
   });
 
   const [uploading, setUploading] = useState(false);
@@ -348,7 +350,9 @@ function EmployeeSheet({
         full_name: "", email: "", designation: "", department: "Engineering", 
         phone: "", blood_group: "", emergency_contact: "", 
         joined_at: new Date().toISOString().slice(0, 10), base_salary: "0",
-        avatar_url: ""
+        avatar_url: "",
+        office_start: "09:00",
+        office_end: "18:00"
       });
     }
   }
@@ -455,6 +459,21 @@ function EmployeeSheet({
               <Input type="number" className="pl-7" value={f.base_salary} onChange={(e) => setF({ ...f, base_salary: e.target.value })} />
             </div>
           </Fld>
+
+          <div className="grid grid-cols-2 gap-4 p-4 bg-primary/5 rounded-2xl border border-primary/10 mt-2">
+            <Fld label="Office Start">
+              <div className="relative">
+                <Input type="time" value={f.office_start} onChange={(e) => setF({ ...f, office_start: e.target.value })} className="pl-9" />
+                <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary" />
+              </div>
+            </Fld>
+            <Fld label="Office End">
+              <div className="relative">
+                <Input type="time" value={f.office_end} onChange={(e) => setF({ ...f, office_end: e.target.value })} className="pl-9" />
+                <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary" />
+              </div>
+            </Fld>
+          </div>
           <SheetFooter className="pt-4">
             <Button type="submit" className="w-full">
               {mode === "create" ? "Add to Directory" : "Save Changes"}
