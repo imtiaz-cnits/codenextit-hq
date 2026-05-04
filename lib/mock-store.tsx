@@ -512,7 +512,7 @@ export function MockProvider({ children }: { children: ReactNode }) {
 
   const updateAttendanceMutation = useMutation({
     mutationFn: async ({ id, patch }: { id: string; patch: Partial<AttendanceEntry> }) => {
-      const { error } = await supabase.from("attendance").update(patch).eq("id", id);
+      const { error } = await (supabase.from("attendance") as any).update(patch).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
