@@ -51,7 +51,8 @@ export default function AttendancePage() {
 
   const currentUserEmp = employees.find(e => e.profile_id === user?.id) ||
     employees.find(e => e.email === user?.email);
-  const displayEmployees = isSuperAdmin ? employees : (currentUserEmp ? [currentUserEmp] : []);
+  const activeEmployees = employees.filter(e => e.status !== "disabled");
+  const displayEmployees = isSuperAdmin ? activeEmployees : (currentUserEmp && currentUserEmp.status !== "disabled" ? [currentUserEmp] : []);
 
   const [activeTab, setActiveTab] = useState("roster");
   const today = toLocalDateString();
@@ -126,7 +127,7 @@ export default function AttendancePage() {
         clockOutIso = clockOutDate.toISOString();
       }
 
-      if (editingEntry) {
+      if (editingEntry && !editingEntry.isVirtual) {
         await updateAttendance(editingEntry.id, {
           clock_in: clockInIso,
           clock_out: clockOutIso,
@@ -209,20 +210,64 @@ export default function AttendancePage() {
   }, [attendance, today]);
 
   const reportData = useMemo(() => {
-    return attendance.filter((a) => {
-      const rowDate = a.date.slice(0, 10);
-      if (rangeType === "daily") return rowDate === today;
-      return rowDate >= startDate && rowDate <= endDate;
-    }).map(a => {
-      const emp = employees.find(e => e.id === a.employee_id);
-      const isOnLeave = leaves.some(l =>
-        l.employee_id === a.employee_id &&
-        a.date.slice(0, 10) >= l.from_date &&
-        a.date.slice(0, 10) <= l.to_date
-      );
-      return { ...a, employee: emp, isOnLeave };
-    }).sort((a, b) => b.date.localeCompare(a.date));
-  }, [attendance, leaves, rangeType, startDate, endDate, employees, today]);
+    const data: any[] = [];
+    const start = parseISO(startDate);
+    const end = parseISO(endDate);
+
+    // Get all dates in interval
+    const intervalDays = eachDayOfInterval({ start, end });
+
+    for (const d of intervalDays) {
+      const dStr = toLocalDateString(d);
+      const isWeekend = d.getDay() === officeSettings.weekend;
+      const holiday = holidays.find(h => h.date === dStr);
+      const isHoliday = isWeekend || !!holiday;
+
+      for (const emp of displayEmployees) {
+        const a = attendance.find(x => x.employee_id === emp.id && x.date === dStr);
+        const leave = leaves.find(l => 
+          l.employee_id === emp.id && 
+          dStr >= l.from_date && 
+          dStr <= l.to_date &&
+          l.status === 'approved'
+        );
+
+        if (a) {
+          data.push({ ...a, employee: emp, isOnLeave: !!leave, isHoliday });
+        } else if (dStr <= today) {
+          if (leave) {
+            data.push({
+              id: `leave-${emp.id}-${dStr}`,
+              employee_id: emp.id,
+              date: dStr,
+              clock_in: null,
+              clock_out: null,
+              employee: emp,
+              isOnLeave: true,
+              isHoliday,
+              status: 'leave',
+              isVirtual: true
+            });
+          } else if (!isHoliday) {
+            data.push({
+              id: `absent-${emp.id}-${dStr}`,
+              employee_id: emp.id,
+              date: dStr,
+              clock_in: null,
+              clock_out: null,
+              employee: emp,
+              isOnLeave: false,
+              isHoliday: false,
+              isAbsent: true,
+              isVirtual: true
+            });
+          }
+        }
+      }
+    }
+    
+    return data.sort((a, b) => b.date.localeCompare(a.date));
+  }, [attendance, leaves, rangeType, startDate, endDate, employees, holidays, officeSettings, today, displayEmployees]);
 
   const isLate = (clockIn: string | null, emp: any) => {
     if (!clockIn || !emp) return false;
@@ -375,7 +420,9 @@ export default function AttendancePage() {
                         today >= l.from_date &&
                         today <= l.to_date
                       );
-                      const status = !a?.clock_in ? (isOnLeave ? "leave" : "absent") : a.clock_out ? "out" : "in";
+                      const status = !a?.clock_in 
+                        ? (isOnLeave ? "leave" : (isTodayHoliday && !overrideHoliday ? "holiday" : "absent")) 
+                        : (a.clock_out ? "out" : "in");
                       return (
                         <TableRow key={e.id} className="hover:bg-muted/10 transition-colors">
                           <TableCell>
@@ -397,7 +444,8 @@ export default function AttendancePage() {
                             <div className="flex items-center gap-2">
                               {status === "in" && <Badge className="bg-green-500/10 text-green-600 border-green-500/20 px-2 py-0.5">Working</Badge>}
                               {status === "out" && <Badge variant="secondary" className="px-2 py-0.5">Done</Badge>}
-                              {status === "absent" && <Badge variant="outline" className="text-muted-foreground opacity-60 px-2 py-0.5">Not in</Badge>}
+                              {status === "absent" && <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-500/20 px-2 py-0.5">Absent</Badge>}
+                              {status === "holiday" && <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/20 px-2 py-0.5">Holiday</Badge>}
                               {status === "leave" && <Badge variant="outline" className="bg-orange-500/10 text-orange-600 border-orange-500/20 px-2 py-0.5">On Leave</Badge>}
                               {(status === "in" || status === "out") && isLate(a?.clock_in ?? null, e) && (
                                 <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-500/20 px-2 py-0.5 animate-pulse">Late</Badge>
@@ -436,7 +484,7 @@ export default function AttendancePage() {
         </TabsContent>
 
         <TabsContent value="calendar" className="space-y-6">
-          <AttendanceCalendar leaves={leaves} holidays={holidays} employees={employees} />
+          <AttendanceCalendar leaves={leaves} holidays={holidays} employees={displayEmployees} />
         </TabsContent>
 
         <TabsContent value="reports" className="space-y-6">
@@ -519,15 +567,16 @@ export default function AttendancePage() {
                           <TableCell>
                             <div className="flex items-center gap-2">
                               <Badge
-                                variant={r.isOnLeave ? "outline" : "secondary"}
+                                variant={r.isAbsent ? "destructive" : (r.isOnLeave ? "outline" : "secondary")}
                                 className={cn(
                                   "px-2 py-0.5 text-[10px] font-bold",
-                                  r.isOnLeave && "bg-orange-500/10 text-orange-600 border-orange-500/20"
+                                  r.isOnLeave && "bg-orange-500/10 text-orange-600 border-orange-500/20",
+                                  r.isAbsent && "bg-red-500/10 text-red-600 border-red-500/20"
                                 )}
                               >
-                                {r.isOnLeave ? "ON LEAVE" : (r.clock_out ? "PRESENT" : "ACTIVE")}
+                                {r.isAbsent ? "ABSENT" : (r.isOnLeave ? "ON LEAVE" : (r.clock_out ? "PRESENT" : "ACTIVE"))}
                               </Badge>
-                              {!r.isOnLeave && isLate(r.clock_in, r.employee) && (
+                              {!r.isOnLeave && !r.isAbsent && isLate(r.clock_in, r.employee) && (
                                 <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-500/20 px-2 py-0.5 text-[10px] font-bold">LATE</Badge>
                               )}
                             </div>
@@ -535,12 +584,14 @@ export default function AttendancePage() {
                           {isSuperAdmin && (
                             <TableCell className="text-right">
                               <div className="flex justify-end gap-1">
-                                <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => handleEditClick(r)}>
-                                  <Edit3 className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => deleteAttendance(r.id)}>
-                                  <Trash className="h-3.5 w-3.5" />
-                                </Button>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => handleEditClick(r)}>
+                                    <Edit3 className="h-3.5 w-3.5" />
+                                  </Button>
+                                  {!r.isVirtual && (
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => deleteAttendance(r.id)}>
+                                      <Trash className="h-3.5 w-3.5" />
+                                    </Button>
+                                  )}
                               </div>
                             </TableCell>
                           )}
@@ -708,7 +759,7 @@ export default function AttendancePage() {
                   <Select value={editForm.employeeId} onValueChange={(v) => setEditForm({ ...editForm, employeeId: v })}>
                     <SelectTrigger><SelectValue placeholder="Select staff member" /></SelectTrigger>
                     <SelectContent>
-                      {employees.map(e => <SelectItem key={e.id} value={e.id}>{e.full_name}</SelectItem>)}
+                      {displayEmployees.map(e => <SelectItem key={e.id} value={e.id}>{e.full_name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>

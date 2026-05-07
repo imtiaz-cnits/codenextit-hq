@@ -29,7 +29,7 @@ import { CardGridSkeleton } from "../../../components/loading-skeletons";
 const DEPARTMENTS = ["All", "Engineering", "Design", "SEO", "Management"];
 
 export default function TeamPage() {
-  const { employees, addEmployee, updateEmployee, removeEmployee, setRole, loading } = useMock();
+  const { employees, addEmployee, updateEmployee, removeEmployee, setRole, removeUser, loading } = useMock();
   const { hasRole } = useAuth();
   const [q, setQ] = useState("");
   const [dept, setDept] = useState("All");
@@ -103,21 +103,33 @@ export default function TeamPage() {
                       <Trash2 className="h-4 w-4 mr-2" /> Delete
                     </DropdownMenuItem>
                     {hasRole("super_admin") && (
-                      <DropdownMenuItem onClick={async (ev) => { 
-                        ev.stopPropagation(); 
-                        // Find user ID by email
-                        const { data } = await supabase.from("profiles").select("id").eq("email", e.email).maybeSingle();
-                        if (data) {
-                          setUserId(data.id);
-                          const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", data.id);
-                          setUserRoles((roles || []).map(r => r.role));
-                          setManagingRole(e);
-                        } else {
-                          toast.error("This employee doesn't have a user account yet.");
-                        }
-                      }}>
-                        <Shield className="h-4 w-4 mr-2" /> Manage Access
-                      </DropdownMenuItem>
+                      <>
+                        <DropdownMenuItem 
+                          className={cn(e.status === "disabled" ? "text-green-600" : "text-orange-600")}
+                          onClick={(ev) => { 
+                            ev.stopPropagation(); 
+                            updateEmployee(e.id, { status: e.status === "disabled" ? "active" : "disabled" });
+                          }}
+                        >
+                          <ShieldAlert className="h-4 w-4 mr-2" /> 
+                          {e.status === "disabled" ? "Enable Account" : "Disable Account"}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={async (ev) => { 
+                          ev.stopPropagation(); 
+                          // Find user ID by email
+                          const { data } = await supabase.from("profiles").select("id").eq("email", e.email).maybeSingle();
+                          if (data) {
+                            setUserId(data.id);
+                            const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", data.id);
+                            setUserRoles((roles || []).map(r => r.role));
+                            setManagingRole(e);
+                          } else {
+                            toast.error("This employee doesn't have a user account yet.");
+                          }
+                        }}>
+                          <Shield className="h-4 w-4 mr-2" /> Manage Access
+                        </DropdownMenuItem>
+                      </>
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -134,7 +146,10 @@ export default function TeamPage() {
                   <div className="min-w-0 flex-1">
                     <CardTitle className="text-base truncate group-hover:text-primary transition-colors">{e.full_name}</CardTitle>
                     <CardDescription className="text-xs truncate font-medium">{e.designation}</CardDescription>
-                    <Badge variant="secondary" className="mt-1.5 text-[10px] h-5">{e.department}</Badge>
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <Badge variant="secondary" className="text-[10px] h-5">{e.department}</Badge>
+                      {e.status === "disabled" && <Badge variant="destructive" className="text-[10px] h-5 uppercase">Disabled</Badge>}
+                    </div>
                   </div>
                 </div>
               </CardHeader>
@@ -159,14 +174,17 @@ export default function TeamPage() {
             <>
               <DialogHeader>
                 <div className="flex items-center gap-4 mb-4">
-                  <Avatar className="h-16 w-16 border-4 border-muted">
+                  <Avatar className={cn("h-16 w-16 border-4 border-muted", selectedEmp.status === "disabled" && "opacity-50")}>
                     {selectedEmp.avatar_url && <AvatarImage src={selectedEmp.avatar_url} className="object-cover" />}
                     <AvatarFallback className={cn("text-xl text-white", avatarColor(selectedEmp.full_name))}>
                       {initials(selectedEmp.full_name)}
                     </AvatarFallback>
                   </Avatar>
                   <div>
-                    <DialogTitle className="text-2xl">{selectedEmp.full_name}</DialogTitle>
+                    <div className="flex items-center gap-2">
+                      <DialogTitle className="text-2xl">{selectedEmp.full_name}</DialogTitle>
+                      {selectedEmp.status === "disabled" && <Badge variant="destructive">DISABLED</Badge>}
+                    </div>
                     <DialogDescription className="text-base font-medium text-primary">
                       {selectedEmp.designation}
                     </DialogDescription>
@@ -227,6 +245,25 @@ export default function TeamPage() {
                 </div>
               );
             })}
+
+            <div className="pt-4 border-t mt-4">
+              <Button 
+                variant="destructive" 
+                className="w-full gap-2"
+                onClick={async () => {
+                  if (!userId || !managingRole) return;
+                  if (confirm(`Are you sure you want to permanently delete the user account for ${managingRole.full_name}? This will remove their profile and all assigned roles.`)) {
+                    await removeUser(userId);
+                    setManagingRole(null);
+                  }
+                }}
+              >
+                <Trash2 className="h-4 w-4" /> Delete User Account
+              </Button>
+              <p className="text-[10px] text-muted-foreground mt-2 text-center">
+                This action removes access and profile data from the database.
+              </p>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useAuth, type AppRole } from "../../../lib/auth-context";
+import { useMock } from "../../../lib/mock-store";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
@@ -194,6 +195,7 @@ interface ClientRow { id: string; company_name: string }
 interface UserPermission { module_name: string; is_enabled: boolean }
 
 function UsersPanel() {
+  const { removeUser } = useMock();
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<UserRow[]>([]);
   const [clients, setClients] = useState<ClientRow[]>([]);
@@ -368,6 +370,26 @@ function UsersPanel() {
                       </SelectContent>
                     </Select>
                   </div>
+                </div>
+
+                <div className="pt-6 border-t mt-4">
+                  <Button 
+                    variant="destructive" 
+                    className="w-full gap-2 shadow-sm"
+                    onClick={async () => {
+                      if (!active) return;
+                      if (confirm(`Are you sure you want to permanently delete the user account for ${active.full_name || active.email}? This will remove their profile and all assigned roles.`)) {
+                        await removeUser(active.id);
+                        setActive(null);
+                        load(); // refresh list
+                      }
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" /> Delete User Account
+                  </Button>
+                  <p className="text-[10px] text-muted-foreground mt-2 text-center font-medium">
+                    This action is permanent and removes all access data for this person.
+                  </p>
                 </div>
               </div>
             </>

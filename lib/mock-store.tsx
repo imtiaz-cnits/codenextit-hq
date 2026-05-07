@@ -25,6 +25,7 @@ export interface Employee {
   avatar_url?: string | null;
   office_start?: string;
   office_end?: string;
+  status?: "active" | "disabled";
 }
 
 export interface AttendanceEntry {
@@ -186,6 +187,7 @@ interface MockActions {
   addNotification: (userId: string, n: { title: string; body: string; type?: Notification["type"] }) => Promise<void>;
   notifyAdmins: (n: { title: string; body: string; type?: Notification["type"] }) => Promise<void>;
   setRole: (userId: string, role: string, active: boolean) => Promise<void>;
+  removeUser: (userId: string) => Promise<void>;
   updateAttendance: (id: string, patch: Partial<AttendanceEntry>) => Promise<void>;
   deleteAttendance: (id: string) => Promise<void>;
   addManualAttendance: (employeeId: string, date: string, clockIn: string, clockOut: string | null) => Promise<void>;
@@ -270,7 +272,8 @@ export function MockProvider({ children }: { children: ReactNode }) {
         base_salary: 0,
         profile_id: user.id,
         office_start: "09:00",
-        office_end: "18:00"
+        office_end: "18:00",
+        status: "active"
       };
       
       void supabase.from("employees").insert([newEmp] as any).then(({ error }) => {
@@ -626,6 +629,14 @@ export function MockProvider({ children }: { children: ReactNode }) {
     queryClient.invalidateQueries({ queryKey: ["notifications", user.id] });
   }, [user]);
 
+  const removeUser = async (userId: string) => {
+    const { error: roleErr } = await (supabase.from("user_roles") as any).delete().eq("user_id", userId);
+    if (roleErr) throw roleErr;
+    const { error: profErr } = await supabase.from("profiles").delete().eq("id", userId);
+    if (profErr) throw profErr;
+    toast.success("User access and profile removed");
+  };
+
   const setRole = async (userId: string, role: string, active: boolean) => {
     if (active) {
       await (supabase.from("user_roles") as any).insert({ user_id: userId, role });
@@ -655,6 +666,7 @@ export function MockProvider({ children }: { children: ReactNode }) {
         updateAttendance: (id, patch) => updateAttendanceMutation.mutateAsync({ id, patch }),
         deleteAttendance: (id) => deleteAttendanceMutation.mutateAsync(id),
         addManualAttendance: (employeeId, date, clockIn, clockOut) => addManualAttendanceMutation.mutateAsync({ employeeId, date, clockIn, clockOut }),
+        removeUser,
       }}
     >
       {children}

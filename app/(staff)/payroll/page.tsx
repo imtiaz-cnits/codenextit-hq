@@ -28,6 +28,7 @@ interface Employee {
   base_salary: number; 
   full_name: string;
   avatar_url?: string | null;
+  status?: string;
 }
 
 export default function PayrollPage() {
@@ -45,7 +46,7 @@ export default function PayrollPage() {
     setLoading(true);
     
     let payQuery = supabase.from("payroll").select("*").order("created_at", { ascending: false });
-    let empQuery = supabase.from("employees").select("id, profile_id, base_salary, profiles(full_name, avatar_url)");
+    let empQuery = supabase.from("employees").select("id, profile_id, base_salary, status, profiles(full_name, avatar_url)");
     
     if (!isSuperAdmin && user?.id) {
       // Find the employee ID for current user
@@ -67,13 +68,16 @@ export default function PayrollPage() {
       empQuery,
     ]);
 
-    const formattedEmp = (emp ?? []).map((e: any) => ({
-      id: e.id,
-      profile_id: e.profile_id,
-      base_salary: e.base_salary,
-      full_name: e.profiles?.full_name || "Unknown",
-      avatar_url: e.profiles?.avatar_url,
-    }));
+    const formattedEmp = (emp ?? [])
+      .map((e: any) => ({
+        id: e.id,
+        profile_id: e.profile_id,
+        base_salary: e.base_salary,
+        status: e.status,
+        full_name: e.profiles?.full_name || "Unknown",
+        avatar_url: e.profiles?.avatar_url,
+      }))
+      .filter((e) => e.status !== "disabled");
 
     setEmployees(formattedEmp);
     setPayrolls((pay ?? []) as unknown as PayrollRow[]);
