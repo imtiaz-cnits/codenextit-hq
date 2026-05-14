@@ -12,8 +12,9 @@ import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
 import { Textarea } from "../../../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../../../components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui/tabs";
-import { Plus, Check, X, Loader2, ChevronLeft, ChevronRight, RotateCcw, FileText, Download, Calendar as CalendarIcon } from "lucide-react";
+import { Plus, Check, X, Loader2, ChevronLeft, ChevronRight, RotateCcw, FileText, Download, Calendar as CalendarIcon, Eye } from "lucide-react";
 import { FlatDatePicker } from "../../../components/ui/flat-date-picker";
 import { initials, avatarColor, formatDate } from "../../../lib/format";
 import { supabase } from "../../../integrations/supabase/client";
@@ -65,6 +66,7 @@ export default function LeavePage() {
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+  const [selectedLeave, setSelectedLeave] = useState<Leave | null>(null);
   
   // Report Filters
   const [reportRange, setReportRange] = useState({
@@ -195,151 +197,274 @@ export default function LeavePage() {
         <Stat label="Rejected" value={counts.rejected} tone="destructive" />
       </div>
 
-      <Tabs defaultValue="list">
-        <TabsList>
-          <TabsTrigger value="list">List</TabsTrigger>
-          <TabsTrigger value="calendar">Calendar</TabsTrigger>
-          <TabsTrigger value="reports">Reports</TabsTrigger>
-        </TabsList>
+      <Tabs defaultValue={isSuperAdmin ? "staff" : "list"}>
+        <div className="overflow-x-auto pb-2 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide">
+          <TabsList className="inline-flex w-auto p-1 h-auto bg-muted/50 rounded-xl whitespace-nowrap">
+            {isSuperAdmin && <TabsTrigger value="staff" className="px-4 py-2 rounded-lg">Staff Requests</TabsTrigger>}
+            <TabsTrigger value="list" className="px-4 py-2 rounded-lg">My Requests</TabsTrigger>
+            <TabsTrigger value="calendar" className="px-4 py-2 rounded-lg">Calendar</TabsTrigger>
+            <TabsTrigger value="reports" className="px-4 py-2 rounded-lg">Reports</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="list" className="mt-4">
-          <Card>
-            <CardHeader><CardTitle className="text-base">All requests</CardTitle></CardHeader>
-            <CardContent>
-              {loading ? (
-                <TableSkeleton rows={8} cols={7} />
-              ) : leaves.length === 0 ? (
-                <div className="text-center text-muted-foreground py-12 text-sm">No leave requests yet.</div>
-              ) : (
-                <Table>
-                  <TableHeader><TableRow>
-                    <TableHead>Employee</TableHead><TableHead>Type</TableHead>
-                    <TableHead>From</TableHead><TableHead>To</TableHead>
-                    <TableHead>Reason</TableHead><TableHead>Status</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
-                  </TableRow></TableHeader>
-                  <TableBody>
-                    {leaves.map((l) => {
-                      const e = employee(l.employee_id);
-                      return (
-                        <TableRow key={l.id}>
-                          <TableCell>
-                            {e ? (
-                              <div className="flex items-center gap-2">
-                              <Avatar className="h-7 w-7">
-                                {e.avatar_url && <AvatarImage src={e.avatar_url} className="object-cover" />}
-                                <AvatarFallback className={avatarColor(e.full_name)}>{initials(e.full_name)}</AvatarFallback>
-                              </Avatar>
-                                <div>
-                                  <div className="font-medium text-sm">{e.full_name}</div>
-                                  <div className="text-xs text-muted-foreground">{e.department}</div>
-                                </div>
-                              </div>
-                            ) : <span className="text-xs text-muted-foreground">Unknown</span>}
-                          </TableCell>
-                          <TableCell><Badge variant="outline" className={`capitalize ${LEAVE_TONE[l.type]}`}>{l.type}</Badge></TableCell>
-                          <TableCell className="text-sm">{formatDate(l.from_date)}</TableCell>
-                          <TableCell className="text-sm">{formatDate(l.to_date)}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground max-w-[240px] truncate">{l.reason ?? "—"}</TableCell>
-                          <TableCell>
-                            <Badge variant={l.status === "approved" ? "default" : l.status === "rejected" ? "destructive" : "secondary"} className="capitalize">{l.status}</Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-1">
-                              {isSuperAdmin && l.status === "pending" && (
-                                <>
-                                  <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => setStatus(l.id, "approved")} title="Approve">
-                                    <Check className="h-4 w-4 text-success" />
-                                  </Button>
-                                  <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => setStatus(l.id, "rejected")} title="Reject">
-                                    <X className="h-4 w-4 text-destructive" />
-                                  </Button>
-                                </>
-                              )}
-                              {isSuperAdmin && l.status !== "pending" && (
-                                <Button size="sm" variant="ghost" className="h-8 w-8 p-0 hover:bg-muted" onClick={() => setStatus(l.id, "pending")} title="Reset to Pending">
-                                  <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
-                                </Button>
-                              )}
-                              {!isSuperAdmin && (
-                                <Badge variant="outline" className="text-[10px] font-normal">
-                                  {l.status === 'pending' ? 'Awaiting' : 'Processed'}
-                                </Badge>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
+          <LeaveTable 
+            leaves={isSuperAdmin ? leaves.filter(l => l.employee_id === currentUserEmp?.id) : leaves} 
+            loading={loading} 
+            isSuperAdmin={isSuperAdmin} 
+            onView={setSelectedLeave}
+            onAction={setStatus}
+            employee={employee}
+          />
         </TabsContent>
+
+        {isSuperAdmin && (
+          <TabsContent value="staff" className="mt-4">
+            <LeaveTable 
+              leaves={leaves.filter(l => l.employee_id !== currentUserEmp?.id)} 
+              loading={loading} 
+              isSuperAdmin={isSuperAdmin} 
+              onView={setSelectedLeave}
+              onAction={setStatus}
+              employee={employee}
+              showEmployeeInfo={true}
+            />
+          </TabsContent>
+        )}
 
         <TabsContent value="calendar" className="mt-4">
           <LeaveCalendar leaves={leaves} employees={employees} />
         </TabsContent>
 
-        <TabsContent value="reports" className="mt-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <div>
-                <CardTitle className="text-lg">Leave Report</CardTitle>
-                <p className="text-xs text-muted-foreground">Detailed summary and history</p>
+      <TabsContent value="reports" className="mt-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <div>
+              <CardTitle className="text-lg">Leave Report</CardTitle>
+              <p className="text-xs text-muted-foreground">Detailed summary and history</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 mr-4">
+                <FlatDatePicker 
+                  date={reportRange.from} 
+                  onChange={d => setReportRange({...reportRange, from: d})} 
+                  className="h-9 w-[180px]"
+                />
+                <span className="text-muted-foreground text-xs font-medium">to</span>
+                <FlatDatePicker 
+                  date={reportRange.to} 
+                  onChange={d => setReportRange({...reportRange, to: d})} 
+                  className="h-9 w-[180px]"
+                />
               </div>
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5 mr-4">
-                  <FlatDatePicker 
-                    date={reportRange.from} 
-                    onChange={d => setReportRange({...reportRange, from: d})} 
-                    className="h-9 w-[180px]"
-                  />
-                  <span className="text-muted-foreground text-xs font-medium">to</span>
-                  <FlatDatePicker 
-                    date={reportRange.to} 
-                    onChange={d => setReportRange({...reportRange, to: d})} 
-                    className="h-9 w-[180px]"
-                  />
-                </div>
-                <Button size="sm" variant="outline" onClick={exportCSV} className="h-9"><Download className="h-3.5 w-3.5 mr-1" /> Excel</Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-4 gap-4 mb-6">
-                <SummaryCard label="Total Days" value={filteredReports.length} icon={FileText} />
-                <SummaryCard label="Approved" value={filteredReports.filter(r => r.status === 'approved').length} tone="success" />
-                <SummaryCard label="Pending" value={filteredReports.filter(r => r.status === 'pending').length} tone="warning" />
-                <SummaryCard label="Rejected" value={filteredReports.filter(r => r.status === 'rejected').length} tone="destructive" />
-              </div>
-              
-              <Table>
-                <TableHeader><TableRow>
-                  <TableHead>Employee</TableHead>
-                  <TableHead>Duration</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Reason</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow></TableHeader>
-                <TableBody>
-                  {filteredReports.map((l) => (
-                    <TableRow key={l.id}>
-                      <TableCell className="font-medium text-sm">{employee(l.employee_id)?.full_name ?? "—"}</TableCell>
-                      <TableCell className="text-xs">{formatDate(l.from_date)} - {formatDate(l.to_date)}</TableCell>
-                      <TableCell><Badge variant="outline" className={`text-[10px] uppercase ${LEAVE_TONE[l.type]}`}>{l.type}</Badge></TableCell>
-                      <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">{l.reason ?? "—"}</TableCell>
-                      <TableCell><Badge variant={l.status === 'approved' ? 'default' : 'secondary'} className="capitalize text-[10px]">{l.status}</Badge></TableCell>
-                    </TableRow>
-                  ))}
-                  {filteredReports.length === 0 && <TableRow><TableCell colSpan={5} className="text-center py-10 text-muted-foreground text-sm">No data for selected range.</TableCell></TableRow>}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
+              <Button size="sm" variant="outline" onClick={exportCSV} className="h-9"><Download className="h-3.5 w-3.5 mr-1" /> Excel</Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-4 gap-4 mb-6">
+              <SummaryCard label="Total Days" value={filteredReports.length} icon={FileText} />
+              <SummaryCard label="Approved" value={filteredReports.filter(r => r.status === 'approved').length} tone="success" />
+              <SummaryCard label="Pending" value={filteredReports.filter(r => r.status === 'pending').length} tone="warning" />
+              <SummaryCard label="Rejected" value={filteredReports.filter(r => r.status === 'rejected').length} tone="destructive" />
+            </div>
+            
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>Employee</TableHead>
+                <TableHead>Duration</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead>Reason</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>
+                {filteredReports.map((l) => (
+                  <TableRow key={l.id}>
+                    <TableCell className="font-medium text-sm">{employee(l.employee_id)?.full_name ?? "—"}</TableCell>
+                    <TableCell className="text-xs">{formatDate(l.from_date)} - {formatDate(l.to_date)}</TableCell>
+                    <TableCell><Badge variant="outline" className={`text-[10px] uppercase ${LEAVE_TONE[l.type]}`}>{l.type}</Badge></TableCell>
+                    <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">{l.reason ?? "—"}</TableCell>
+                    <TableCell><Badge variant={l.status === 'approved' ? 'default' : 'secondary'} className="capitalize text-[10px]">{l.status}</Badge></TableCell>
+                  </TableRow>
+                ))}
+                {filteredReports.length === 0 && <TableRow><TableCell colSpan={5} className="text-center py-10 text-muted-foreground text-sm">No data for selected range.</TableCell></TableRow>}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </TabsContent>
       </Tabs>
+
+      <LeaveDetailsDialog 
+        leave={selectedLeave} 
+        onClose={() => setSelectedLeave(null)} 
+        employee={selectedLeave ? employee(selectedLeave.employee_id) : undefined}
+        onAction={setStatus}
+        isSuperAdmin={isSuperAdmin}
+      />
     </div>
+  );
+}
+
+function LeaveTable({ 
+  leaves, loading, isSuperAdmin, onView, onAction, employee, showEmployeeInfo = true 
+}: { 
+  leaves: Leave[]; loading: boolean; isSuperAdmin: boolean; 
+  onView: (l: Leave) => void; onAction: (id: string, s: LeaveStatus) => void;
+  employee: (id: string) => EmployeeRow | undefined;
+  showEmployeeInfo?: boolean;
+}) {
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-base">{showEmployeeInfo ? "Staff requests" : "My requests"}</CardTitle></CardHeader>
+      <CardContent>
+        {loading ? (
+          <TableSkeleton rows={8} cols={7} />
+        ) : leaves.length === 0 ? (
+          <div className="text-center text-muted-foreground py-12 text-sm">No leave requests yet.</div>
+        ) : (
+          <Table>
+            <TableHeader><TableRow>
+              {showEmployeeInfo && <TableHead>Employee</TableHead>}
+              <TableHead>Type</TableHead>
+              <TableHead>From</TableHead><TableHead>To</TableHead>
+              <TableHead>Reason</TableHead><TableHead>Status</TableHead>
+              <TableHead className="text-right">Action</TableHead>
+            </TableRow></TableHeader>
+            <TableBody>
+              {leaves.map((l) => {
+                const e = employee(l.employee_id);
+                return (
+                  <TableRow key={l.id}>
+                    {showEmployeeInfo && (
+                      <TableCell>
+                        {e ? (
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-7 w-7">
+                              {e.avatar_url && <AvatarImage src={e.avatar_url} className="object-cover" />}
+                              <AvatarFallback className={avatarColor(e.full_name)}>{initials(e.full_name)}</AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <div className="font-medium text-sm">{e.full_name}</div>
+                              <div className="text-xs text-muted-foreground">{e.department}</div>
+                            </div>
+                          </div>
+                        ) : <span className="text-xs text-muted-foreground">Unknown</span>}
+                      </TableCell>
+                    )}
+                    <TableCell><Badge variant="outline" className={`capitalize ${LEAVE_TONE[l.type]}`}>{l.type}</Badge></TableCell>
+                    <TableCell className="text-sm">{formatDate(l.from_date)}</TableCell>
+                    <TableCell className="text-sm">{formatDate(l.to_date)}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{l.reason ?? "—"}</TableCell>
+                    <TableCell>
+                      <Badge variant={l.status === "approved" ? "default" : l.status === "rejected" ? "destructive" : "secondary"} className="capitalize">{l.status}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => onView(l)} title="View Details">
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        {isSuperAdmin && l.status === "pending" && (
+                          <>
+                            <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => onAction(l.id, "approved")} title="Approve">
+                              <Check className="h-4 w-4 text-success" />
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => onAction(l.id, "rejected")} title="Reject">
+                              <X className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </>
+                        )}
+                        {isSuperAdmin && l.status !== "pending" && (
+                          <Button size="sm" variant="ghost" className="h-8 w-8 p-0 hover:bg-muted" onClick={() => onAction(l.id, "pending")} title="Reset to Pending">
+                            <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function LeaveDetailsDialog({ 
+  leave, onClose, employee, onAction, isSuperAdmin 
+}: { 
+  leave: Leave | null; onClose: () => void; 
+  employee?: EmployeeRow; 
+  onAction: (id: string, s: LeaveStatus) => void;
+  isSuperAdmin: boolean;
+}) {
+  if (!leave) return null;
+
+  return (
+    <Dialog open={!!leave} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>Leave Application Details</DialogTitle>
+          <DialogDescription>
+            Submitted on {formatDate(leave.created_at)}
+          </DialogDescription>
+        </DialogHeader>
+        
+        <div className="space-y-4 py-4">
+          <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
+            <Avatar className="h-10 w-10">
+              {employee?.avatar_url && <AvatarImage src={employee.avatar_url} className="object-cover" />}
+              <AvatarFallback className={avatarColor(employee?.full_name || "?")}>{initials(employee?.full_name || "?")}</AvatarFallback>
+            </Avatar>
+            <div>
+              <div className="font-bold">{employee?.full_name || "Unknown Employee"}</div>
+              <div className="text-xs text-muted-foreground">{employee?.designation || "—"} · {employee?.department || "—"}</div>
+            </div>
+            <Badge className="ml-auto capitalize" variant={leave.status === 'approved' ? 'default' : leave.status === 'rejected' ? 'destructive' : 'secondary'}>
+              {leave.status}
+            </Badge>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Leave Type</p>
+              <Badge variant="outline" className={`capitalize ${LEAVE_TONE[leave.type]}`}>{leave.type}</Badge>
+            </div>
+            <div className="space-y-1">
+              <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Duration</p>
+              <p className="text-sm font-medium">{formatDate(leave.from_date)} - {formatDate(leave.to_date)}</p>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Reason</p>
+            <div className="p-3 border rounded-md bg-muted/30 text-sm italic">
+              "{leave.reason || "No reason provided."}"
+            </div>
+          </div>
+
+          {leave.approved_at && (
+            <div className="pt-2 border-t text-[10px] text-muted-foreground italic">
+              Processed at {formatDate(leave.approved_at)}
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button variant="outline" onClick={onClose}>Close</Button>
+          {isSuperAdmin && leave.status === 'pending' && (
+            <div className="flex gap-2">
+              <Button variant="destructive" onClick={() => { onAction(leave.id, 'rejected'); onClose(); }}>Reject</Button>
+              <Button onClick={() => { onAction(leave.id, 'approved'); onClose(); }}>Approve</Button>
+            </div>
+          )}
+          {isSuperAdmin && leave.status !== 'pending' && (
+            <Button variant="secondary" onClick={() => { onAction(leave.id, 'pending'); onClose(); }}>Reset to Pending</Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -15,7 +15,7 @@ const Command = React.forwardRef<
   <CommandPrimitive
     ref={ref}
     className={cn(
-      "flex h-full w-full flex-col overflow-hidden rounded-md bg-popover text-popover-foreground",
+      "flex h-full w-full flex-col overflow-hidden rounded-3xl bg-popover text-popover-foreground",
       className,
     )}
     {...props}
@@ -26,7 +26,7 @@ Command.displayName = CommandPrimitive.displayName;
 const CommandDialog = ({ children, ...props }: DialogProps) => {
   return (
     <Dialog {...props}>
-      <DialogContent className="overflow-hidden p-0 shadow-lg">
+      <DialogContent className="overflow-hidden p-0 shadow-lg w-[92%] sm:max-w-[550px] rounded-3xl mx-auto">
         <DialogHeader className="sr-only">
           <DialogTitle>Command Palette</DialogTitle>
           <DialogDescription>Search for commands and navigate through the application.</DialogDescription>

@@ -279,6 +279,8 @@ function TopBar({ variant }: { variant: "staff" | "client" }) {
     ? STAFF_GROUPS.flatMap((g) => g.items.map((i) => ({ ...i, group: g.label })))
     : CLIENT_NAV.map((i) => ({ ...i, group: "Portal" }));
 
+  const [notifOpen, setNotifOpen] = useState(false);
+
   return (
     <>
       <header className="sticky top-0 z-30 flex h-14 items-center border-b border-border bg-background/80 backdrop-blur-md px-4">
@@ -291,24 +293,27 @@ function TopBar({ variant }: { variant: "staff" | "client" }) {
 
         <button
           onClick={() => setCmdOpen(true)}
-          className="flex flex-1 items-center gap-2 rounded-md border border-input bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted transition-colors max-w-md"
+          className="flex flex-1 items-center gap-2 rounded-lg border border-input bg-muted/40 px-3 h-9 text-sm text-muted-foreground hover:bg-muted transition-colors sm:max-w-md ml-2 mr-2 sm:mx-4 cursor-pointer"
         >
-          <Search className="h-4 w-4" />
-          <span className="flex-1 text-left">Search anything…</span>
-          <kbd className="hidden sm:inline-flex pointer-events-none h-5 select-none items-center gap-1 rounded border border-border bg-background px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+          <Search className="h-4 w-4 shrink-0" />
+          <span className="flex-1 text-left truncate">
+            <span className="hidden xs:inline">Search anything…</span>
+            <span className="xs:hidden">Search</span>
+          </span>
+          <kbd className="hidden sm:inline-flex pointer-events-none h-5 select-none items-center gap-1 rounded border border-border bg-background px-1.5 font-mono text-[10px] font-medium text-muted-foreground shrink-0">
             <span className="text-xs">⌘</span>K
           </kbd>
         </button>
 
-        <div className="flex-1" />
+        <div className="flex-1 hidden sm:block" />
 
-        <Button variant="ghost" size="icon" onClick={toggle} aria-label="Toggle theme">
+        <Button variant="ghost" size="icon" onClick={toggle} aria-label="Toggle theme" className="cursor-pointer">
           {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </Button>
 
-        <Popover>
+        <Popover open={notifOpen} onOpenChange={setNotifOpen}>
           <PopoverTrigger asChild>
-            <Button variant="ghost" size="icon" className="relative">
+            <Button variant="ghost" size="icon" className="relative cursor-pointer">
               <Bell className="h-4 w-4" />
               {unread > 0 && (
                 <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground">
@@ -317,13 +322,13 @@ function TopBar({ variant }: { variant: "staff" | "client" }) {
               )}
             </Button>
           </PopoverTrigger>
-          <PopoverContent align="end" className="w-80 p-0">
+          <PopoverContent align="end" className="w-80 p-0 rounded-2xl shadow-xl border-border">
             <div className="flex items-center justify-between border-b border-border p-3">
               <h4 className="font-semibold text-sm">Notifications</h4>
               {unread > 0 && (
                 <button
                   onClick={markAllNotificationsRead}
-                  className="text-xs text-primary hover:underline"
+                  className="text-xs text-primary hover:underline cursor-pointer"
                 >
                   Mark all read
                 </button>
@@ -336,9 +341,23 @@ function TopBar({ variant }: { variant: "staff" | "client" }) {
                 notifications.map((n) => (
                   <button
                     key={n.id}
-                    onClick={() => markNotificationRead(n.id)}
+                    onClick={() => {
+                      setNotifOpen(false);
+                      markNotificationRead(n.id);
+                      
+                      // Handle explicit links
+                      if (n.link) {
+                        router.push(n.link);
+                      } 
+                      // Fallback for older notifications
+                      else if (n.title.toLowerCase().includes("leave")) {
+                        router.push("/leave");
+                      } else if (n.title.toLowerCase().includes("clock")) {
+                        router.push("/attendance");
+                      }
+                    }}
                     className={cn(
-                      "flex w-full items-start gap-3 border-b border-border p-3 text-left hover:bg-muted/50 transition-colors",
+                      "flex w-full items-start gap-3 border-b border-border p-3 text-left hover:bg-muted/50 transition-colors cursor-pointer",
                       !n.read && "bg-accent/30"
                     )}
                   >

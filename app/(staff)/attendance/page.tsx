@@ -38,13 +38,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../../components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "../../../components/ui/popover";
 
 type RangeType = "daily" | "weekly" | "monthly" | "yearly" | "custom";
 
 export default function AttendancePage() {
-  const { 
+  const {
     employees, attendance, toggleClock, loading, updateEmployee,
-    updateAttendance, deleteAttendance, addManualAttendance 
+    updateAttendance, deleteAttendance, addManualAttendance
   } = useMock();
   const { user, hasRole } = useAuth();
   const isSuperAdmin = hasRole("super_admin");
@@ -80,6 +85,14 @@ export default function AttendancePage() {
   const [manualEntry, setManualEntry] = useState<any>(null);
   const [editForm, setEditForm] = useState({ clockIn: "", clockOut: "", date: "", employeeId: "" });
 
+  // Filtering States
+  const [filterEmployeeId, setFilterEmployeeId] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("all"); // all, late, absent, present, leave
+
+  // Pagination States
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
   useEffect(() => {
     void loadData();
   }, []);
@@ -88,7 +101,7 @@ export default function AttendancePage() {
     setEditingEntry(entry);
     const cin = entry.clock_in ? new Date(entry.clock_in) : null;
     const cout = entry.clock_out ? new Date(entry.clock_out) : null;
-    
+
     setEditForm({
       clockIn: cin ? `${String(cin.getHours()).padStart(2, "0")}:${String(cin.getMinutes()).padStart(2, "0")}` : "",
       clockOut: cout ? `${String(cout.getHours()).padStart(2, "0")}:${String(cout.getMinutes()).padStart(2, "0")}` : "",
@@ -96,6 +109,28 @@ export default function AttendancePage() {
       employeeId: entry.employee_id
     });
   };
+
+  const isLate = (clockIn: string | null, emp: any) => {
+    if (!clockIn || !emp) return false;
+
+    // Skip for Management department or Super Admin designation
+    if (emp.department === "Management" || emp.designation === "Super Admin") return false;
+
+    // Use employee's custom office_start if available, else fallback to global setting
+    const officeStart = emp.office_start || officeSettings.start;
+    const [startH, startM] = officeStart.split(":").map(Number);
+    const d = new Date(clockIn);
+    const clockInH = d.getHours();
+    const clockInM = d.getMinutes();
+
+    const startTimeInMinutes = startH * 60 + startM;
+    const clockInTimeInMinutes = clockInH * 60 + clockInM;
+
+    return clockInTimeInMinutes > (startTimeInMinutes + 15);
+  };
+
+  const fmtTime = (iso: string | null) => iso ? new Date(iso).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : "—";
+
 
   const handleManualClick = () => {
     setManualEntry(true);
@@ -116,10 +151,10 @@ export default function AttendancePage() {
     try {
       const [hIn, mIn] = editForm.clockIn.split(":");
       const [y, mo, d] = editForm.date.split("-");
-      
+
       const clockInDate = new Date(Number(y), Number(mo) - 1, Number(d), Number(hIn), Number(mIn));
       const clockInIso = clockInDate.toISOString();
-      
+
       let clockOutIso = null;
       if (editForm.clockOut) {
         const [hOut, mOut] = editForm.clockOut.split(":");
@@ -225,9 +260,9 @@ export default function AttendancePage() {
 
       for (const emp of displayEmployees) {
         const a = attendance.find(x => x.employee_id === emp.id && x.date === dStr);
-        const leave = leaves.find(l => 
-          l.employee_id === emp.id && 
-          dStr >= l.from_date && 
+        const leave = leaves.find(l =>
+          l.employee_id === emp.id &&
+          dStr >= l.from_date &&
           dStr <= l.to_date &&
           l.status === 'approved'
         );
@@ -265,30 +300,36 @@ export default function AttendancePage() {
         }
       }
     }
-    
-    return data.sort((a, b) => b.date.localeCompare(a.date));
-  }, [attendance, leaves, rangeType, startDate, endDate, employees, holidays, officeSettings, today, displayEmployees]);
+    let filtered = data;
 
-  const isLate = (clockIn: string | null, emp: any) => {
-    if (!clockIn || !emp) return false;
-    
-    // Skip for Management department or Super Admin designation
-    if (emp.department === "Management" || emp.designation === "Super Admin") return false;
+    // Apply filters
+    if (filterEmployeeId !== "all") {
+      filtered = filtered.filter(r => r.employee_id === filterEmployeeId);
+    }
 
-    // Use employee's custom office_start if available, else fallback to global setting
-    const officeStart = emp.office_start || officeSettings.start;
-    const [startH, startM] = officeStart.split(":").map(Number);
-    const d = new Date(clockIn);
-    const clockInH = d.getHours();
-    const clockInM = d.getMinutes();
-    
-    const startTimeInMinutes = startH * 60 + startM;
-    const clockInTimeInMinutes = clockInH * 60 + clockInM;
-    
-    return clockInTimeInMinutes > (startTimeInMinutes + 15);
-  };
+    if (filterStatus === "late") {
+      filtered = filtered.filter(r => !r.isAbsent && !r.isOnLeave && isLate(r.clock_in, r.employee));
+    } else if (filterStatus === "absent") {
+      filtered = filtered.filter(r => r.isAbsent);
+    } else if (filterStatus === "present") {
+      filtered = filtered.filter(r => !r.isAbsent && !r.isOnLeave && r.clock_in);
+    } else if (filterStatus === "leave") {
+      filtered = filtered.filter(r => r.isOnLeave);
+    }
 
-  const fmtTime = (iso: string | null) => iso ? new Date(iso).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : "—";
+    return filtered.sort((a, b) => b.date.localeCompare(a.date));
+  }, [attendance, leaves, rangeType, startDate, endDate, employees, holidays, officeSettings, today, displayEmployees, filterEmployeeId, filterStatus]);
+
+  const totalPages = Math.ceil(reportData.length / pageSize);
+  const paginatedData = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return reportData.slice(start, start + pageSize);
+  }, [reportData, currentPage, pageSize]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterEmployeeId, filterStatus, rangeType, startDate, endDate, pageSize]);
 
   const exportPDF = () => {
     const doc = new jsPDF();
@@ -366,20 +407,25 @@ export default function AttendancePage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className={cn("grid w-full max-w-[650px]", isSuperAdmin ? "grid-cols-4" : "grid-cols-3")}>
-          <TabsTrigger value="roster" className="gap-2"><Clock className="h-4 w-4" /> Today's Roster</TabsTrigger>
-          <TabsTrigger value="reports" className="gap-2"><FileSpreadsheet className="h-4 w-4" /> Reports</TabsTrigger>
-          <TabsTrigger value="calendar" className="gap-2"><CalendarIcon className="h-4 w-4" /> Calendar</TabsTrigger>
-          {isSuperAdmin && <TabsTrigger value="settings" className="gap-2"><Settings2 className="h-4 w-4" /> Settings & Holidays</TabsTrigger>}
-        </TabsList>
+        <div className="overflow-x-auto pb-2 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide">
+          <TabsList className={cn(
+            "inline-flex w-auto md:grid md:w-full md:max-w-[650px] p-1 h-auto bg-muted/50 rounded-xl whitespace-nowrap",
+            isSuperAdmin ? "md:grid-cols-4" : "md:grid-cols-3"
+          )}>
+            <TabsTrigger value="roster" className="gap-2 px-4 py-[6px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer"><Clock className="h-4 w-4" /> Today's Roster</TabsTrigger>
+            <TabsTrigger value="reports" className="gap-2 px-4 py-[6px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer"><FileSpreadsheet className="h-4 w-4" /> Reports</TabsTrigger>
+            <TabsTrigger value="calendar" className="gap-2 px-4 py-[6px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer"><CalendarIcon className="h-4 w-4" /> Calendar</TabsTrigger>
+            {isSuperAdmin && <TabsTrigger value="settings" className="gap-2 px-4 py-[6px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer"><Settings2 className="h-4 w-4" /> Settings & Holidays</TabsTrigger>}
+          </TabsList>
+        </div>
 
         <TabsContent value="roster" className="space-y-6">
           <Card className="border-none shadow-md bg-gradient-to-br from-background to-muted/20">
-            <CardHeader className="flex flex-row items-center justify-between">
+            <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div>
                 <CardTitle className="text-lg font-bold">{isSuperAdmin ? "Real-time Status" : "My Attendance Status"}</CardTitle>
-                <CardDescription className="flex items-center gap-2 mt-1">
-                  {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+                <CardDescription className="flex flex-wrap items-center gap-2 mt-1">
+                  <span className="whitespace-nowrap">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</span>
                   {isTodayHoliday && !overrideHoliday && (
                     <Badge variant="destructive" className="animate-pulse flex items-center gap-1">
                       <Coffee className="h-3 w-3" /> {holidayName}
@@ -388,12 +434,12 @@ export default function AttendancePage() {
                 </CardDescription>
               </div>
               {isTodayHoliday && (
-                <div className="flex items-center gap-3 p-2 bg-background/50 rounded-lg border">
+                <div className="flex items-center justify-between w-full sm:w-auto gap-3 p-2 bg-background/50 rounded-lg border">
                   <span className="text-xs font-medium">Work on holiday?</span>
                   <Button
                     variant={overrideHoliday ? "default" : "outline"}
                     size="sm"
-                    className="h-7 px-3 rounded-md transition-all"
+                    className="h-7 px-3 rounded-md transition-all cursor-pointer"
                     onClick={() => setOverrideHoliday(!overrideHoliday)}
                   >
                     {overrideHoliday ? "Enabled" : "Off"}
@@ -401,8 +447,9 @@ export default function AttendancePage() {
                 </div>
               )}
             </CardHeader>
-            <CardContent>
-              <div className="rounded-xl border overflow-hidden">
+            <CardContent className="p-2 sm:px-6 sm:pb-6 sm:pt-0">
+              {/* Desktop View */}
+              <div className="hidden md:block rounded-xl border overflow-hidden">
                 <Table>
                   <TableHeader className="bg-muted/30"><TableRow>
                     <TableHead className="font-bold">Employee</TableHead>
@@ -420,8 +467,8 @@ export default function AttendancePage() {
                         today >= l.from_date &&
                         today <= l.to_date
                       );
-                      const status = !a?.clock_in 
-                        ? (isOnLeave ? "leave" : (isTodayHoliday && !overrideHoliday ? "holiday" : "absent")) 
+                      const status = !a?.clock_in
+                        ? (isOnLeave ? "leave" : (isTodayHoliday && !overrideHoliday ? "holiday" : "absent"))
                         : (a.clock_out ? "out" : "in");
                       return (
                         <TableRow key={e.id} className="hover:bg-muted/10 transition-colors">
@@ -479,6 +526,76 @@ export default function AttendancePage() {
                   </TableBody>
                 </Table>
               </div>
+
+              {/* Mobile Card View */}
+              <div className="md:hidden space-y-3">
+                {displayEmployees.map((e) => {
+                  const a = displayAttendance.find((x) => x.employee_id === e.id);
+                  const isOnLeave = leaves.some(l =>
+                    l.employee_id === e.id &&
+                    today >= l.from_date &&
+                    today <= l.to_date
+                  );
+                  const status = !a?.clock_in
+                    ? (isOnLeave ? "leave" : (isTodayHoliday && !overrideHoliday ? "holiday" : "absent"))
+                    : (a.clock_out ? "out" : "in");
+
+                  return (
+                    <div key={e.id} className="bg-muted/10 rounded-xl p-4 border border-muted-foreground/10 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-10 w-10 border-2 border-background shadow-sm">
+                            {e.avatar_url && <AvatarImage src={e.avatar_url} className="object-cover" />}
+                            <AvatarFallback className={cn("text-white font-bold", avatarColor(e.full_name))}>{initials(e.full_name)}</AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <div className="font-semibold text-sm">{e.full_name}</div>
+                            <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{e.designation}</div>
+                          </div>
+                        </div>
+                        <Badge variant="outline" className="text-[10px]">{e.department}</Badge>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 py-2 border-y border-dashed">
+                        <div>
+                          <p className="text-[10px] uppercase font-bold text-muted-foreground mb-0.5">Clock In</p>
+                          <p className="font-mono text-xs font-bold">{fmtTime(a?.clock_in ?? null)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase font-bold text-muted-foreground mb-0.5">Clock Out</p>
+                          <p className="font-mono text-xs font-bold">{fmtTime(a?.clock_out ?? null)}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1">
+                        <div className="flex flex-wrap gap-1">
+                          {status === "in" && <Badge className="bg-green-500/10 text-green-600 border-green-500/20 px-2 py-0.5 text-[10px]">Working</Badge>}
+                          {status === "out" && <Badge variant="secondary" className="px-2 py-0.5 text-[10px]">Done</Badge>}
+                          {status === "absent" && <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-500/20 px-2 py-0.5 text-[10px]">Absent</Badge>}
+                          {status === "holiday" && <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/20 px-2 py-0.5 text-[10px]">Holiday</Badge>}
+                          {status === "leave" && <Badge variant="outline" className="bg-orange-500/10 text-orange-600 border-orange-500/20 px-2 py-0.5 text-[10px]">On Leave</Badge>}
+                          {(status === "in" || status === "out") && isLate(a?.clock_in ?? null, e) && (
+                            <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-500/20 px-2 py-0.5 text-[10px] animate-pulse">Late</Badge>
+                          )}
+                        </div>
+
+                        <div className="flex gap-2">
+                          {status === "absent" && (
+                            <Button size="sm" className="h-8 text-[11px] font-bold" onClick={() => toggleClock(e.id)}>
+                              <LogIn className="h-3 w-3 mr-1" /> Clock in
+                            </Button>
+                          )}
+                          {status === "in" && (
+                            <Button size="sm" variant="outline" className="border-primary text-primary hover:bg-primary/5 h-8 text-[11px] font-bold" onClick={() => toggleClock(e.id)}>
+                              <LogOut className="h-3 w-3 mr-1" /> Clock out
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -489,30 +606,30 @@ export default function AttendancePage() {
 
         <TabsContent value="reports" className="space-y-6">
           <Card className="border-none shadow-md">
-            <CardHeader className="pb-3 border-b bg-muted/5">
-              <div className="flex items-center justify-between">
+            <CardHeader className="p-4 sm:pb-3 border-b bg-muted/5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <CardTitle className="text-lg">Attendance Reports</CardTitle>
-                  <CardDescription>View and export historical attendance data.</CardDescription>
+                  <CardDescription className="text-xs sm:text-sm">View and export historical attendance data.</CardDescription>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 w-full sm:w-auto">
                   {isSuperAdmin && (
-                    <Button variant="outline" size="sm" className="h-9 font-semibold border-primary text-primary" onClick={handleManualClick}>
+                    <Button variant="outline" size="sm" className="flex-1 sm:flex-none h-9 font-semibold border-primary text-primary cursor-pointer" onClick={handleManualClick}>
                       <Plus className="h-4 w-4 mr-2" /> Manual Entry
                     </Button>
                   )}
-                  <Button variant="outline" size="sm" className="h-9 font-semibold" onClick={exportPDF}>
+                  <Button variant="outline" size="sm" className="flex-1 sm:flex-none h-9 font-semibold cursor-pointer" onClick={exportPDF}>
                     <FileDown className="h-4 w-4 mr-2 text-red-500" /> Export PDF
                   </Button>
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="pt-6 space-y-6">
-              <div className="flex flex-wrap items-end gap-4 p-5 rounded-2xl bg-muted/20 border border-muted-foreground/10">
+            <CardContent className="p-3 sm:pt-6 sm:space-y-6">
+              <div className="grid grid-cols-1 sm:flex sm:flex-wrap items-end gap-3 sm:gap-4 p-4 sm:p-5 rounded-xl bg-muted/20 border border-muted-foreground/10">
                 <div className="space-y-1.5">
                   <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Range Type</Label>
                   <Select value={rangeType} onValueChange={(v: RangeType) => setRangeType(v)}>
-                    <SelectTrigger className="w-[140px] h-10 rounded-xl shadow-sm"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="w-full sm:w-[140px] py-[6px] h-auto rounded-lg shadow-sm cursor-pointer"><SelectValue /></SelectTrigger>
                     <SelectContent className="rounded-xl">
                       <SelectItem value="daily">Daily</SelectItem>
                       <SelectItem value="weekly">Weekly</SelectItem>
@@ -522,86 +639,257 @@ export default function AttendancePage() {
                   </Select>
                 </div>
                 {rangeType === "custom" && (
-                  <div className="flex items-center gap-3">
+                  <div className="grid grid-cols-2 sm:flex items-center gap-3 w-full sm:w-auto">
                     <div className="space-y-1.5">
                       <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">From</Label>
-                      <div className="w-[180px]"><FlatDatePicker date={startDate} onChange={setStartDate} placeholder="Start Date" /></div>
+                      <div className="w-full sm:w-[180px]"><FlatDatePicker date={startDate} onChange={setStartDate} placeholder="Start Date" /></div>
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">To</Label>
-                      <div className="w-[180px]"><FlatDatePicker date={endDate} onChange={setEndDate} placeholder="End Date" /></div>
+                      <div className="w-full sm:w-[180px]"><FlatDatePicker date={endDate} onChange={setEndDate} placeholder="End Date" /></div>
                     </div>
                   </div>
                 )}
+
+                {isSuperAdmin && (
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Staff Wise</Label>
+                    <Select value={filterEmployeeId} onValueChange={setFilterEmployeeId}>
+                      <SelectTrigger className="w-full sm:w-[180px] py-[6px] h-auto rounded-lg shadow-sm cursor-pointer"><SelectValue placeholder="All Employees" /></SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        <SelectItem value="all">All Staff</SelectItem>
+                        {activeEmployees.map(e => (
+                          <SelectItem key={e.id} value={e.id}>{e.full_name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Status Filter</Label>
+                  <Select value={filterStatus} onValueChange={setFilterStatus}>
+                    <SelectTrigger className="w-full sm:w-[140px] py-[6px] h-auto rounded-lg shadow-sm cursor-pointer"><SelectValue /></SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="present">Present Only</SelectItem>
+                      <SelectItem value="late">Late Only</SelectItem>
+                      <SelectItem value="absent">Absent Only</SelectItem>
+                      <SelectItem value="leave">On Leave</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
-              <div className="rounded-xl border shadow-sm">
-                <Table>
-                  <TableHeader className="bg-muted/50"><TableRow>
-                    <TableHead className="font-bold">Date</TableHead>
-                    <TableHead className="font-bold">Employee</TableHead>
-                    <TableHead className="font-bold">Clock In</TableHead>
-                    <TableHead className="font-bold">Clock Out</TableHead>
-                    <TableHead className="font-bold text-center">IP Address</TableHead>
-                    <TableHead className="font-bold">Status</TableHead>
-                    {isSuperAdmin && <TableHead className="text-right font-bold">Actions</TableHead>}
-                  </TableRow></TableHeader>
-                  <TableBody>
-                    {reportData.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={5} className="h-32 text-center text-muted-foreground italic">
-                          No records found for selected period.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      reportData.map((r, i) => (
-                        <TableRow key={i} className="hover:bg-muted/5">
-                          <TableCell className="font-medium text-sm">{formatDate(r.date)}</TableCell>
-                          <TableCell>
-                            <div className="font-semibold text-sm">{r.employee?.full_name}</div>
-                            <div className="text-[10px] text-muted-foreground">{r.employee?.department}</div>
+              {/* Desktop Report Table */}
+              <div className="hidden md:block mt-6 rounded-xl border shadow-sm overflow-x-auto scrollbar-hide">
+                <div className="min-w-[800px]">
+                  <Table>
+                    <TableHeader className="bg-muted/50"><TableRow>
+                      <TableHead className="py-2 px-4 font-bold">Date</TableHead>
+                      <TableHead className="py-2 px-4 font-bold">Employee</TableHead>
+                      <TableHead className="py-2 px-4 font-bold">Clock In</TableHead>
+                      <TableHead className="py-2 px-4 font-bold">Clock Out</TableHead>
+                      <TableHead className="py-2 px-4 font-bold text-center">IP Address</TableHead>
+                      <TableHead className="py-2 px-4 font-bold">Status</TableHead>
+                      {isSuperAdmin && <TableHead className="py-2 px-4 text-right font-bold">Actions</TableHead>}
+                    </TableRow></TableHeader>
+                    <TableBody>
+                      {paginatedData.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={isSuperAdmin ? 7 : 6} className="h-32 text-center text-muted-foreground italic">
+                            No records found for selected period and filters.
                           </TableCell>
-                          <TableCell className="font-mono text-xs font-bold">{fmtTime(r.clock_in)}</TableCell>
-                          <TableCell className="font-mono text-xs font-bold">{fmtTime(r.clock_out)}</TableCell>
-                          <TableCell className="text-center font-mono text-[10px] text-muted-foreground">{r.ip_address || "—"}</TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Badge
-                                variant={r.isAbsent ? "destructive" : (r.isOnLeave ? "outline" : "secondary")}
-                                className={cn(
-                                  "px-2 py-0.5 text-[10px] font-bold",
-                                  r.isOnLeave && "bg-orange-500/10 text-orange-600 border-orange-500/20",
-                                  r.isAbsent && "bg-red-500/10 text-red-600 border-red-500/20"
+                        </TableRow>
+                      ) : (
+                        paginatedData.map((r, i) => (
+                          <TableRow key={i} className="hover:bg-muted/5">
+                            <TableCell className="py-2 px-4 font-medium text-sm">{formatDate(r.date)}</TableCell>
+                            <TableCell className="py-2 px-4">
+                              <div className="font-semibold text-sm">{r.employee?.full_name}</div>
+                              <div className="text-[10px] text-muted-foreground">{r.employee?.department}</div>
+                            </TableCell>
+                            <TableCell className="py-2 px-4 font-mono text-xs font-bold">{fmtTime(r.clock_in)}</TableCell>
+                            <TableCell className="py-2 px-4 font-mono text-xs font-bold">{fmtTime(r.clock_out)}</TableCell>
+                            <TableCell className="py-2 px-4 text-center font-mono text-[10px] text-muted-foreground">{r.ip_address || "—"}</TableCell>
+                            <TableCell className="py-2 px-4">
+                              <div className="flex items-center gap-2">
+                                <Badge
+                                  variant={r.isAbsent ? "destructive" : (r.isOnLeave ? "outline" : "secondary")}
+                                  className={cn(
+                                    "px-2 py-0.5 text-[10px] font-bold",
+                                    r.isOnLeave && "bg-orange-500/10 text-orange-600 border-orange-500/20",
+                                    r.isAbsent && "bg-red-500/10 text-red-600 border-red-500/20"
+                                  )}
+                                >
+                                  {r.isAbsent ? "ABSENT" : (r.isOnLeave ? "ON LEAVE" : (r.clock_out ? "PRESENT" : "ACTIVE"))}
+                                </Badge>
+                                {!r.isOnLeave && !r.isAbsent && isLate(r.clock_in, r.employee) && (
+                                  <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-500/20 px-2 py-0.5 text-[10px] font-bold">LATE</Badge>
                                 )}
-                              >
-                                {r.isAbsent ? "ABSENT" : (r.isOnLeave ? "ON LEAVE" : (r.clock_out ? "PRESENT" : "ACTIVE"))}
-                              </Badge>
-                              {!r.isOnLeave && !r.isAbsent && isLate(r.clock_in, r.employee) && (
-                                <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-500/20 px-2 py-0.5 text-[10px] font-bold">LATE</Badge>
-                              )}
-                            </div>
-                          </TableCell>
-                          {isSuperAdmin && (
-                            <TableCell className="text-right">
-                              <div className="flex justify-end gap-1">
-                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => handleEditClick(r)}>
+                              </div>
+                            </TableCell>
+                            {isSuperAdmin && (
+                              <TableCell className="py-2 px-4 text-right">
+                                <div className="flex justify-end gap-1">
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-primary cursor-pointer" onClick={() => handleEditClick(r)}>
                                     <Edit3 className="h-3.5 w-3.5" />
                                   </Button>
                                   {!r.isVirtual && (
-                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => deleteAttendance(r.id)}>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive cursor-pointer" onClick={() => deleteAttendance(r.id)}>
                                       <Trash className="h-3.5 w-3.5" />
                                     </Button>
                                   )}
-                              </div>
-                            </TableCell>
-                          )}
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
+                                </div>
+                              </TableCell>
+                            )}
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+
+              {/* Mobile Report Cards */}
+              <div className="md:hidden mt-6 space-y-3">
+                {paginatedData.length === 0 ? (
+                  <div className="h-32 flex items-center justify-center text-muted-foreground italic text-sm bg-muted/5 rounded-xl border border-dashed">
+                    No records found for selected filters.
+                  </div>
+                ) : (
+                  paginatedData.map((r, i) => (
+                    <div key={i} className="bg-muted/10 rounded-xl p-4 border border-muted-foreground/10 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-[10px] uppercase font-bold text-muted-foreground">Date</p>
+                          <p className="font-semibold text-sm">{formatDate(r.date)}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[10px] uppercase font-bold text-muted-foreground">Status</p>
+                          <div className="flex flex-wrap justify-end gap-1">
+                            <Badge
+                              variant={r.isAbsent ? "destructive" : (r.isOnLeave ? "outline" : "secondary")}
+                              className={cn(
+                                "px-2 py-0.5 text-[10px] font-bold",
+                                r.isOnLeave && "bg-orange-500/10 text-orange-600 border-orange-500/20",
+                                r.isAbsent && "bg-red-500/10 text-red-600 border-red-500/20"
+                              )}
+                            >
+                              {r.isAbsent ? "ABSENT" : (r.isOnLeave ? "ON LEAVE" : (r.clock_out ? "PRESENT" : "ACTIVE"))}
+                            </Badge>
+                            {!r.isOnLeave && !r.isAbsent && isLate(r.clock_in, r.employee) && (
+                              <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-500/20 px-2 py-0.5 text-[10px] font-bold">LATE</Badge>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 py-2 border-y border-dashed">
+                        <Avatar className="h-8 w-8 border shadow-sm">
+                          {r.employee?.avatar_url && <AvatarImage src={r.employee.avatar_url} className="object-cover" />}
+                          <AvatarFallback className={cn("text-[10px] text-white font-bold", avatarColor(r.employee?.full_name || ""))}>{initials(r.employee?.full_name || "")}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="font-semibold text-sm">{r.employee?.full_name}</p>
+                          <p className="text-[10px] text-muted-foreground">{r.employee?.department}</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-[10px] uppercase font-bold text-muted-foreground mb-0.5">Clock In</p>
+                          <p className="font-mono text-xs font-bold">{fmtTime(r.clock_in)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase font-bold text-muted-foreground mb-0.5">Clock Out</p>
+                          <p className="font-mono text-xs font-bold">{fmtTime(r.clock_out)}</p>
+                        </div>
+                      </div>
+
+                      {isSuperAdmin && (
+                        <div className="flex items-center justify-between pt-2 border-t">
+                          <p className="text-[10px] text-muted-foreground font-mono">IP: {r.ip_address || "—"}</p>
+                          <div className="flex gap-2">
+                            <Button variant="outline" size="sm" className="h-8 w-8 p-0 text-primary border-primary/20" onClick={() => handleEditClick(r)}>
+                              <Edit3 className="h-3.5 w-3.5" />
+                            </Button>
+                            {!r.isVirtual && (
+                              <Button variant="outline" size="sm" className="h-8 w-8 p-0 text-destructive border-destructive/20" onClick={() => deleteAttendance(r.id)}>
+                                <Trash className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
             </CardContent>
+
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 py-4 sm:py-3 border-t bg-muted/20 rounded-b-xl">
+              <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
+                <p className="text-[11px] sm:text-xs text-muted-foreground">
+                  Showing <span className="font-bold text-foreground">{Math.min(paginatedData.length, pageSize)}</span> of <span className="font-bold text-foreground">{reportData.length}</span> records
+                </p>
+                <div className="flex items-center gap-2">
+                  <Label className="text-[10px] uppercase font-bold text-muted-foreground">Show</Label>
+                  <Select value={pageSize.toString()} onValueChange={v => setPageSize(Number(v))}>
+                    <SelectTrigger className="h-7 w-16 text-xs rounded-md cursor-pointer"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                      <SelectItem value="100">100</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-center gap-1 sm:gap-2 w-full sm:w-auto">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 rounded-md px-2 text-[11px] sm:text-xs cursor-pointer"
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft className="h-4 w-4 mr-0 sm:mr-1" /> <span className="hidden sm:inline">Prev</span>
+                </Button>
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum = i + 1;
+                    if (totalPages > 5 && currentPage > 3) {
+                      pageNum = currentPage - 2 + i;
+                      if (pageNum > totalPages) pageNum = totalPages - (4 - i);
+                    }
+                    if (pageNum <= 0) return null;
+                    if (pageNum > totalPages) return null;
+
+                    return (
+                      <Button
+                        key={pageNum}
+                        variant={currentPage === pageNum ? "default" : "outline"}
+                        size="sm"
+                        className="h-7 w-7 sm:h-8 sm:w-8 rounded-md p-0 text-[11px] sm:text-xs cursor-pointer"
+                        onClick={() => setCurrentPage(pageNum)}
+                      >
+                        {pageNum}
+                      </Button>
+                    );
+                  })}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 rounded-md px-2 text-[11px] sm:text-xs cursor-pointer"
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages || totalPages === 0}
+                >
+                  <span className="hidden sm:inline">Next</span> <ChevronRight className="h-4 w-4 ml-0 sm:ml-1" />
+                </Button>
+              </div>
+            </div>
           </Card>
         </TabsContent>
 
@@ -618,13 +906,13 @@ export default function AttendancePage() {
                 <div className="flex flex-col gap-4 p-4 bg-muted/20 rounded-2xl border border-dashed border-primary/20">
                   <div className="space-y-1.5">
                     <Label className="text-xs font-bold uppercase tracking-wider">Select Date</Label>
-                    <FlatDatePicker date={newHDate} onChange={setNewHDate} placeholder="Choose holiday date" />
+                    <FlatDatePicker date={newHDate} onChange={setNewHDate} placeholder="Choose holiday date" className="cursor-pointer" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs font-bold uppercase tracking-wider">Holiday Name</Label>
                     <Input placeholder="e.g. Eid-ul-Fitr" value={newHName} onChange={e => setNewHName(e.target.value)} className="rounded-xl h-10" />
                   </div>
-                  <Button className="w-full rounded-xl shadow-md h-10 font-bold" onClick={addHoliday}>
+                  <Button className="w-full rounded-xl shadow-md h-10 font-bold cursor-pointer" onClick={addHoliday}>
                     <Plus className="h-4 w-4 mr-2" /> Add Holiday
                   </Button>
                 </div>
@@ -681,7 +969,7 @@ export default function AttendancePage() {
                 <div className="space-y-2">
                   <Label className="text-xs font-bold uppercase tracking-wider">Weekly Weekend</Label>
                   <Select value={officeSettings.weekend.toString()} onValueChange={v => setOfficeSettings({ ...officeSettings, weekend: parseInt(v) })}>
-                    <SelectTrigger className="h-10 rounded-xl shadow-sm"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="h-10 rounded-xl shadow-sm cursor-pointer"><SelectValue /></SelectTrigger>
                     <SelectContent className="rounded-xl">
                       <SelectItem value="5">Friday (Recommended)</SelectItem>
                       <SelectItem value="6">Saturday</SelectItem>
@@ -696,7 +984,7 @@ export default function AttendancePage() {
                   </p>
                 </div>
 
-                <Button className="w-full rounded-xl shadow-md h-11 font-bold bg-primary hover:bg-primary/90" onClick={saveSettings}>
+                <Button className="w-full rounded-xl shadow-md h-11 font-bold bg-primary hover:bg-primary/90 cursor-pointer" onClick={saveSettings}>
                   <Save className="h-4 w-4 mr-2" /> Save Global Settings
                 </Button>
               </CardContent>
@@ -710,21 +998,22 @@ export default function AttendancePage() {
                 <CardDescription>Reset registered devices for staff members.</CardDescription>
               </CardHeader>
               <CardContent className="p-0">
-                <div className="overflow-x-auto px-5">
+                {/* Desktop Table View */}
+                <div className="hidden md:block overflow-x-auto px-5">
                   <Table>
                     <TableHeader className="bg-muted/30"><TableRow>
-                      <TableHead className="font-bold">Employee</TableHead>
-                      <TableHead className="font-bold">Registered Device</TableHead>
-                      <TableHead className="text-right font-bold">Action</TableHead>
+                      <TableHead className="font-bold text-xs">Employee</TableHead>
+                      <TableHead className="font-bold text-xs">Registered Device</TableHead>
+                      <TableHead className="text-right font-bold text-xs">Action</TableHead>
                     </TableRow></TableHeader>
                     <TableBody>
                       {employees.map(e => (
                         <TableRow key={e.id} className="hover:bg-muted/5 transition-colors">
                           <TableCell className="font-medium text-sm">{e.full_name}</TableCell>
-                          <TableCell className="font-mono text-[10px] text-muted-foreground">{e.registered_device_id ? e.registered_device_id.slice(0, 12) + "..." : "No device bound"}</TableCell>
+                          <TableCell className="font-mono text-[10px] text-muted-foreground">{e.registered_device_id ? e.registered_device_id.slice(0, 24) + "..." : "No device bound"}</TableCell>
                           <TableCell className="text-right">
                             {e.registered_device_id ? (
-                              <Button variant="ghost" size="sm" className="h-8 text-xs text-destructive hover:bg-destructive/10" onClick={() => resetDevice(e.id)}>
+                              <Button variant="ghost" size="sm" className="h-8 text-xs text-destructive hover:bg-destructive/10 cursor-pointer" onClick={() => resetDevice(e.id)}>
                                 <RotateCcw className="h-3.5 w-3.5 mr-1" /> Reset Device
                               </Button>
                             ) : (
@@ -736,6 +1025,45 @@ export default function AttendancePage() {
                     </TableBody>
                   </Table>
                 </div>
+
+                {/* Mobile Card View */}
+                <div className="md:hidden space-y-3 p-4 bg-muted/10">
+                  {employees.map(e => (
+                    <div key={e.id} className="bg-background rounded-2xl p-4 border border-border/50 shadow-sm">
+                      <div className="flex flex-col gap-3">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-bold text-sm text-foreground">{e.full_name}</p>
+                            <div className="flex items-center gap-1.5 mt-1">
+                              <Smartphone className="h-3 w-3 text-muted-foreground" />
+                              <p className="text-[10px] font-mono text-muted-foreground truncate max-w-[180px]">
+                                {e.registered_device_id || "No device bound"}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="pt-2 border-t border-border/50">
+                          {e.registered_device_id ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full h-10 rounded-xl text-destructive border-destructive/20 bg-destructive/5 hover:bg-destructive/10 font-bold text-xs"
+                              onClick={() => resetDevice(e.id)}
+                            >
+                              <RotateCcw className="h-4 w-4 mr-2" />
+                              Reset Registered Device
+                            </Button>
+                          ) : (
+                            <div className="flex items-center justify-center py-2 bg-muted/20 rounded-lg">
+                              <span className="text-[11px] text-muted-foreground italic font-medium">✨ Ready to bind new device</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -744,7 +1072,7 @@ export default function AttendancePage() {
 
       {/* Edit / Manual Entry Dialog */}
       <Dialog open={!!editingEntry || !!manualEntry} onOpenChange={(open) => { if (!open) { setEditingEntry(null); setManualEntry(null); } }}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="w-[92%] max-w-[425px] rounded-3xl mx-auto">
           <DialogHeader>
             <DialogTitle>{editingEntry ? "Edit Attendance" : "Manual Attendance Entry"}</DialogTitle>
             <DialogDescription>
@@ -790,9 +1118,9 @@ export default function AttendancePage() {
               />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setEditingEntry(null); setManualEntry(null); }}>Cancel</Button>
-            <Button onClick={handleSaveEdit}>Save changes</Button>
+          <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+            <Button variant="outline" className="rounded-xl h-11" onClick={() => { setEditingEntry(null); setManualEntry(null); }}>Cancel</Button>
+            <Button className="rounded-xl h-11 bg-primary hover:bg-primary/90" onClick={handleSaveEdit}>Save changes</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -825,26 +1153,26 @@ function AttendanceCalendar({ leaves, holidays, employees }: { leaves: any[]; ho
 
   return (
     <Card className="border-none shadow-md overflow-hidden">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4 border-b bg-muted/5">
+      <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b bg-muted/5 p-4 sm:p-6">
         <div>
-          <CardTitle className="text-xl font-bold flex items-center gap-2">
+          <CardTitle className="text-lg sm:text-xl font-bold flex items-center gap-2">
             Holiday & Leave Calendar
           </CardTitle>
-          <CardDescription>Visual overview of team presence and holidays.</CardDescription>
+          <CardDescription className="text-xs sm:text-sm">Visual overview of team presence and holidays.</CardDescription>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <h2 className="text-sm font-bold mr-4">{format(cursor, "MMMM yyyy")}</h2>
-          <div className="flex border rounded-md">
-            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-none border-r" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
-            <Button variant="ghost" className="h-8 px-3 text-xs font-bold rounded-none border-r" onClick={goToToday}>Today</Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-none" onClick={nextMonth}><ChevronRight className="h-4 w-4" /></Button>
+        <div className="flex items-center justify-between w-full sm:w-auto gap-4">
+          <h2 className="text-sm font-bold">{format(cursor, "MMMM yyyy")}</h2>
+          <div className="flex border rounded-xl overflow-hidden shadow-sm">
+            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-none border-r cursor-pointer" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
+            <Button variant="ghost" className="h-8 px-3 text-[10px] sm:text-xs font-bold rounded-none border-r cursor-pointer" onClick={goToToday}>Today</Button>
+            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-none cursor-pointer" onClick={nextMonth}><ChevronRight className="h-4 w-4" /></Button>
           </div>
         </div>
       </CardHeader>
       <CardContent className="p-0">
         <div className="grid grid-cols-7 border-b bg-muted/30">
           {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-            <div key={d} className="py-2 text-center text-[10px] font-bold uppercase tracking-widest text-muted-foreground border-r last:border-r-0">
+            <div key={d} className="py-2 text-center text-[9px] sm:text-[10px] font-bold uppercase tracking-widest text-muted-foreground border-r last:border-r-0">
               {d}
             </div>
           ))}
@@ -862,7 +1190,7 @@ function AttendanceCalendar({ leaves, holidays, employees }: { leaves: any[]; ho
               <div
                 key={i}
                 className={cn(
-                  "min-h-[100px] p-2 border-r border-b last:border-r-0 transition-colors",
+                  "min-h-[70px] sm:min-h-[100px] p-1 sm:p-2 border-r border-b last:border-r-0 transition-colors",
                   !isCurrentMonth && "bg-muted/10 opacity-40",
                   isTodayDate && "bg-primary/5",
                   isWeekend && !isTodayDate && isCurrentMonth && "bg-muted/5"
@@ -870,7 +1198,7 @@ function AttendanceCalendar({ leaves, holidays, employees }: { leaves: any[]; ho
               >
                 <div className="flex justify-between items-start mb-1">
                   <span className={cn(
-                    "text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full",
+                    "text-[10px] sm:text-xs font-bold w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded-full",
                     isTodayDate && "bg-primary text-primary-foreground shadow-sm"
                   )}>
                     {format(d, "d")}
@@ -879,21 +1207,46 @@ function AttendanceCalendar({ leaves, holidays, employees }: { leaves: any[]; ho
 
                 <div className="space-y-1 overflow-hidden">
                   {isFriday && isCurrentMonth && (
-                    <div className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-muted text-muted-foreground border border-muted-foreground/20 truncate">
-                      🏠 Weekend
-                    </div>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <div className="px-1 py-0.5 rounded text-[8px] sm:text-[9px] font-bold bg-muted text-muted-foreground border border-muted-foreground/20 truncate cursor-pointer active:scale-95 transition-transform">
+                          🏠<span className="hidden sm:inline ml-1">Weekend</span>
+                        </div>
+                      </PopoverTrigger>
+                      <PopoverContent side="top" className="w-auto p-2 text-xs font-medium">
+                        Weekend (Friday)
+                      </PopoverContent>
+                    </Popover>
                   )}
                   {hols.map((h, idx) => (
-                    <div key={`h-${idx}`} className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-500/10 text-orange-600 border border-orange-500/20 truncate" title={h.name}>
-                      ⭐ {h.name}
-                    </div>
+                    <Popover key={`h-${idx}`}>
+                      <PopoverTrigger asChild>
+                        <div className="px-1 py-0.5 rounded text-[8px] sm:text-[9px] font-bold bg-orange-500/10 text-orange-600 border border-orange-500/20 truncate cursor-pointer active:scale-95 transition-transform">
+                          ⭐<span className="hidden sm:inline ml-1">{h.name}</span>
+                        </div>
+                      </PopoverTrigger>
+                      <PopoverContent side="top" className="w-auto p-2 text-xs font-medium">
+                        Holiday: {h.name}
+                      </PopoverContent>
+                    </Popover>
                   ))}
                   {lvs.map((l, idx) => {
                     const emp = employees.find(e => e.id === l.employee_id);
+                    const name = emp?.full_name?.split(' ')[0] || "Staff";
                     return (
-                      <div key={`l-${idx}`} className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-500/10 text-blue-600 border border-blue-500/20 truncate" title={`${emp?.full_name}: ${l.reason}`}>
-                        👤 {emp?.full_name?.split(' ')[0]}
-                      </div>
+                      <Popover key={`l-${idx}`}>
+                        <PopoverTrigger asChild>
+                          <div className="px-1 py-0.5 rounded text-[8px] sm:text-[9px] font-bold bg-blue-500/10 text-blue-600 border border-blue-500/20 truncate cursor-pointer active:scale-95 transition-transform">
+                            👤<span className="hidden sm:inline ml-1">{name}</span>
+                          </div>
+                        </PopoverTrigger>
+                        <PopoverContent side="top" className="w-48 p-3 shadow-xl rounded-xl">
+                          <p className="font-bold text-sm text-primary mb-1">{emp?.full_name}</p>
+                          <p className="text-[11px] text-muted-foreground leading-relaxed">
+                            <span className="font-bold">Reason:</span> {l.reason}
+                          </p>
+                        </PopoverContent>
+                      </Popover>
                     );
                   })}
                 </div>

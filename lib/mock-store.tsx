@@ -128,6 +128,7 @@ export interface Notification {
   read: boolean;
   created_at: string;
   type: "info" | "warning" | "success" | "error";
+  link?: string;
 }
 
 export interface Client {
@@ -184,8 +185,8 @@ interface MockActions {
   addVaultFile: (f: Omit<VaultFile, "id">) => void;
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
-  addNotification: (userId: string, n: { title: string; body: string; type?: Notification["type"] }) => Promise<void>;
-  notifyAdmins: (n: { title: string; body: string; type?: Notification["type"] }) => Promise<void>;
+  addNotification: (userId: string, n: { title: string; body: string; type?: Notification["type"]; link?: string }) => Promise<void>;
+  notifyAdmins: (n: { title: string; body: string; type?: Notification["type"]; link?: string }) => Promise<void>;
   setRole: (userId: string, role: string, active: boolean) => Promise<void>;
   removeUser: (userId: string) => Promise<void>;
   updateAttendance: (id: string, patch: Partial<AttendanceEntry>) => Promise<void>;
@@ -369,17 +370,18 @@ export function MockProvider({ children }: { children: ReactNode }) {
     enabled: !!user,
   });
 
-  const addNotification = async (userId: string, n: { title: string; body: string; type?: Notification["type"] }) => {
+  const addNotification = async (userId: string, n: { title: string; body: string; type?: Notification["type"]; link?: string }) => {
     await supabase.from("notifications").insert({
       user_id: userId,
       title: n.title,
       body: n.body,
       type: n.type || "info",
+      link: n.link,
     });
     queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
   };
 
-  const notifyAdmins = async (n: { title: string; body: string; type?: Notification["type"] }) => {
+  const notifyAdmins = async (n: { title: string; body: string; type?: Notification["type"]; link?: string }) => {
     const { data: admins } = await supabase.from("user_roles" as any).select("user_id").eq("role", "super_admin");
     if (admins) {
       for (const a of admins) {
@@ -494,7 +496,8 @@ export function MockProvider({ children }: { children: ReactNode }) {
         body: isSuperAdmin && targetProfileId !== user!.id 
           ? `An administrator has ${isClockOut ? "clocked you out" : "clocked you in"} at ${new Date().toLocaleTimeString()}.`
           : (isClockOut ? `Good work today! You clocked out at ${new Date().toLocaleTimeString()}.` : `Welcome! You clocked in at ${new Date().toLocaleTimeString()}.`),
-        type: "success"
+        type: "success",
+        link: "/attendance"
       });
 
       // 7. Notify Admins (only if a regular staff performed the action)
@@ -502,7 +505,8 @@ export function MockProvider({ children }: { children: ReactNode }) {
         await notifyAdmins({
           title: isClockOut ? "Staff Clocked Out" : "Staff Clocked In",
           body: `${emp?.full_name || "An employee"} just ${isClockOut ? "clocked out" : "clocked in"}.`,
-          type: "info"
+          type: "info",
+          link: "/attendance"
         });
       }
     },
@@ -563,7 +567,8 @@ export function MockProvider({ children }: { children: ReactNode }) {
       await notifyAdmins({
         title: "New Leave Request",
         body: `${currentEmployee?.full_name || user?.email} has requested a ${l.type} leave.`,
-        type: "info"
+        type: "info",
+        link: "/leave"
       });
     },
     onSuccess: () => {
@@ -589,7 +594,8 @@ export function MockProvider({ children }: { children: ReactNode }) {
           await addNotification(emp.profile_id, {
             title: `Leave ${status.charAt(0).toUpperCase() + status.slice(1)}`,
             body: `Your leave request has been ${status}.`,
-            type: status === "approved" ? "success" : "error"
+            type: status === "approved" ? "success" : "error",
+            link: "/leave"
           });
         }
       }
