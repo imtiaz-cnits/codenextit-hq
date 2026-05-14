@@ -371,11 +371,12 @@ export function MockProvider({ children }: { children: ReactNode }) {
   });
 
   const addNotification = async (userId: string, n: { title: string; body: string; type?: Notification["type"]; link?: string }) => {
-    await supabase.from("notifications").insert({
+    await (supabase.from("notifications") as any).insert({
       user_id: userId,
       title: n.title,
       body: n.body,
       type: n.type || "info",
+      link: n.link,
     });
     queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
   };
