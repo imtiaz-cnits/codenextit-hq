@@ -376,7 +376,6 @@ export function MockProvider({ children }: { children: ReactNode }) {
       title: n.title,
       body: n.body,
       type: n.type || "info",
-      link: n.link,
     });
     queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
   };
