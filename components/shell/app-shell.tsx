@@ -122,7 +122,7 @@ export function AppShell({ children, variant }: { children: ReactNode; variant: 
 
 function AppSidebar({ variant }: { variant: "staff" | "client" }) {
   const pathname = usePathname();
-  const { state } = useSidebar();
+  const { state, setOpenMobile } = useSidebar();
   const { canAccess } = useAuth();
   const collapsed = state === "collapsed";
 
@@ -161,7 +161,7 @@ function AppSidebar({ variant }: { variant: "staff" | "client" }) {
                         (item.to !== "/dashboard" && pathname.startsWith(item.to));
                       return (
                         <SidebarMenuItem key={item.to}>
-                          <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
+                          <SidebarMenuButton asChild isActive={isActive} tooltip={item.label} onClick={() => setOpenMobile(false)}>
                             <Link href={item.to}>
                               <item.icon className="h-4 w-4" />
                               <span>{item.label}</span>
@@ -184,7 +184,7 @@ function AppSidebar({ variant }: { variant: "staff" | "client" }) {
                   const isActive = pathname === item.to;
                   return (
                     <SidebarMenuItem key={item.to}>
-                      <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
+                      <SidebarMenuButton asChild isActive={isActive} tooltip={item.label} onClick={() => setOpenMobile(false)}>
                         <Link href={item.to}>
                           <item.icon className="h-4 w-4" />
                           <span>{item.label}</span>

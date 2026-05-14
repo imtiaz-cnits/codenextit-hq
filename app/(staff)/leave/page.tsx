@@ -14,6 +14,7 @@ import { Textarea } from "../../../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../../../components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui/tabs";
+import { Popover, PopoverContent, PopoverTrigger } from "../../../components/ui/popover";
 import { Plus, Check, X, Loader2, ChevronLeft, ChevronRight, RotateCcw, FileText, Download, Calendar as CalendarIcon, Eye } from "lucide-react";
 import { FlatDatePicker } from "../../../components/ui/flat-date-picker";
 import { initials, avatarColor, formatDate } from "../../../lib/format";
@@ -22,9 +23,10 @@ import { toast } from "sonner";
 import { useMock } from "../../../lib/mock-store";
 import {
   format, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths,
-  startOfWeek, endOfWeek, isSameMonth, isWithinInterval, parseISO,
+  startOfWeek, endOfWeek, isSameMonth, isWithinInterval, parseISO, isToday,
 } from "date-fns";
 import { TableSkeleton } from "../../../components/loading-skeletons";
+import { cn } from "../../../lib/utils";
 
 type LeaveType = "sick" | "casual" | "annual" | "unpaid";
 type LeaveStatus = "pending" | "approved" | "rejected";
@@ -61,30 +63,30 @@ export default function LeavePage() {
   const { user, hasRole } = useAuth();
   const { addNotification, notifyAdmins } = useMock();
   const isSuperAdmin = hasRole("super_admin");
-  
+
   const [leaves, setLeaves] = useState<Leave[]>([]);
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [selectedLeave, setSelectedLeave] = useState<Leave | null>(null);
-  
+
   // Report Filters
   const [reportRange, setReportRange] = useState({
     from: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10),
     to: new Date().toISOString().slice(0, 10),
   });
 
-  const currentUserEmp = employees.find(e => e.profile_id === user?.id) || 
-                         employees.find(e => e.full_name === user?.user_metadata?.full_name); // Fallback to name if email unavailable in local state
+  const currentUserEmp = employees.find(e => e.profile_id === user?.id) ||
+    employees.find(e => e.full_name === user?.user_metadata?.full_name); // Fallback to name if email unavailable in local state
 
   useEffect(() => { void load(); }, [user]);
   async function load() {
     if (!user) return;
     setLoading(true);
-    
+
     let leaveQuery = supabase.from("leave_requests").select("*").order("from_date", { ascending: false });
     let empQuery = supabase.from("employees").select("id, profile_id, email, designation, department") as any;
-    
+
     if (!isSuperAdmin) {
       // Find the employee ID for current user to filter their own leaves
       const { data: selfEmp } = await supabase
@@ -109,7 +111,7 @@ export default function LeavePage() {
     const nameByProfile = new Map(profData.map((p) => [p.id, p.full_name]));
     const avatarByProfile = new Map(profData.map((p) => [p.id, p.avatar_url]));
     setLeaves((l ?? []) as Leave[]);
-    
+
     type EmpRow = { id: string; profile_id: string; full_name: string; email: string; designation: string | null; department: string; avatar_url?: string | null };
     setEmployees(
       ((e ?? []) as any[]).map((r) => ({
@@ -181,11 +183,11 @@ export default function LeavePage() {
           <h1 className="text-3xl font-bold tracking-tight">Leave Requests</h1>
           <p className="text-muted-foreground mt-1">Approve or reject team leave applications.</p>
         </div>
-        <NewLeaveSheet 
-          open={open} 
-          onOpenChange={setOpen} 
-          employees={employees} 
-          onCreated={load} 
+        <NewLeaveSheet
+          open={open}
+          onOpenChange={setOpen}
+          employees={employees}
+          onCreated={load}
           isSuperAdmin={isSuperAdmin}
           currentEmpId={currentUserEmp?.id}
         />
@@ -199,19 +201,19 @@ export default function LeavePage() {
 
       <Tabs defaultValue={isSuperAdmin ? "staff" : "list"}>
         <div className="overflow-x-auto pb-2 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide">
-          <TabsList className="inline-flex w-auto p-1 h-auto bg-muted/50 rounded-xl whitespace-nowrap">
-            {isSuperAdmin && <TabsTrigger value="staff" className="px-4 py-2 rounded-lg">Staff Requests</TabsTrigger>}
-            <TabsTrigger value="list" className="px-4 py-2 rounded-lg">My Requests</TabsTrigger>
-            <TabsTrigger value="calendar" className="px-4 py-2 rounded-lg">Calendar</TabsTrigger>
-            <TabsTrigger value="reports" className="px-4 py-2 rounded-lg">Reports</TabsTrigger>
+          <TabsList className="bg-muted/50 p-1 h-auto rounded-xl inline-flex w-auto min-w-max border border-border/50">
+            {isSuperAdmin && <TabsTrigger value="staff" className="rounded-lg px-4 py-[8px] data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer">Staff Requests</TabsTrigger>}
+            <TabsTrigger value="list" className="rounded-lg px-4 py-[8px] data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer">My Requests</TabsTrigger>
+            <TabsTrigger value="calendar" className="rounded-lg px-4 py-[8px] data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer">Calendar</TabsTrigger>
+            <TabsTrigger value="reports" className="rounded-lg px-4 py-[8px] data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer">Reports</TabsTrigger>
           </TabsList>
         </div>
 
         <TabsContent value="list" className="mt-4">
-          <LeaveTable 
-            leaves={isSuperAdmin ? leaves.filter(l => l.employee_id === currentUserEmp?.id) : leaves} 
-            loading={loading} 
-            isSuperAdmin={isSuperAdmin} 
+          <LeaveTable
+            leaves={isSuperAdmin ? leaves.filter(l => l.employee_id === currentUserEmp?.id) : leaves}
+            loading={loading}
+            isSuperAdmin={isSuperAdmin}
             onView={setSelectedLeave}
             onAction={setStatus}
             employee={employee}
@@ -220,10 +222,10 @@ export default function LeavePage() {
 
         {isSuperAdmin && (
           <TabsContent value="staff" className="mt-4">
-            <LeaveTable 
-              leaves={leaves.filter(l => l.employee_id !== currentUserEmp?.id)} 
-              loading={loading} 
-              isSuperAdmin={isSuperAdmin} 
+            <LeaveTable
+              leaves={leaves.filter(l => l.employee_id !== currentUserEmp?.id)}
+              loading={loading}
+              isSuperAdmin={isSuperAdmin}
               onView={setSelectedLeave}
               onAction={setStatus}
               employee={employee}
@@ -236,67 +238,100 @@ export default function LeavePage() {
           <LeaveCalendar leaves={leaves} employees={employees} />
         </TabsContent>
 
-      <TabsContent value="reports" className="mt-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <div>
-              <CardTitle className="text-lg">Leave Report</CardTitle>
-              <p className="text-xs text-muted-foreground">Detailed summary and history</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5 mr-4">
-                <FlatDatePicker 
-                  date={reportRange.from} 
-                  onChange={d => setReportRange({...reportRange, from: d})} 
-                  className="h-9 w-[180px]"
-                />
-                <span className="text-muted-foreground text-xs font-medium">to</span>
-                <FlatDatePicker 
-                  date={reportRange.to} 
-                  onChange={d => setReportRange({...reportRange, to: d})} 
-                  className="h-9 w-[180px]"
-                />
+        <TabsContent value="reports" className="mt-4">
+          <Card>
+            <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b bg-muted/5">
+              <div>
+                <CardTitle className="text-lg font-bold">Leave Report</CardTitle>
+                <p className="text-xs text-muted-foreground">Detailed summary and history</p>
               </div>
-              <Button size="sm" variant="outline" onClick={exportCSV} className="h-9"><Download className="h-3.5 w-3.5 mr-1" /> Excel</Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-4 gap-4 mb-6">
-              <SummaryCard label="Total Days" value={filteredReports.length} icon={FileText} />
-              <SummaryCard label="Approved" value={filteredReports.filter(r => r.status === 'approved').length} tone="success" />
-              <SummaryCard label="Pending" value={filteredReports.filter(r => r.status === 'pending').length} tone="warning" />
-              <SummaryCard label="Rejected" value={filteredReports.filter(r => r.status === 'rejected').length} tone="destructive" />
-            </div>
-            
-            <Table>
-              <TableHeader><TableRow>
-                <TableHead>Employee</TableHead>
-                <TableHead>Duration</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Reason</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow></TableHeader>
-              <TableBody>
-                {filteredReports.map((l) => (
-                  <TableRow key={l.id}>
-                    <TableCell className="font-medium text-sm">{employee(l.employee_id)?.full_name ?? "—"}</TableCell>
-                    <TableCell className="text-xs">{formatDate(l.from_date)} - {formatDate(l.to_date)}</TableCell>
-                    <TableCell><Badge variant="outline" className={`text-[10px] uppercase ${LEAVE_TONE[l.type]}`}>{l.type}</Badge></TableCell>
-                    <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">{l.reason ?? "—"}</TableCell>
-                    <TableCell><Badge variant={l.status === 'approved' ? 'default' : 'secondary'} className="capitalize text-[10px]">{l.status}</Badge></TableCell>
-                  </TableRow>
-                ))}
-                {filteredReports.length === 0 && <TableRow><TableCell colSpan={5} className="text-center py-10 text-muted-foreground text-sm">No data for selected range.</TableCell></TableRow>}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </TabsContent>
+              <div className="flex flex-col lg:flex-row items-center gap-4 w-full sm:w-auto">
+                <div className="flex items-center justify-center gap-3 w-full sm:w-auto">
+                  <FlatDatePicker
+                    date={reportRange.from}
+                    onChange={d => setReportRange({ ...reportRange, from: d })}
+                    className="h-9 w-full sm:w-[155px]"
+                  />
+                  <span className="text-muted-foreground text-[10px] font-bold uppercase min-w-[20px] text-center">to</span>
+                  <FlatDatePicker
+                    date={reportRange.to}
+                    onChange={d => setReportRange({ ...reportRange, to: d })}
+                    className="h-9 w-full sm:w-[155px]"
+                  />
+                </div>
+                <Button size="sm" variant="outline" onClick={exportCSV} className="h-9 w-full lg:w-auto shadow-sm cursor-pointer shrink-0">
+                  <Download className="h-3.5 w-3.5 mr-1" /> Excel
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-3 sm:pt-6">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
+                <SummaryCard label="Total Days" value={filteredReports.length} icon={FileText} />
+                <SummaryCard label="Approved" value={filteredReports.filter(r => r.status === 'approved').length} tone="success" />
+                <SummaryCard label="Pending" value={filteredReports.filter(r => r.status === 'pending').length} tone="warning" />
+                <SummaryCard label="Rejected" value={filteredReports.filter(r => r.status === 'rejected').length} tone="destructive" />
+              </div>
+
+              <div className="hidden md:block rounded-xl border shadow-sm overflow-hidden">
+                <Table>
+                  <TableHeader className="bg-muted/50"><TableRow>
+                    <TableHead className="font-bold">Employee</TableHead>
+                    <TableHead className="font-bold">Duration</TableHead>
+                    <TableHead className="font-bold">Category</TableHead>
+                    <TableHead className="font-bold">Reason</TableHead>
+                    <TableHead className="font-bold">Status</TableHead>
+                  </TableRow></TableHeader>
+                  <TableBody>
+                    {filteredReports.map((l) => (
+                      <TableRow key={l.id} className="hover:bg-muted/5">
+                        <TableCell className="font-medium text-sm">{employee(l.employee_id)?.full_name ?? "—"}</TableCell>
+                        <TableCell className="text-xs font-semibold">{formatDate(l.from_date)} - {formatDate(l.to_date)}</TableCell>
+                        <TableCell><Badge variant="outline" className={`text-[10px] uppercase font-bold ${LEAVE_TONE[l.type]}`}>{l.type}</Badge></TableCell>
+                        <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">{l.reason ?? "—"}</TableCell>
+                        <TableCell><Badge variant={l.status === 'approved' ? 'default' : 'secondary'} className="capitalize text-[10px] font-bold">{l.status}</Badge></TableCell>
+                      </TableRow>
+                    ))}
+                    {filteredReports.length === 0 && <TableRow><TableCell colSpan={5} className="text-center py-10 text-muted-foreground text-sm italic">No data for selected range.</TableCell></TableRow>}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Mobile Report Cards */}
+              <div className="md:hidden space-y-3">
+                {filteredReports.length === 0 ? (
+                  <div className="h-32 flex items-center justify-center text-muted-foreground italic text-sm bg-muted/5 rounded-xl border border-dashed">
+                    No data for selected range.
+                  </div>
+                ) : (
+                  filteredReports.map((l) => (
+                    <div key={l.id} className="bg-muted/10 rounded-xl p-4 border border-muted-foreground/10 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="font-semibold text-sm">{employee(l.employee_id)?.full_name ?? "—"}</div>
+                        <Badge variant={l.status === 'approved' ? 'default' : 'secondary'} className="capitalize text-[10px] font-bold">{l.status}</Badge>
+                      </div>
+                      <div className="flex items-center justify-between text-xs py-2 border-y border-dashed">
+                        <div>
+                          <p className="text-[10px] uppercase font-bold text-muted-foreground mb-0.5">Duration</p>
+                          <p className="font-semibold">{formatDate(l.from_date)} - {formatDate(l.to_date)}</p>
+                        </div>
+                        <Badge variant="outline" className={`text-[10px] uppercase font-bold ${LEAVE_TONE[l.type]}`}>{l.type}</Badge>
+                      </div>
+                      <div>
+                        <p className="text-[10px] uppercase font-bold text-muted-foreground mb-1">Reason</p>
+                        <p className="text-xs text-muted-foreground italic line-clamp-2">"{l.reason || "No reason"}"</p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
-      <LeaveDetailsDialog 
-        leave={selectedLeave} 
-        onClose={() => setSelectedLeave(null)} 
+      <LeaveDetailsDialog
+        leave={selectedLeave}
+        onClose={() => setSelectedLeave(null)}
         employee={selectedLeave ? employee(selectedLeave.employee_id) : undefined}
         onAction={setStatus}
         isSuperAdmin={isSuperAdmin}
@@ -305,10 +340,10 @@ export default function LeavePage() {
   );
 }
 
-function LeaveTable({ 
-  leaves, loading, isSuperAdmin, onView, onAction, employee, showEmployeeInfo = true 
-}: { 
-  leaves: Leave[]; loading: boolean; isSuperAdmin: boolean; 
+function LeaveTable({
+  leaves, loading, isSuperAdmin, onView, onAction, employee, showEmployeeInfo = true
+}: {
+  leaves: Leave[]; loading: boolean; isSuperAdmin: boolean;
   onView: (l: Leave) => void; onAction: (id: string, s: LeaveStatus) => void;
   employee: (id: string) => EmployeeRow | undefined;
   showEmployeeInfo?: boolean;
@@ -322,80 +357,141 @@ function LeaveTable({
         ) : leaves.length === 0 ? (
           <div className="text-center text-muted-foreground py-12 text-sm">No leave requests yet.</div>
         ) : (
-          <Table>
-            <TableHeader><TableRow>
-              {showEmployeeInfo && <TableHead>Employee</TableHead>}
-              <TableHead>Type</TableHead>
-              <TableHead>From</TableHead><TableHead>To</TableHead>
-              <TableHead>Reason</TableHead><TableHead>Status</TableHead>
-              <TableHead className="text-right">Action</TableHead>
-            </TableRow></TableHeader>
-            <TableBody>
+          <>
+            <div className="hidden md:block rounded-xl border shadow-sm overflow-hidden">
+              <Table>
+                <TableHeader className="bg-muted/50"><TableRow>
+                  {showEmployeeInfo && <TableHead className="font-bold">Employee</TableHead>}
+                  <TableHead className="font-bold">Type</TableHead>
+                  <TableHead className="font-bold">From</TableHead><TableHead className="font-bold">To</TableHead>
+                  <TableHead className="font-bold">Reason</TableHead><TableHead className="font-bold">Status</TableHead>
+                  <TableHead className="text-right font-bold">Action</TableHead>
+                </TableRow></TableHeader>
+                <TableBody>
+                  {leaves.map((l) => {
+                    const e = employee(l.employee_id);
+                    return (
+                      <TableRow key={l.id} className="hover:bg-muted/5">
+                        {showEmployeeInfo && (
+                          <TableCell>
+                            {e ? (
+                              <div className="flex items-center gap-2">
+                                <Avatar className="h-8 w-8 border shadow-sm">
+                                  {e.avatar_url && <AvatarImage src={e.avatar_url} className="object-cover" />}
+                                  <AvatarFallback className={cn("text-[10px] text-white font-bold", avatarColor(e.full_name))}>{initials(e.full_name)}</AvatarFallback>
+                                </Avatar>
+                                <div>
+                                  <div className="font-bold text-sm">{e.full_name}</div>
+                                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{e.department}</div>
+                                </div>
+                              </div>
+                            ) : <span className="text-xs text-muted-foreground italic">Unknown</span>}
+                          </TableCell>
+                        )}
+                        <TableCell><Badge variant="outline" className={`capitalize font-bold text-[10px] ${LEAVE_TONE[l.type]}`}>{l.type}</Badge></TableCell>
+                        <TableCell className="text-sm font-semibold">{formatDate(l.from_date)}</TableCell>
+                        <TableCell className="text-sm font-semibold">{formatDate(l.to_date)}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">{l.reason ?? "—"}</TableCell>
+                        <TableCell>
+                          <Badge variant={l.status === "approved" ? "default" : l.status === "rejected" ? "destructive" : "secondary"} className="capitalize text-[10px] font-bold">{l.status}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-primary cursor-pointer" onClick={() => onView(l)} title="View Details">
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            {isSuperAdmin && l.status === "pending" && (
+                              <>
+                                <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-success cursor-pointer" onClick={() => onAction(l.id, "approved")} title="Approve">
+                                  <Check className="h-4 w-4" />
+                                </Button>
+                                <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-destructive cursor-pointer" onClick={() => onAction(l.id, "rejected")} title="Reject">
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </>
+                            )}
+                            {isSuperAdmin && l.status !== "pending" && (
+                              <Button size="sm" variant="ghost" className="h-8 w-8 p-0 hover:bg-muted cursor-pointer" onClick={() => onAction(l.id, "pending")} title="Reset to Pending">
+                                <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Mobile View Cards */}
+            <div className="md:hidden space-y-3">
               {leaves.map((l) => {
                 const e = employee(l.employee_id);
                 return (
-                  <TableRow key={l.id}>
-                    {showEmployeeInfo && (
-                      <TableCell>
-                        {e ? (
-                          <div className="flex items-center gap-2">
-                            <Avatar className="h-7 w-7">
-                              {e.avatar_url && <AvatarImage src={e.avatar_url} className="object-cover" />}
-                              <AvatarFallback className={avatarColor(e.full_name)}>{initials(e.full_name)}</AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <div className="font-medium text-sm">{e.full_name}</div>
-                              <div className="text-xs text-muted-foreground">{e.department}</div>
-                            </div>
-                          </div>
-                        ) : <span className="text-xs text-muted-foreground">Unknown</span>}
-                      </TableCell>
-                    )}
-                    <TableCell><Badge variant="outline" className={`capitalize ${LEAVE_TONE[l.type]}`}>{l.type}</Badge></TableCell>
-                    <TableCell className="text-sm">{formatDate(l.from_date)}</TableCell>
-                    <TableCell className="text-sm">{formatDate(l.to_date)}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{l.reason ?? "—"}</TableCell>
-                    <TableCell>
-                      <Badge variant={l.status === "approved" ? "default" : l.status === "rejected" ? "destructive" : "secondary"} className="capitalize">{l.status}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => onView(l)} title="View Details">
-                          <Eye className="h-4 w-4" />
+                  <div key={l.id} className="bg-muted/10 rounded-xl p-4 border border-muted-foreground/10 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-9 w-9 border shadow-sm">
+                          {e?.avatar_url && <AvatarImage src={e.avatar_url} className="object-cover" />}
+                          <AvatarFallback className={cn("text-[10px] text-white font-bold", avatarColor(e?.full_name || "?"))}>{initials(e?.full_name || "?")}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <div className="font-bold text-sm">{e?.full_name || "Unknown"}</div>
+                          <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{e?.department || "N/A"}</div>
+                        </div>
+                      </div>
+                      <Badge variant={l.status === "approved" ? "default" : l.status === "rejected" ? "destructive" : "secondary"} className="capitalize text-[10px] font-bold">{l.status}</Badge>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 py-2 border-y border-dashed">
+                      <div>
+                        <p className="text-[10px] uppercase font-bold text-muted-foreground mb-0.5">Duration</p>
+                        <p className="text-xs font-semibold">{formatDate(l.from_date)} - {formatDate(l.to_date)}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] uppercase font-bold text-muted-foreground mb-1">Type</p>
+                        <Badge variant="outline" className={`capitalize font-bold text-[10px] ${LEAVE_TONE[l.type]}`}>{l.type}</Badge>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <div className="flex-1 mr-4">
+                        <p className="text-[10px] uppercase font-bold text-muted-foreground mb-1">Reason</p>
+                        <p className="text-xs text-muted-foreground line-clamp-1 italic">"{l.reason || "No reason"}"</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-primary border-primary/20 cursor-pointer" onClick={() => onView(l)}>
+                          <Eye className="h-3.5 w-3.5" />
                         </Button>
                         {isSuperAdmin && l.status === "pending" && (
                           <>
-                            <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => onAction(l.id, "approved")} title="Approve">
-                              <Check className="h-4 w-4 text-success" />
+                            <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-success border-success/20 cursor-pointer" onClick={() => onAction(l.id, "approved")}>
+                              <Check className="h-3.5 w-3.5" />
                             </Button>
-                            <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => onAction(l.id, "rejected")} title="Reject">
-                              <X className="h-4 w-4 text-destructive" />
+                            <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-destructive border-destructive/20 cursor-pointer" onClick={() => onAction(l.id, "rejected")}>
+                              <X className="h-3.5 w-3.5" />
                             </Button>
                           </>
                         )}
-                        {isSuperAdmin && l.status !== "pending" && (
-                          <Button size="sm" variant="ghost" className="h-8 w-8 p-0 hover:bg-muted" onClick={() => onAction(l.id, "pending")} title="Reset to Pending">
-                            <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
-                          </Button>
-                        )}
                       </div>
-                    </TableCell>
-                  </TableRow>
+                    </div>
+                  </div>
                 );
               })}
-            </TableBody>
-          </Table>
+            </div>
+          </>
         )}
       </CardContent>
     </Card>
   );
 }
 
-function LeaveDetailsDialog({ 
-  leave, onClose, employee, onAction, isSuperAdmin 
-}: { 
-  leave: Leave | null; onClose: () => void; 
-  employee?: EmployeeRow; 
+function LeaveDetailsDialog({
+  leave, onClose, employee, onAction, isSuperAdmin
+}: {
+  leave: Leave | null; onClose: () => void;
+  employee?: EmployeeRow;
   onAction: (id: string, s: LeaveStatus) => void;
   isSuperAdmin: boolean;
 }) {
@@ -403,66 +499,66 @@ function LeaveDetailsDialog({
 
   return (
     <Dialog open={!!leave} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-[425px]">
-        <DialogHeader>
-          <DialogTitle>Leave Application Details</DialogTitle>
-          <DialogDescription>
+      <DialogContent className="max-w-[95vw] sm:max-w-[450px] rounded-[1.5rem] p-6 sm:p-8 gap-6 border-none shadow-2xl">
+        <DialogHeader className="space-y-2">
+          <DialogTitle className="text-xl sm:text-2xl font-bold text-center">Leave Application Details</DialogTitle>
+          <DialogDescription className="text-center text-xs">
             Submitted on {formatDate(leave.created_at)}
           </DialogDescription>
         </DialogHeader>
-        
-        <div className="space-y-4 py-4">
-          <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-            <Avatar className="h-10 w-10">
+
+        <div className="space-y-6">
+          <div className="flex items-center gap-4 p-4 bg-muted/30 rounded-2xl border border-muted-foreground/5">
+            <Avatar className="h-12 w-12 border shadow-sm">
               {employee?.avatar_url && <AvatarImage src={employee.avatar_url} className="object-cover" />}
-              <AvatarFallback className={avatarColor(employee?.full_name || "?")}>{initials(employee?.full_name || "?")}</AvatarFallback>
+              <AvatarFallback className={cn("text-xs font-bold text-white", avatarColor(employee?.full_name || "?"))}>{initials(employee?.full_name || "?")}</AvatarFallback>
             </Avatar>
-            <div>
-              <div className="font-bold">{employee?.full_name || "Unknown Employee"}</div>
-              <div className="text-xs text-muted-foreground">{employee?.designation || "—"} · {employee?.department || "—"}</div>
+            <div className="flex-1">
+              <div className="font-bold text-base">{employee?.full_name || "Unknown Employee"}</div>
+              <div className="text-[11px] text-muted-foreground uppercase tracking-wider">{employee?.department || "—"}</div>
             </div>
-            <Badge className="ml-auto capitalize" variant={leave.status === 'approved' ? 'default' : leave.status === 'rejected' ? 'destructive' : 'secondary'}>
+            <Badge className="capitalize font-bold text-[10px]" variant={leave.status === 'approved' ? 'default' : leave.status === 'rejected' ? 'destructive' : 'secondary'}>
               {leave.status}
             </Badge>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Leave Type</p>
-              <Badge variant="outline" className={`capitalize ${LEAVE_TONE[leave.type]}`}>{leave.type}</Badge>
+          <div className="grid grid-cols-2 gap-6 px-1">
+            <div className="space-y-1.5">
+              <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Leave Type</p>
+              <Badge variant="outline" className={`capitalize font-bold px-3 py-1 rounded-full ${LEAVE_TONE[leave.type]}`}>{leave.type}</Badge>
             </div>
-            <div className="space-y-1">
-              <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Duration</p>
-              <p className="text-sm font-medium">{formatDate(leave.from_date)} - {formatDate(leave.to_date)}</p>
+            <div className="space-y-1.5">
+              <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Duration</p>
+              <p className="text-sm font-bold text-primary">{formatDate(leave.from_date)} - {formatDate(leave.to_date)}</p>
             </div>
           </div>
 
-          <div className="space-y-1">
-            <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Reason</p>
-            <div className="p-3 border rounded-md bg-muted/30 text-sm italic">
+          <div className="space-y-2 px-1">
+            <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Reason</p>
+            <div className="p-4 border rounded-2xl bg-muted/20 text-sm leading-relaxed italic text-muted-foreground border-dashed">
               "{leave.reason || "No reason provided."}"
             </div>
           </div>
 
           {leave.approved_at && (
-            <div className="pt-2 border-t text-[10px] text-muted-foreground italic">
+            <div className="pt-4 border-t border-dashed text-[10px] text-muted-foreground italic text-center">
               Processed at {formatDate(leave.approved_at)}
             </div>
           )}
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-0">
-          <Button variant="outline" onClick={onClose}>Close</Button>
+        <div className="flex flex-col gap-2">
           {isSuperAdmin && leave.status === 'pending' && (
             <div className="flex gap-2">
-              <Button variant="destructive" onClick={() => { onAction(leave.id, 'rejected'); onClose(); }}>Reject</Button>
-              <Button onClick={() => { onAction(leave.id, 'approved'); onClose(); }}>Approve</Button>
+              <Button variant="destructive" className="flex-1 rounded-xl h-11 font-bold cursor-pointer" onClick={() => { onAction(leave.id, 'rejected'); onClose(); }}>Reject</Button>
+              <Button className="flex-1 rounded-xl h-11 font-bold cursor-pointer" onClick={() => { onAction(leave.id, 'approved'); onClose(); }}>Approve</Button>
             </div>
           )}
           {isSuperAdmin && leave.status !== 'pending' && (
-            <Button variant="secondary" onClick={() => { onAction(leave.id, 'pending'); onClose(); }}>Reset to Pending</Button>
+            <Button variant="secondary" className="w-full rounded-xl h-11 font-bold bg-muted/50 cursor-pointer" onClick={() => { onAction(leave.id, 'pending'); onClose(); }}>Reset to Pending</Button>
           )}
-        </DialogFooter>
+          <Button variant="outline" className="w-full rounded-xl h-11 font-bold border-muted-foreground/10 cursor-pointer" onClick={onClose}>Close</Button>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -490,49 +586,107 @@ function LeaveCalendar({ leaves, employees }: { leaves: Leave[]; employees: Empl
   const days = useMemo(() => eachDayOfInterval({ start: gridStart, end: gridEnd }), [gridStart, gridEnd]);
   const employee = (id: string) => employees.find((e) => e.id === id);
 
+  const prevMonth = () => setCursor(c => subMonths(c, 1));
+  const nextMonth = () => setCursor(c => addMonths(c, 1));
+  const goToToday = () => setCursor(new Date());
+
   function leavesOn(d: Date) {
     return leaves.filter((l) => l.status !== "rejected" && isWithinInterval(d, { start: parseISO(l.from_date), end: parseISO(l.to_date) }));
   }
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0">
-        <CardTitle className="text-base">{format(cursor, "MMMM yyyy")}</CardTitle>
-        <div className="flex items-center gap-1">
-          <Button size="sm" variant="outline" onClick={() => setCursor((c) => subMonths(c, 1))}><ChevronLeft className="h-4 w-4" /></Button>
-          <Button size="sm" variant="outline" onClick={() => setCursor(new Date())}>Today</Button>
-          <Button size="sm" variant="outline" onClick={() => setCursor((c) => addMonths(c, 1))}><ChevronRight className="h-4 w-4" /></Button>
+    <Card className="border-none shadow-md overflow-hidden">
+      <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b bg-muted/5 p-4 sm:p-6">
+        <div>
+          <CardTitle className="text-lg sm:text-xl font-bold flex items-center gap-2 text-primary">
+            <CalendarIcon className="h-5 w-5" /> Team Leave Calendar
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">Overview of employee leave periods.</p>
+        </div>
+        <div className="flex items-center justify-between w-full sm:w-auto gap-4">
+          <h2 className="text-sm font-bold">{format(cursor, "MMMM yyyy")}</h2>
+          <div className="flex border rounded-xl overflow-hidden shadow-sm bg-background">
+            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-none border-r cursor-pointer" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
+            <Button variant="ghost" className="h-8 px-3 text-[10px] sm:text-xs font-bold rounded-none border-r cursor-pointer" onClick={goToToday}>Today</Button>
+            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-none cursor-pointer" onClick={nextMonth}><ChevronRight className="h-4 w-4" /></Button>
+          </div>
         </div>
       </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-7 text-[11px] uppercase tracking-wider text-muted-foreground border-b">
+      <CardContent className="p-0">
+        <div className="grid grid-cols-7 border-b bg-muted/30">
           {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-            <div key={d} className="px-2 py-2 text-center font-medium">{d}</div>
+            <div key={d} className="py-2 text-center text-[9px] sm:text-[10px] font-bold uppercase tracking-widest text-muted-foreground border-r last:border-r-0">
+              {d}
+            </div>
           ))}
         </div>
         <div className="grid grid-cols-7 auto-rows-fr">
-          {days.map((d) => {
+          {days.map((d, i) => {
             const dayLeaves = leavesOn(d);
             const inMonth = isSameMonth(d, cursor);
+            const isTodayDate = isToday(d);
+            const isWeekend = d.getDay() === 5 || d.getDay() === 6;
+
             return (
-              <div key={d.toISOString()} className={`min-h-[96px] border-b border-r p-1.5 ${inMonth ? "" : "bg-muted/30 text-muted-foreground"}`}>
-                <div className="text-xs font-medium mb-1">{format(d, "d")}</div>
-                <div className="space-y-0.5">
-                  {dayLeaves.slice(0, 3).map((l) => {
+              <div
+                key={i}
+                className={cn(
+                  "min-h-[80px] sm:min-h-[110px] border-b border-r last:border-r-0 p-1.5 transition-colors",
+                  !inMonth && "bg-muted/10 opacity-40",
+                  isTodayDate && "bg-primary/5",
+                  isWeekend && inMonth && !isTodayDate && "bg-muted/5"
+                )}
+              >
+                <div className="flex justify-between items-start mb-1.5">
+                  <span className={cn(
+                    "text-[10px] sm:text-xs font-bold w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded-full transition-all",
+                    isTodayDate ? "bg-primary text-primary-foreground shadow-md" : "text-muted-foreground"
+                  )}>
+                    {format(d, "d")}
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  {dayLeaves.map((l) => {
                     const e = employee(l.employee_id);
+                    const name = e?.full_name?.split(" ")[0] || "Staff";
                     return (
-                      <div
-                        key={l.id}
-                        className={`text-[10px] leading-tight px-1.5 py-0.5 rounded border truncate ${LEAVE_TONE[l.type]} ${l.status === "pending" ? "opacity-60" : ""}`}
-                        title={`${e?.full_name ?? "?"} · ${l.type} · ${l.status}`}
-                      >
-                        {e?.full_name?.split(" ")[0] ?? "?"} · {l.type}
-                      </div>
+                      <Popover key={l.id}>
+                        <PopoverTrigger asChild>
+                          <div
+                            className={cn(
+                              "text-[8px] sm:text-[10px] leading-tight px-1.5 py-0.5 rounded border truncate cursor-pointer active:scale-95 transition-all shadow-sm flex items-center gap-1",
+                              LEAVE_TONE[l.type],
+                              l.status === "pending" && "opacity-60 border-dashed"
+                            )}
+                          >
+                            <span className="shrink-0">👤</span>
+                            <span className="truncate">{name}</span>
+                          </div>
+                        </PopoverTrigger>
+                        <PopoverContent side="top" className="w-56 p-3 shadow-xl rounded-2xl border-primary/10">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Avatar className="h-7 w-7 border">
+                              {e?.avatar_url && <AvatarImage src={e.avatar_url} className="object-cover" />}
+                              <AvatarFallback className={cn("text-[9px]", avatarColor(e?.full_name || "?"))}>{initials(e?.full_name || "?")}</AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <p className="font-bold text-xs">{e?.full_name}</p>
+                              <Badge className="text-[9px] h-4 py-0" variant="outline">{l.type}</Badge>
+                            </div>
+                          </div>
+                          <div className="space-y-1.5 text-[11px]">
+                            <p className="text-muted-foreground leading-relaxed italic border-l-2 border-primary/20 pl-2">
+                              "{l.reason || "No reason provided."}"
+                            </p>
+                            <div className="flex items-center justify-between pt-1 border-t text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+                              <span>Status</span>
+                              <span className={l.status === "approved" ? "text-success" : "text-warning"}>{l.status}</span>
+                            </div>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                     );
                   })}
-                  {dayLeaves.length > 3 && (
-                    <div className="text-[10px] text-muted-foreground px-1.5">+{dayLeaves.length - 3} more</div>
-                  )}
                 </div>
               </div>
             );
@@ -563,31 +717,31 @@ function NewLeaveSheet({
     }
   }, [employees, f.employee_id, isSuperAdmin, currentEmpId]);
 
-    async function submit(e: React.FormEvent) {
-      e.preventDefault();
-      if (!f.employee_id) return toast.error("Select an employee");
-      setSubmitting(true);
-      const { error } = await supabase.from("leave_requests").insert([{
-        employee_id: f.employee_id, type: f.type,
-        from_date: f.from_date, to_date: f.to_date,
-        reason: f.reason || null, status: "pending" as const,
-      }]);
-      setSubmitting(false);
-      if (error) return toast.error(error.message);
-      
-      // Notify Admins
-      const emp = employees.find(e => e.id === f.employee_id);
-      await notifyAdmins({
-        title: "New Leave Request",
-        body: `${emp?.full_name || "An employee"} has requested a ${f.type} leave.`,
-        type: "info"
-      });
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!f.employee_id) return toast.error("Select an employee");
+    setSubmitting(true);
+    const { error } = await supabase.from("leave_requests").insert([{
+      employee_id: f.employee_id, type: f.type,
+      from_date: f.from_date, to_date: f.to_date,
+      reason: f.reason || null, status: "pending" as const,
+    }]);
+    setSubmitting(false);
+    if (error) return toast.error(error.message);
 
-      toast.success("Leave request submitted");
-      onOpenChange(false);
-      setF((p) => ({ ...p, from_date: "", to_date: "", reason: "" }));
-      onCreated();
-    }
+    // Notify Admins
+    const emp = employees.find(e => e.id === f.employee_id);
+    await notifyAdmins({
+      title: "New Leave Request",
+      body: `${emp?.full_name || "An employee"} has requested a ${f.type} leave.`,
+      type: "info"
+    });
+
+    toast.success("Leave request submitted");
+    onOpenChange(false);
+    setF((p) => ({ ...p, from_date: "", to_date: "", reason: "" }));
+    onCreated();
+  }
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetTrigger asChild><Button><Plus className="h-4 w-4 mr-1.5" /> New request</Button></SheetTrigger>
@@ -595,8 +749,8 @@ function NewLeaveSheet({
         <SheetHeader><SheetTitle>New leave request</SheetTitle><SheetDescription>Submit on behalf of an employee.</SheetDescription></SheetHeader>
         <form onSubmit={submit} className="space-y-4 mt-6">
           <Fld label="Employee">
-            <Select 
-              value={f.employee_id} 
+            <Select
+              value={f.employee_id}
               onValueChange={(v) => setF({ ...f, employee_id: v })}
               disabled={!isSuperAdmin}
             >
@@ -617,15 +771,15 @@ function NewLeaveSheet({
           </Fld>
           <div className="grid grid-cols-2 gap-3">
             <Fld label="From">
-              <FlatDatePicker 
-                date={f.from_date} 
-                onChange={d => setF({...f, from_date: d})} 
+              <FlatDatePicker
+                date={f.from_date}
+                onChange={d => setF({ ...f, from_date: d })}
               />
             </Fld>
             <Fld label="To">
-              <FlatDatePicker 
-                date={f.to_date} 
-                onChange={d => setF({...f, to_date: d})} 
+              <FlatDatePicker
+                date={f.to_date}
+                onChange={d => setF({ ...f, to_date: d })}
               />
             </Fld>
           </div>

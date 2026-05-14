@@ -412,10 +412,10 @@ export default function AttendancePage() {
             "inline-flex w-auto md:grid md:w-full md:max-w-[650px] p-1 h-auto bg-muted/50 rounded-xl whitespace-nowrap",
             isSuperAdmin ? "md:grid-cols-4" : "md:grid-cols-3"
           )}>
-            <TabsTrigger value="roster" className="gap-2 px-4 py-[6px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer"><Clock className="h-4 w-4" /> Today's Roster</TabsTrigger>
-            <TabsTrigger value="reports" className="gap-2 px-4 py-[6px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer"><FileSpreadsheet className="h-4 w-4" /> Reports</TabsTrigger>
-            <TabsTrigger value="calendar" className="gap-2 px-4 py-[6px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer"><CalendarIcon className="h-4 w-4" /> Calendar</TabsTrigger>
-            {isSuperAdmin && <TabsTrigger value="settings" className="gap-2 px-4 py-[6px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer"><Settings2 className="h-4 w-4" /> Settings & Holidays</TabsTrigger>}
+            <TabsTrigger value="roster" className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer"><Clock className="h-4 w-4" /> Today's Roster</TabsTrigger>
+            <TabsTrigger value="reports" className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer"><FileSpreadsheet className="h-4 w-4" /> Reports</TabsTrigger>
+            <TabsTrigger value="calendar" className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer"><CalendarIcon className="h-4 w-4" /> Calendar</TabsTrigger>
+            {isSuperAdmin && <TabsTrigger value="settings" className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer"><Settings2 className="h-4 w-4" /> Settings & Holidays</TabsTrigger>}
           </TabsList>
         </div>
 
