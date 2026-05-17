@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../../../components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "../../../components/ui/popover";
-import { Plus, Check, X, Loader2, ChevronLeft, ChevronRight, RotateCcw, FileText, Download, Calendar as CalendarIcon, Eye } from "lucide-react";
+import { Plus, Check, X, Loader2, ChevronLeft, ChevronRight, RotateCcw, FileText, Download, Calendar as CalendarIcon, Eye, Trash2 } from "lucide-react";
 import { FlatDatePicker } from "../../../components/ui/flat-date-picker";
 import { initials, avatarColor, formatDate } from "../../../lib/format";
 import { supabase } from "../../../integrations/supabase/client";
@@ -170,6 +170,14 @@ export default function LeavePage() {
     void load();
   }
 
+  async function deleteLeave(id: string) {
+    if (!confirm("Are you sure you want to delete this leave request?")) return;
+    const { error } = await supabase.from("leave_requests").delete().eq("id", id);
+    if (error) return toast.error(error.message);
+    toast.success("Leave request deleted successfully");
+    void load();
+  }
+
   const filteredReports = useMemo(() => {
     return leaves.filter((l) => l.from_date >= reportRange.from && l.from_date <= reportRange.to);
   }, [leaves, reportRange]);
@@ -229,6 +237,7 @@ export default function LeavePage() {
             isSuperAdmin={isSuperAdmin}
             onView={setSelectedLeave}
             onAction={setStatus}
+            onDelete={deleteLeave}
             employee={employee}
           />
         </TabsContent>
@@ -241,6 +250,7 @@ export default function LeavePage() {
               isSuperAdmin={isSuperAdmin}
               onView={setSelectedLeave}
               onAction={setStatus}
+              onDelete={deleteLeave}
               employee={employee}
               showEmployeeInfo={true}
             />
@@ -347,6 +357,7 @@ export default function LeavePage() {
         onClose={() => setSelectedLeave(null)}
         employee={selectedLeave ? employee(selectedLeave.employee_id) : undefined}
         onAction={setStatus}
+        onDelete={deleteLeave}
         isSuperAdmin={isSuperAdmin}
       />
     </div>
@@ -354,10 +365,11 @@ export default function LeavePage() {
 }
 
 function LeaveTable({
-  leaves, loading, isSuperAdmin, onView, onAction, employee, showEmployeeInfo = true
+  leaves, loading, isSuperAdmin, onView, onAction, onDelete, employee, showEmployeeInfo = true
 }: {
   leaves: Leave[]; loading: boolean; isSuperAdmin: boolean;
   onView: (l: Leave) => void; onAction: (id: string, s: LeaveStatus) => void;
+  onDelete?: (id: string) => void;
   employee: (id: string) => EmployeeRow | undefined;
   showEmployeeInfo?: boolean;
 }) {
@@ -428,6 +440,11 @@ function LeaveTable({
                                 <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
                               </Button>
                             )}
+                            {isSuperAdmin && (
+                              <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-destructive cursor-pointer hover:text-destructive hover:bg-destructive/10" onClick={() => onDelete?.(l.id)} title="Delete Request">
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -487,6 +504,11 @@ function LeaveTable({
                             </Button>
                           </>
                         )}
+                        {isSuperAdmin && (
+                          <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-destructive border-destructive/20 cursor-pointer hover:bg-destructive/10" onClick={() => onDelete?.(l.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -501,11 +523,12 @@ function LeaveTable({
 }
 
 function LeaveDetailsDialog({
-  leave, onClose, employee, onAction, isSuperAdmin
+  leave, onClose, employee, onAction, onDelete, isSuperAdmin
 }: {
   leave: Leave | null; onClose: () => void;
   employee?: EmployeeRow;
   onAction: (id: string, s: LeaveStatus) => void;
+  onDelete?: (id: string) => void;
   isSuperAdmin: boolean;
 }) {
   if (!leave) return null;
@@ -569,6 +592,11 @@ function LeaveDetailsDialog({
           )}
           {isSuperAdmin && leave.status !== 'pending' && (
             <Button variant="secondary" className="w-full rounded-xl h-11 font-bold bg-muted/50 cursor-pointer" onClick={() => { onAction(leave.id, 'pending'); onClose(); }}>Reset to Pending</Button>
+          )}
+          {isSuperAdmin && (
+            <Button variant="destructive" className="w-full rounded-xl h-11 font-bold cursor-pointer bg-destructive/10 text-destructive hover:bg-destructive/20 border-none" onClick={() => { onDelete?.(leave.id); onClose(); }}>
+              <Trash2 className="h-4 w-4 mr-1.5" /> Delete Request
+            </Button>
           )}
           <Button variant="outline" className="w-full rounded-xl h-11 font-bold border-muted-foreground/10 cursor-pointer" onClick={onClose}>Close</Button>
         </div>
