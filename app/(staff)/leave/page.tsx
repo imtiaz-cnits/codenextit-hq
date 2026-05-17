@@ -88,17 +88,29 @@ export default function LeavePage() {
     let leaveQuery = supabase.from("leave_requests").select("*").order("from_date", { ascending: false });
     let empQuery = supabase.from("employees").select("id, profile_id, email, designation, department") as any;
 
-    if (!isSuperAdmin) {
-      // Find the employee ID for current user to filter their own leaves
+    let userEmpId: string | null = null;
+    try {
       const { data: selfEmp } = await supabase
         .from("employees")
-        .select("id")
-        .or(`profile_id.eq.${user?.id},email.eq.${user?.email}`)
+        .select("id, profile_id")
+        .or(`profile_id.eq.${user.id},email.eq.${user.email}`)
         .maybeSingle();
 
       if (selfEmp) {
-        leaveQuery = leaveQuery.eq("employee_id", selfEmp.id);
+        userEmpId = selfEmp.id;
+        if (selfEmp.profile_id !== user.id) {
+          await supabase
+            .from("employees")
+            .update({ profile_id: user.id })
+            .eq("id", selfEmp.id);
+        }
       }
+    } catch (err) {
+      console.error("Self-healing profile sync error:", err);
+    }
+
+    if (!isSuperAdmin && userEmpId) {
+      leaveQuery = leaveQuery.eq("employee_id", userEmpId);
     }
 
     const [{ data: l, error: le }, { data: e, error: ee }, { data: profs }] = await Promise.all([
