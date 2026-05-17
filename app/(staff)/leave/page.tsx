@@ -835,12 +835,14 @@ function NewLeaveSheet({
               <FlatDatePicker
                 date={f.from_date}
                 onChange={d => setF({ ...f, from_date: d })}
+                placeholder="From"
               />
             </Fld>
             <Fld label="To">
               <FlatDatePicker
                 date={f.to_date}
                 onChange={d => setF({ ...f, to_date: d })}
+                placeholder="To"
               />
             </Fld>
           </div>
