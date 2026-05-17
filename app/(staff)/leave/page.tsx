@@ -77,6 +77,7 @@ export default function LeavePage() {
   });
 
   const currentUserEmp = employees.find(e => e.profile_id === user?.id) ||
+    employees.find(e => e.email?.toLowerCase() === user?.email?.toLowerCase()) ||
     employees.find(e => e.full_name === user?.user_metadata?.full_name); // Fallback to name if email unavailable in local state
 
   useEffect(() => { void load(); }, [user]);
@@ -712,14 +713,28 @@ function NewLeaveSheet({
   useEffect(() => {
     if (isSuperAdmin) {
       if (employees.length && !f.employee_id) setF((p) => ({ ...p, employee_id: employees[0].id }));
-    } else if (currentEmpId) {
+    } else if (currentEmpId && f.employee_id !== currentEmpId) {
       setF((p) => ({ ...p, employee_id: currentEmpId }));
     }
-  }, [employees, f.employee_id, isSuperAdmin, currentEmpId]);
+  }, [employees, isSuperAdmin, currentEmpId, f.employee_id]);
+
+  useEffect(() => {
+    if (open) {
+      setF({
+        employee_id: isSuperAdmin ? (employees[0]?.id || "") : (currentEmpId || ""),
+        type: "casual" as LeaveType,
+        from_date: "",
+        to_date: "",
+        reason: "",
+      });
+    }
+  }, [open, isSuperAdmin, employees, currentEmpId]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!f.employee_id) return toast.error("Select an employee");
+    if (!f.employee_id) {
+      return toast.error(isSuperAdmin ? "Select an employee" : "Employee profile not found. Please contact support.");
+    }
     setSubmitting(true);
     const { error } = await supabase.from("leave_requests").insert([{
       employee_id: f.employee_id, type: f.type,
@@ -746,18 +761,24 @@ function NewLeaveSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetTrigger asChild><Button><Plus className="h-4 w-4 mr-1.5" /> New request</Button></SheetTrigger>
       <SheetContent>
-        <SheetHeader><SheetTitle>New leave request</SheetTitle><SheetDescription>Submit on behalf of an employee.</SheetDescription></SheetHeader>
+        <SheetHeader>
+          <SheetTitle>New leave request</SheetTitle>
+          <SheetDescription>
+            {isSuperAdmin ? "Submit on behalf of an employee." : "Request time off for yourself."}
+          </SheetDescription>
+        </SheetHeader>
         <form onSubmit={submit} className="space-y-4 mt-6">
-          <Fld label="Employee">
-            <Select
-              value={f.employee_id}
-              onValueChange={(v) => setF({ ...f, employee_id: v })}
-              disabled={!isSuperAdmin}
-            >
-              <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
-              <SelectContent>{employees.map((e) => <SelectItem key={e.id} value={e.id}>{e.full_name}</SelectItem>)}</SelectContent>
-            </Select>
-          </Fld>
+          {isSuperAdmin && (
+            <Fld label="Employee">
+              <Select
+                value={f.employee_id}
+                onValueChange={(v) => setF({ ...f, employee_id: v })}
+              >
+                <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
+                <SelectContent>{employees.map((e) => <SelectItem key={e.id} value={e.id}>{e.full_name}</SelectItem>)}</SelectContent>
+              </Select>
+            </Fld>
+          )}
           <Fld label="Type">
             <Select value={f.type} onValueChange={(v) => setF({ ...f, type: v as LeaveType })}>
               <SelectTrigger><SelectValue /></SelectTrigger>
