@@ -27,6 +27,8 @@ export function FlatDatePicker({ date, onChange, placeholder = "Pick a date", cl
   const [open, setOpen] = React.useState(false);
   // Current month/year for navigation
   const [month, setMonthDate] = React.useState<Date>(new Date());
+  // Local string state for the year input so user can type freely (e.g. clear & retype)
+  const [yearInput, setYearInput] = React.useState<string>(String(new Date().getFullYear()));
 
   // Parse the date string (YYYY-MM-DD) into a Date object
   const selectedDate = React.useMemo(() => {
@@ -46,6 +48,11 @@ export function FlatDatePicker({ date, onChange, placeholder = "Pick a date", cl
     }
   }, [selectedDate]);
 
+  // Keep year input in sync when month changes from any source other than typing
+  React.useEffect(() => {
+    setYearInput(String(month.getFullYear()));
+  }, [month]);
+
   const handleSelect = (newDate: Date | undefined) => {
     if (newDate) {
       onChange(format(newDate, "yyyy-MM-dd"));
@@ -61,10 +68,20 @@ export function FlatDatePicker({ date, onChange, placeholder = "Pick a date", cl
   };
 
   const handleYearChange = (yearStr: string) => {
+    // Allow free typing; only update month state when value is a valid 4-digit year in range
+    setYearInput(yearStr);
     const year = parseInt(yearStr);
-    if (!isNaN(year) && year > 1900 && year < 2100) {
+    if (yearStr.length === 4 && !isNaN(year) && year > 1900 && year < 2100) {
       const newDate = setYear(month, year);
       setMonthDate(newDate);
+    }
+  };
+
+  const handleYearBlur = () => {
+    // On blur, snap back to last valid year if input is invalid/empty
+    const year = parseInt(yearInput);
+    if (isNaN(year) || year <= 1900 || year >= 2100 || yearInput.length !== 4) {
+      setYearInput(String(month.getFullYear()));
     }
   };
 
@@ -117,9 +134,12 @@ export function FlatDatePicker({ date, onChange, placeholder = "Pick a date", cl
             <Input
               type="number"
               className="h-8 w-[55px] text-[13px] font-bold px-1 border-none bg-transparent hover:bg-accent focus-visible:ring-0 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-              value={month.getFullYear()}
+              value={yearInput}
               onChange={(e) => handleYearChange(e.target.value)}
+              onBlur={handleYearBlur}
               onWheel={(e) => e.currentTarget.blur()}
+              min={1901}
+              max={2099}
             />
           </div>
 
