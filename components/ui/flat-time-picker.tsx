@@ -74,7 +74,7 @@ export function FlatTimePicker({
   // Scroll selected item into view when panel opens
   React.useEffect(() => {
     if (!open) return;
-    const scrollToSelected = (ref: React.RefObject<HTMLDivElement>) => {
+    const scrollToSelected = (ref: React.RefObject<HTMLDivElement | null>) => {
       const el = ref.current?.querySelector("[data-selected='true']") as HTMLElement | null;
       if (el) el.scrollIntoView({ block: "center", behavior: "instant" });
     };
