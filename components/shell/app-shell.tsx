@@ -8,7 +8,7 @@ import {
   Clock, CalendarDays, Wallet, FileText, Receipt, LifeBuoy, FolderLock,
   Settings, Search, Bell, Moon, Sun, LogOut, Sparkles, ChevronLeft, Menu,
   Briefcase, TrendingUp, FileSpreadsheet, Globe, HardDrive, ArrowDownCircle,
-  ArrowUpCircle, PiggyBank, AlertCircle, Banknote,
+  ArrowUpCircle, PiggyBank, AlertCircle, Banknote, Zap,
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
@@ -70,6 +70,12 @@ const STAFF_GROUPS: { label: string; items: NavItem[] }[] = [
     ],
   },
   {
+    label: "Infrastructure",
+    items: [
+      { to: "/infrastructure/generator", label: "Generator Logs", icon: Zap },
+    ],
+  },
+  {
     label: "Finance",
     items: [
       { to: "/finance/quotes", label: "Quotations", icon: FileText, module: "finance" },
@@ -79,14 +85,6 @@ const STAFF_GROUPS: { label: string; items: NavItem[] }[] = [
       { to: "/accounts/investment", label: "Investment", icon: PiggyBank, module: "accounts" },
       { to: "/accounts/due", label: "Due", icon: AlertCircle, module: "accounts" },
       { to: "/accounts/salary", label: "Salary Sheet", icon: Banknote, module: "accounts" },
-    ],
-  },
-  {
-    label: "Infrastructure",
-    items: [
-      { to: "/infrastructure/domains", label: "Domain", icon: Globe, module: "infrastructure" },
-      { to: "/infrastructure/hosting", label: "Hosting", icon: HardDrive, module: "infrastructure" },
-      { to: "/tickets", label: "Tickets", icon: LifeBuoy, module: "tickets" },
     ],
   },
   {
