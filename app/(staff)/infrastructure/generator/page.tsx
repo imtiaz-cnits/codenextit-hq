@@ -18,8 +18,9 @@ import {
   Edit, Trash2, Settings, Clipboard, Check, Activity, Clock, AlertTriangle, AlertCircle, Copy, UserCheck,
   ChevronLeft, ChevronRight, Eye
 } from "lucide-react";
-import { formatCurrency, formatDate } from "../../../../lib/format";
+import { formatCurrency, formatDate, toLocalDateString } from "../../../../lib/format";
 import { cn } from "../../../../lib/utils";
+import { useAuth } from "../../../../lib/auth-context";
 import { toast } from "sonner";
 import { FlatDatePicker } from "../../../../components/ui/flat-date-picker";
 import { FlatTimePicker } from "../../../../components/ui/flat-time-picker";
@@ -116,7 +117,7 @@ CREATE TABLE IF NOT EXISTS public.generator_run_logs (
     stopped_at TIMESTAMPTZ,
     date DATE NOT NULL,
     on_time TEXT NOT NULL,
-    off_time TEXT NOT NULL,
+    off_time TEXT,
     duration_minutes INTEGER,
     operator_name TEXT NOT NULL,
     signed_by_name TEXT,
@@ -182,11 +183,17 @@ ALTER TABLE public.generator_run_logs
 ALTER TABLE public.generator_run_logs 
   ALTER COLUMN start_hours DROP NOT NULL;
 
+-- Make off_time nullable for active runs (started but not yet stopped)
+ALTER TABLE public.generator_run_logs 
+  ALTER COLUMN off_time DROP NOT NULL;
+
 -- Add refueling item type (Petrol vs Mobil)
 ALTER TABLE public.generator_refueling_logs
   ADD COLUMN IF NOT EXISTS item_type TEXT NOT NULL DEFAULT 'petrol';`;
 
 export default function GeneratorLogsPage() {
+  const { profile: currentProfile, hasRole } = useAuth();
+  const isSuperAdmin = hasRole("super_admin");
   const [generators, setGenerators] = useState<Generator[]>([]);
   const [runLogs, setRunLogs] = useState<RunLog[]>([]);
   const [refuelLogs, setRefuelLogs] = useState<RefuelingLog[]>([]);
@@ -211,13 +218,30 @@ export default function GeneratorLogsPage() {
   const [pageSize, setPageSize] = useState(10);
   const [rangeType, setRangeType] = useState<"daily" | "weekly" | "monthly" | "custom">("monthly");
   const [filterStartDate, setFilterStartDate] = useState(() => {
-    const d = new Date(); d.setDate(1); return d.toISOString().split("T")[0];
+    const today = toLocalDateString();
+    const [y, m] = today.split("-");
+    return `${y}-${m}-01`;
   });
-  const [filterEndDate, setFilterEndDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [filterEndDate, setFilterEndDate] = useState(() => toLocalDateString());
   const [filterGenerator, setFilterGenerator] = useState("all");
 
   useEffect(() => {
     void loadData();
+  }, []);
+
+  // Realtime subscription: refresh data when any user makes changes
+  useEffect(() => {
+    const channel = supabaseClient
+      .channel("generator-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "generator_run_logs" }, () => { void loadData(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "generator_refueling_logs" }, () => { void loadData(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "generator_maintenance_logs" }, () => { void loadData(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "generators" }, () => { void loadData(); })
+      .subscribe();
+
+    return () => {
+      void supabaseClient.removeChannel(channel);
+    };
   }, []);
 
   async function loadData() {
@@ -397,21 +421,165 @@ export default function GeneratorLogsPage() {
     return profiles.find(p => p.id === id)?.full_name || "—";
   };
 
-  // --- Date range calculation ---
+  // Find active run (started but not yet stopped)
+  const activeRun = useMemo(() => {
+    return runLogs.find(log => !log.off_time || log.off_time.trim() === "");
+  }, [runLogs]);
+
+  // Live elapsed time tracking for active run
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!activeRun) return;
+    const interval = setInterval(() => setNow(Date.now()), 60000); // update every minute
+    return () => clearInterval(interval);
+  }, [activeRun]);
+
+  const activeRunElapsed = useMemo(() => {
+    if (!activeRun) return null;
+    const startMs = new Date(activeRun.started_at).getTime();
+    const elapsedMin = Math.max(0, Math.floor((now - startMs) / 60000));
+    return elapsedMin;
+  }, [activeRun, now]);
+
+  // Quick start: log a run with current time as on_time, no off_time
+  const [quickStartSubmitting, setQuickStartSubmitting] = useState(false);
+  async function handleQuickStart(generatorId: string, operatorName: string) {
+    const finalOperator = operatorName.trim() || currentProfile?.full_name || "";
+    if (!finalOperator) {
+      toast.error("Please select an operator first");
+      return;
+    }
+    setQuickStartSubmitting(true);
+    try {
+      const now = new Date();
+      // Use Bangladesh timezone for date and on_time display
+      const dateStr = toLocalDateString(now);
+      const bdParts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Dhaka",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).formatToParts(now);
+      const hour24 = parseInt(bdParts.find(p => p.type === "hour")?.value || "0");
+      const minute = bdParts.find(p => p.type === "minute")?.value || "00";
+      const ampm = hour24 >= 12 ? "pm" : "am";
+      let h12 = hour24 % 12; if (h12 === 0) h12 = 12;
+      const onTime12 = `${String(h12).padStart(2, "0")}:${minute} ${ampm}`;
+
+      const { error } = await supabaseClient.from("generator_run_logs").insert({
+        generator_id: generatorId,
+        date: dateStr,
+        on_time: onTime12,
+        off_time: null,
+        duration_minutes: null,
+        operator_name: finalOperator,
+        signed_by_name: null,
+        started_at: now.toISOString(),
+        stopped_at: null,
+        purpose: "outage",
+        notes: null,
+      });
+      if (error) throw error;
+      toast.success("Generator started! Run is now active.");
+      void loadData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to start run");
+    } finally {
+      setQuickStartSubmitting(false);
+    }
+  }
+
+  // Stop active run: set off_time to current time and calculate duration
+  const [stopSubmitting, setStopSubmitting] = useState(false);
+  const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
+  const [isOverrideStop, setIsOverrideStop] = useState(false);
+  // Delete confirmation
+  const [deleteTarget, setDeleteTarget] = useState<{ table: string; id: string; label?: string } | null>(null);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  async function handleStopActiveRun() {
+    if (!activeRun) return;
+    const isOperator = currentProfile?.full_name === activeRun.operator_name;
+    const canStop = isOperator || isSuperAdmin;
+    if (!canStop) {
+      toast.error(`Only ${activeRun.operator_name} (who started this run) or a Super Admin can stop it.`);
+      return;
+    }
+    // Mark whether this is an admin override (super_admin stopping someone else's run)
+    setIsOverrideStop(isSuperAdmin && !isOperator);
+    setStopConfirmOpen(true);
+  }
+
+  async function confirmStopActiveRun() {
+    if (!activeRun) return;
+    setStopSubmitting(true);
+    try {
+      const stopDate = new Date();
+      // Use Bangladesh timezone for off_time display
+      const bdParts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Dhaka",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).formatToParts(stopDate);
+      const hour24 = parseInt(bdParts.find(p => p.type === "hour")?.value || "0");
+      const minute = bdParts.find(p => p.type === "minute")?.value || "00";
+      const ampm = hour24 >= 12 ? "pm" : "am";
+      let h12 = hour24 % 12; if (h12 === 0) h12 = 12;
+      const offTime12 = `${String(h12).padStart(2, "0")}:${minute} ${ampm}`;
+
+      const startMs = new Date(activeRun.started_at).getTime();
+      const durationMin = Math.max(1, Math.round((stopDate.getTime() - startMs) / 60000));
+
+      // Append override audit note if super_admin is stopping someone else's run
+      let updatedNotes = activeRun.notes || "";
+      if (isOverrideStop && currentProfile?.full_name) {
+        const auditLine = `[Admin override: Stopped by ${currentProfile.full_name} on ${stopDate.toLocaleString("en-US", { timeZone: "Asia/Dhaka", dateStyle: "medium", timeStyle: "short" })}]`;
+        updatedNotes = updatedNotes ? `${updatedNotes}\n${auditLine}` : auditLine;
+      }
+
+      const { error } = await supabaseClient.from("generator_run_logs").update({
+        off_time: offTime12,
+        stopped_at: stopDate.toISOString(),
+        duration_minutes: durationMin,
+        signed_by_name: isOverrideStop ? currentProfile?.full_name || null : (activeRun.signed_by_name || null),
+        notes: updatedNotes || null,
+      }).eq("id", activeRun.id);
+      if (error) throw error;
+
+      if (isOverrideStop) {
+        toast.success(`Run stopped (admin override). Duration: ${formatRuntime(durationMin)}`);
+      } else {
+        toast.success(`Run stopped. Total duration: ${formatRuntime(durationMin)}`);
+      }
+      setStopConfirmOpen(false);
+      setIsOverrideStop(false);
+      void loadData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to stop run");
+    } finally {
+      setStopSubmitting(false);
+    }
+  }
+
+  // --- Date range calculation (uses Bangladesh timezone) ---
   const dateRange = useMemo(() => {
-    const now = new Date();
+    const todayBD = toLocalDateString(); // YYYY-MM-DD in BD time
     let start: string, end: string;
     if (rangeType === "daily") {
-      start = end = now.toISOString().split("T")[0];
+      start = end = todayBD;
     } else if (rangeType === "weekly") {
-      const dayOfWeek = now.getDay();
-      const startOfWeek = new Date(now);
-      startOfWeek.setDate(now.getDate() - dayOfWeek);
-      start = startOfWeek.toISOString().split("T")[0];
-      end = now.toISOString().split("T")[0];
+      // parse todayBD as a date and find this week's Sunday
+      const [y, m, d] = todayBD.split("-").map(Number);
+      const today = new Date(y, m - 1, d);
+      const dayOfWeek = today.getDay();
+      const startOfWeek = new Date(today);
+      startOfWeek.setDate(today.getDate() - dayOfWeek);
+      start = `${startOfWeek.getFullYear()}-${String(startOfWeek.getMonth() + 1).padStart(2, "0")}-${String(startOfWeek.getDate()).padStart(2, "0")}`;
+      end = todayBD;
     } else if (rangeType === "monthly") {
-      start = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-      end = now.toISOString().split("T")[0];
+      const [y, m] = todayBD.split("-");
+      start = `${y}-${m}-01`;
+      end = todayBD;
     } else {
       start = filterStartDate;
       end = filterEndDate;
@@ -561,13 +729,57 @@ export default function GeneratorLogsPage() {
         <div className="flex items-center gap-2 flex-wrap">
           {generators.length > 0 && (
             <>
-              <NewRunSheet generators={generators} profiles={profiles} onCreated={loadData} />
-              <NewRefuelSheet generators={generators} profiles={profiles} onCreated={loadData} />
-              <NewMaintenanceSheet generators={generators} onCreated={loadData} />
+              {!activeRun && <QuickStartSheet generators={generators} profiles={profiles} currentProfile={currentProfile} onStart={handleQuickStart} submitting={quickStartSubmitting} />}
+              <NewRefuelSheet generators={generators} profiles={profiles} currentProfile={currentProfile} onCreated={loadData} />
+              <NewMaintenanceSheet generators={generators} currentProfile={currentProfile} onCreated={loadData} />
             </>
           )}
         </div>
       </div>
+
+      {/* Active Run Banner */}
+      {activeRun && (() => {
+        const isOperator = currentProfile?.full_name === activeRun.operator_name;
+        const canStop = isOperator || isSuperAdmin;
+        return (
+        <Card className="border-2 border-primary/40 bg-gradient-to-r from-primary/5 to-primary/10 shadow-md">
+          <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <div className="w-3 h-3 rounded-full bg-primary animate-pulse" />
+                <div className="absolute inset-0 w-3 h-3 rounded-full bg-primary animate-ping opacity-50" />
+              </div>
+              <div>
+                <p className="text-xs uppercase font-bold text-primary tracking-wider">Generator Running</p>
+                <p className="text-sm font-semibold mt-0.5">
+                  {activeRun.generators?.name || "Generator"} • Started <span className="font-mono">{activeRun.on_time}</span>
+                  {activeRunElapsed !== null && <span className="text-muted-foreground ml-2">({formatRuntime(activeRunElapsed)} elapsed)</span>}
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Operator: <span className="font-semibold">{activeRun.operator_name}</span>
+                  {isSuperAdmin && !isOperator && <span className="ml-1.5 text-amber-600 dark:text-amber-400">(admin can override stop)</span>}
+                </p>
+              </div>
+            </div>
+            {canStop ? (
+              <Button
+                onClick={handleStopActiveRun}
+                disabled={stopSubmitting}
+                variant={isSuperAdmin && !isOperator ? "outline" : "destructive"}
+                className={cn("cursor-pointer w-full sm:w-auto", isSuperAdmin && !isOperator && "border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10")}
+              >
+                {stopSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : isSuperAdmin && !isOperator ? <AlertTriangle className="h-4 w-4 mr-1.5" /> : <Clock className="h-4 w-4 mr-1.5" />}
+                {isSuperAdmin && !isOperator ? "Force Stop" : "Stop Run Now"}
+              </Button>
+            ) : (
+              <div className="text-[11px] text-muted-foreground italic w-full sm:w-auto sm:text-right">
+                Only {activeRun.operator_name} can stop this run
+              </div>
+            )}
+          </CardContent>
+        </Card>
+        );
+      })()}
 
       {loading ? (
         <TableSkeleton rows={8} cols={7} />
@@ -790,8 +1002,10 @@ export default function GeneratorLogsPage() {
                         <TableCell className="text-sm font-semibold">{log.operator_name || "—"}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{log.generators?.name || "—"}</TableCell>
                         <TableCell className="font-mono text-sm font-bold">{log.on_time || "—"}</TableCell>
-                        <TableCell className="font-mono text-sm font-bold">{log.off_time || "—"}</TableCell>
-                        <TableCell className="font-mono text-sm font-bold text-primary">{formatRuntime(log.duration_minutes)}</TableCell>
+                        <TableCell className="font-mono text-sm font-bold">
+                          {log.off_time ? log.off_time : <Badge className="bg-primary/15 text-primary border-primary/30 text-[10px] font-bold animate-pulse">Active</Badge>}
+                        </TableCell>
+                        <TableCell className="font-mono text-sm font-bold text-primary">{log.duration_minutes !== null ? formatRuntime(log.duration_minutes) : "—"}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-primary cursor-pointer" onClick={() => setViewItem({ type: "run", data: log })}>
@@ -822,7 +1036,9 @@ export default function GeneratorLogsPage() {
                           <p className="text-[10px] uppercase font-bold text-muted-foreground">Date</p>
                           <p className="font-semibold text-sm">{log.date ? formatDate(log.date) : formatDate(log.started_at)}</p>
                         </div>
-                        <Badge className="bg-primary/10 text-primary border-primary/20 px-2 py-0.5 text-[10px] font-bold">{formatRuntime(log.duration_minutes)}</Badge>
+                        <Badge className={cn("px-2 py-0.5 text-[10px] font-bold border", log.duration_minutes !== null ? "bg-primary/10 text-primary border-primary/20" : "bg-primary/15 text-primary border-primary/30 animate-pulse")}>
+                          {log.duration_minutes !== null ? formatRuntime(log.duration_minutes) : "Running"}
+                        </Badge>
                       </div>
 
                       <div className="grid grid-cols-2 gap-4 py-2 border-y border-dashed">
@@ -832,7 +1048,7 @@ export default function GeneratorLogsPage() {
                         </div>
                         <div>
                           <p className="text-[10px] uppercase font-bold text-muted-foreground mb-0.5">Off Time</p>
-                          <p className="font-mono text-xs font-bold">{log.off_time || "—"}</p>
+                          <p className="font-mono text-xs font-bold">{log.off_time ? log.off_time : <span className="text-primary animate-pulse">Active</span>}</p>
                         </div>
                       </div>
 
@@ -1267,6 +1483,84 @@ export default function GeneratorLogsPage() {
         </Tabs>
       )}
 
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <DialogContent className="sm:max-w-[400px] rounded-[1.5rem] p-5 sm:p-6 gap-4 border-none shadow-2xl">
+          <DialogHeader className="space-y-2">
+            <div className="mx-auto p-3 rounded-full bg-destructive/10 w-fit">
+              <Trash2 className="h-6 w-6 text-destructive" />
+            </div>
+            <DialogTitle className="text-lg font-bold text-center">Delete this record?</DialogTitle>
+            <DialogDescription className="text-center text-xs">
+              This action cannot be undone. The record will be permanently removed.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-1">
+            <Button variant="outline" className="rounded-xl h-10 cursor-pointer" onClick={() => setDeleteTarget(null)} disabled={deleteSubmitting}>Cancel</Button>
+            <Button variant="destructive" className="rounded-xl h-10 cursor-pointer" onClick={confirmDelete} disabled={deleteSubmitting}>
+              {deleteSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Trash2 className="h-4 w-4 mr-1.5" />}
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Stop Active Run Confirmation Dialog */}
+      <Dialog open={stopConfirmOpen} onOpenChange={(o) => { if (!o) { setStopConfirmOpen(false); setIsOverrideStop(false); } }}>
+        <DialogContent className="sm:max-w-[420px] rounded-[1.5rem] p-5 sm:p-6 gap-4 border-none shadow-2xl">
+          <DialogHeader className="space-y-2">
+            <div className={cn("mx-auto p-3 rounded-full w-fit", isOverrideStop ? "bg-amber-500/10" : "bg-destructive/10")}>
+              {isOverrideStop ? <AlertTriangle className="h-6 w-6 text-amber-600 dark:text-amber-400" /> : <Clock className="h-6 w-6 text-destructive" />}
+            </div>
+            <DialogTitle className="text-lg font-bold text-center">
+              {isOverrideStop ? "Admin Override – Stop Run?" : "Stop Generator Run?"}
+            </DialogTitle>
+            <DialogDescription className="text-center text-xs">
+              {isOverrideStop
+                ? `You are stopping a run that was started by ${activeRun?.operator_name}. This action will be logged for audit.`
+                : "Confirm to stop the active generator run. Off time and total duration will be auto-calculated."}
+            </DialogDescription>
+          </DialogHeader>
+          {activeRun && (
+            <div className={cn("rounded-xl p-3 space-y-2 border", isOverrideStop ? "bg-amber-500/5 border-amber-500/20" : "bg-muted/30")}>
+              <div className="flex justify-between text-xs"><span className="text-muted-foreground">Generator</span><span className="font-semibold">{activeRun.generators?.name || "—"}</span></div>
+              <div className="flex justify-between text-xs"><span className="text-muted-foreground">Started</span><span className="font-mono font-semibold">{activeRun.on_time}</span></div>
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">Operator</span>
+                <span className="font-semibold">{activeRun.operator_name}{isOverrideStop && <span className="text-amber-600 dark:text-amber-400 ml-1 text-[10px]">(not you)</span>}</span>
+              </div>
+              {isOverrideStop && currentProfile && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Stopped by</span>
+                  <span className="font-semibold text-amber-600 dark:text-amber-400">{currentProfile.full_name} (Super Admin)</span>
+                </div>
+              )}
+              {activeRunElapsed !== null && (
+                <div className="flex justify-between text-xs pt-2 border-t border-dashed"><span className="text-muted-foreground">Elapsed</span><span className="font-mono font-bold text-primary">{formatRuntime(activeRunElapsed)}</span></div>
+              )}
+            </div>
+          )}
+          {isOverrideStop && (
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 text-[11px] text-amber-700 dark:text-amber-300 leading-relaxed">
+              <p className="font-semibold mb-1 flex items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5" /> Audit Trail</p>
+              <p>An audit note will be appended to this run record showing your name and timestamp.</p>
+            </div>
+          )}
+          <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-1">
+            <Button variant="outline" className="rounded-xl h-10 cursor-pointer" onClick={() => { setStopConfirmOpen(false); setIsOverrideStop(false); }} disabled={stopSubmitting}>Cancel</Button>
+            <Button
+              variant={isOverrideStop ? "default" : "destructive"}
+              className={cn("rounded-xl h-10 cursor-pointer", isOverrideStop && "bg-amber-600 hover:bg-amber-700 text-white")}
+              onClick={confirmStopActiveRun}
+              disabled={stopSubmitting}
+            >
+              {stopSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Clock className="h-4 w-4 mr-1.5" />}
+              {isOverrideStop ? "Force Stop (Override)" : "Stop Run Now"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Quick View Dialog */}
       <Dialog open={!!viewItem} onOpenChange={(o) => !o && setViewItem(null)}>
         <DialogContent className="max-w-[95vw] sm:max-w-[450px] rounded-[1.5rem] p-6 sm:p-8 gap-6 border-none shadow-2xl">
@@ -1475,15 +1769,23 @@ export default function GeneratorLogsPage() {
   );
 
   // --- Deletion Helper ---
-  async function deleteItem(table: string, id: string) {
-    if (!confirm("Are you sure you want to delete this log entry? This action is irreversible.")) return;
+  function deleteItem(table: string, id: string, label?: string) {
+    setDeleteTarget({ table, id, label });
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleteSubmitting(true);
     try {
-      const { error } = await supabaseClient.from(table).delete().eq("id", id);
+      const { error } = await supabaseClient.from(deleteTarget.table).delete().eq("id", deleteTarget.id);
       if (error) throw error;
       toast.success("Record deleted successfully");
+      setDeleteTarget(null);
       void loadData();
     } catch (err: any) {
       toast.error(err.message || "Failed to delete record");
+    } finally {
+      setDeleteSubmitting(false);
     }
   }
 
@@ -1536,6 +1838,84 @@ export default function GeneratorLogsPage() {
 }
 
 // ------ MODAL FORM COMPONENTS ------
+
+function QuickStartSheet({ generators, profiles, currentProfile, onStart, submitting }: { generators: Generator[]; profiles: Profile[]; currentProfile: { id: string; full_name: string } | null; onStart: (genId: string, opName: string) => Promise<void>; submitting: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [genId, setGenId] = useState(generators[0]?.id || "");
+  const [operator, setOperator] = useState(currentProfile?.full_name || "");
+
+  // Auto-fill operator with current user when sheet opens
+  useEffect(() => {
+    if (open && currentProfile?.full_name && !operator) {
+      setOperator(currentProfile.full_name);
+    }
+  }, [open, currentProfile]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!genId || !operator) return;
+    await onStart(genId, operator);
+    setOpen(false);
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
+        <Button className="cursor-pointer">
+          <Zap className="h-4 w-4 mr-1.5" /> Quick Start Run
+        </Button>
+      </SheetTrigger>
+      <SheetContent className="p-0 flex flex-col h-full">
+        <SheetHeader className="p-6 pb-4 border-b">
+          <SheetTitle>Start Generator Run</SheetTitle>
+          <SheetDescription>Generator চালু হওয়ার সময় এটা use করুন। On time = এখনকার time। পরে stop করার সময় Stop button press করলে off time + duration auto save হবে।</SheetDescription>
+        </SheetHeader>
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            <Fld label="Select Generator Unit">
+              <Select value={genId} onValueChange={setGenId}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {generators.map(g => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Fld>
+
+            <Fld label="Operator (Opr. Person)">
+              <Select value={operator} onValueChange={setOperator}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select operator staff" />
+                </SelectTrigger>
+                <SelectContent>
+                  {profiles.map(p => (
+                    <SelectItem key={p.id} value={p.full_name}>
+                      {p.full_name}{currentProfile?.id === p.id && " (You)"}
+                    </SelectItem>
+                  ))}
+                  {currentProfile && !profiles.find(p => p.id === currentProfile.id) && (
+                    <SelectItem value={currentProfile.full_name}>{currentProfile.full_name} (You)</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </Fld>
+
+            <div className="bg-primary/10 border border-primary/30 rounded-xl p-3 text-xs text-primary">
+              <p className="font-semibold flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" /> Start time will be set to current time</p>
+              <p className="mt-1 text-primary/80">After this, an active run banner will show on top. Press "Stop Run Now" when generator stops.</p>
+            </div>
+          </div>
+
+          <div className="p-6 border-t bg-muted/20">
+            <Button type="submit" disabled={submitting || !genId || !operator} className="w-full cursor-pointer">
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Zap className="h-4 w-4 mr-1.5" />}
+              Start Run Now
+            </Button>
+          </div>
+        </form>
+      </SheetContent>
+    </Sheet>
+  );
+}
 
 function NewGeneratorSheet({ onCreated, trigger }: { onCreated: () => void; trigger: React.ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -1644,7 +2024,7 @@ function NewGeneratorSheet({ onCreated, trigger }: { onCreated: () => void; trig
   );
 }
 
-function NewRunSheet({ generators, profiles, onCreated }: { generators: Generator[]; profiles: Profile[]; onCreated: () => void }) {
+function NewRunSheet({ generators, profiles, currentProfile, onCreated }: { generators: Generator[]; profiles: Profile[]; currentProfile: { id: string; full_name: string } | null; onCreated: () => void }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -1678,10 +2058,17 @@ function NewRunSheet({ generators, profiles, onCreated }: { generators: Generato
     on_time: defaultTime24(),
     off_time: "",
     duration_minutes: "",
-    operator_name: "",
+    operator_name: currentProfile?.full_name || "",
     purpose: "outage",
     notes: ""
   });
+
+  // Auto-fill operator with current user when sheet opens
+  useEffect(() => {
+    if (open && currentProfile?.full_name && !form.operator_name) {
+      setForm(f => ({ ...f, operator_name: currentProfile.full_name }));
+    }
+  }, [open, currentProfile]);
 
   // Parse time and calculate minutes automatically
   const calculatedMins = useMemo(() => {
@@ -1735,7 +2122,7 @@ function NewRunSheet({ generators, profiles, onCreated }: { generators: Generato
         generator_id: form.generator_id,
         date: form.date,
         on_time: format24to12(form.on_time),
-        off_time: form.off_time ? format24to12(form.off_time) : "",
+        off_time: form.off_time ? format24to12(form.off_time) : null,
         duration_minutes: Number(form.duration_minutes) || null,
         operator_name: form.operator_name,
         signed_by_name: null,
@@ -1759,12 +2146,12 @@ function NewRunSheet({ generators, profiles, onCreated }: { generators: Generato
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button className="gradient-primary cursor-pointer"><Zap className="h-4 w-4 mr-1.5" /> Log Outage Run</Button>
+        <Button variant="outline" className="cursor-pointer"><Zap className="h-4 w-4 mr-1.5" /> Manual Log Entry</Button>
       </SheetTrigger>
       <SheetContent className="p-0 flex flex-col h-full">
         <SheetHeader className="p-6 pb-4 border-b">
-          <SheetTitle>Log Outage Run</SheetTitle>
-          <SheetDescription>Log outages, operator names, and durations matching your logbook.</SheetDescription>
+          <SheetTitle>Manual Log Entry</SheetTitle>
+          <SheetDescription>Manually log a past outage run with both on/off times. Use the Quick Start button for live runs.</SheetDescription>
         </SheetHeader>
         <form onSubmit={submit} className="flex flex-col flex-1 overflow-hidden">
           <div className="flex-1 overflow-y-auto p-6 space-y-4">
@@ -1811,8 +2198,13 @@ function NewRunSheet({ generators, profiles, onCreated }: { generators: Generato
                 </SelectTrigger>
                 <SelectContent>
                   {profiles.map(p => (
-                    <SelectItem key={p.id} value={p.full_name}>{p.full_name}</SelectItem>
+                    <SelectItem key={p.id} value={p.full_name}>
+                      {p.full_name}{currentProfile?.id === p.id && " (You)"}
+                    </SelectItem>
                   ))}
+                  {currentProfile && !profiles.find(p => p.id === currentProfile.id) && (
+                    <SelectItem value={currentProfile.full_name}>{currentProfile.full_name} (You)</SelectItem>
+                  )}
                 </SelectContent>
               </Select>
             </Fld>
@@ -1844,7 +2236,7 @@ function NewRunSheet({ generators, profiles, onCreated }: { generators: Generato
   );
 }
 
-function NewRefuelSheet({ generators, profiles, onCreated }: { generators: Generator[]; profiles: Profile[]; onCreated: () => void }) {
+function NewRefuelSheet({ generators, profiles, currentProfile, onCreated }: { generators: Generator[]; profiles: Profile[]; currentProfile: { id: string; full_name: string } | null; onCreated: () => void }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -1872,8 +2264,15 @@ function NewRefuelSheet({ generators, profiles, onCreated }: { generators: Gener
     currency: "BDT",
     vendor: "",
     notes: "",
-    logged_by: ""
+    logged_by: currentProfile?.id || ""
   });
+
+  // Auto-fill logged_by with current user when sheet opens
+  useEffect(() => {
+    if (open && currentProfile?.id && !form.logged_by) {
+      setForm(f => ({ ...f, logged_by: currentProfile.id }));
+    }
+  }, [open, currentProfile]);
 
   const ratePreview = useMemo(() => {
     const price = Number(form.unit_price);
@@ -1992,7 +2391,14 @@ function NewRefuelSheet({ generators, profiles, onCreated }: { generators: Gener
               <Select value={form.logged_by} onValueChange={val => setForm({ ...form, logged_by: val })}>
                 <SelectTrigger><SelectValue placeholder="Select Staff" /></SelectTrigger>
                 <SelectContent>
-                  {profiles.map(p => <SelectItem key={p.id} value={p.id}>{p.full_name}</SelectItem>)}
+                  {profiles.map(p => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.full_name}{currentProfile?.id === p.id && " (You)"}
+                    </SelectItem>
+                  ))}
+                  {currentProfile && !profiles.find(p => p.id === currentProfile.id) && (
+                    <SelectItem value={currentProfile.id}>{currentProfile.full_name} (You)</SelectItem>
+                  )}
                 </SelectContent>
               </Select>
             </Fld>
@@ -2020,7 +2426,7 @@ function NewRefuelSheet({ generators, profiles, onCreated }: { generators: Gener
   );
 }
 
-function NewMaintenanceSheet({ generators, onCreated }: { generators: Generator[]; onCreated: () => void }) {
+function NewMaintenanceSheet({ generators, currentProfile, onCreated }: { generators: Generator[]; currentProfile: { id: string; full_name: string } | null; onCreated: () => void }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -2045,7 +2451,8 @@ function NewMaintenanceSheet({ generators, onCreated }: { generators: Generator[
         cost: Number(form.cost) || 0,
         currency: "BDT",
         performed_by: form.performed_by || null,
-        details: form.details || null
+        details: form.details || null,
+        logged_by: currentProfile?.id || null,
       });
 
       if (error) throw error;

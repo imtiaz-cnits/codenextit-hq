@@ -1,8 +1,18 @@
+// Bangladesh timezone constant — used for all date/time operations across the app
+export const BD_TIMEZONE = "Asia/Dhaka";
+
 export function toLocalDateString(date: Date = new Date()): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  // Returns YYYY-MM-DD in Bangladesh time
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: BD_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const y = parts.find(p => p.type === "year")?.value || "1970";
+  const m = parts.find(p => p.type === "month")?.value || "01";
+  const d = parts.find(p => p.type === "day")?.value || "01";
+  return `${y}-${m}-${d}`;
 }
 
 export function formatCurrency(amount: number, currency: string = "BDT"): string {
@@ -15,7 +25,19 @@ export function formatCurrency(amount: number, currency: string = "BDT"): string
 export function formatDate(d: string | Date | null | undefined): string {
   if (!d) return "—";
   const date = typeof d === "string" ? new Date(d) : d;
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: BD_TIMEZONE });
+}
+
+export function formatTime(d: string | Date | null | undefined): string {
+  if (!d) return "—";
+  const date = typeof d === "string" ? new Date(d) : d;
+  return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: BD_TIMEZONE });
+}
+
+export function formatDateTime(d: string | Date | null | undefined): string {
+  if (!d) return "—";
+  const date = typeof d === "string" ? new Date(d) : d;
+  return date.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true, timeZone: BD_TIMEZONE });
 }
 
 export function formatRelativeDays(d: string | Date | null | undefined): string {

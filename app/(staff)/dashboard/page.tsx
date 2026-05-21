@@ -14,6 +14,7 @@ import {
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { cn } from "../../../lib/utils";
 import { DashboardSkeleton } from "../../../components/loading-skeletons";
+import { BdClockWidget } from "../../../components/dashboard/bd-clock-widget";
 
 const burndownData = [
   { day: "Mon", planned: 100, actual: 100 },
@@ -99,6 +100,9 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* BD Time & Date Widget */}
+      <BdClockWidget />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
         {isSuperAdmin && (

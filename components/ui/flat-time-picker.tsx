@@ -70,6 +70,8 @@ export function FlatTimePicker({
   // Refs for scroll columns
   const hourRef = React.useRef<HTMLDivElement>(null);
   const minRef  = React.useRef<HTMLDivElement>(null);
+  const hourScrollTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const minScrollTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Scroll selected item into view when panel opens
   React.useEffect(() => {
@@ -83,6 +85,34 @@ export function FlatTimePicker({
       scrollToSelected(minRef);
     }, 30);
   }, [open]);
+
+  // Auto-select item closest to center when scroll stops
+  const handleScrollSnap = (ref: React.RefObject<HTMLDivElement | null>, items: string[], onSelect: (val: string) => void, timerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      const container = ref.current;
+      if (!container) return;
+      const containerRect = container.getBoundingClientRect();
+      const centerY = containerRect.top + containerRect.height / 2;
+      let closestEl: HTMLElement | null = null;
+      let closestDist = Infinity;
+      container.querySelectorAll("button").forEach((btn) => {
+        const btnRect = btn.getBoundingClientRect();
+        const btnCenterY = btnRect.top + btnRect.height / 2;
+        const dist = Math.abs(btnCenterY - centerY);
+        if (dist < closestDist) {
+          closestDist = dist;
+          closestEl = btn as HTMLElement;
+        }
+      });
+      if (closestEl) {
+        const idx = Array.from(container.querySelectorAll("button")).indexOf(closestEl);
+        if (idx >= 0 && idx < items.length) {
+          onSelect(items[idx]);
+        }
+      }
+    }, 100);
+  };
 
   const selectHour = (h: string) => onChange(to24h(h, mm, ampm));
   const selectMin  = (m: string) => onChange(to24h(hh, m, ampm));
@@ -188,7 +218,7 @@ export function FlatTimePicker({
             <div className="relative w-full h-36">
               {/* Selection marker - perfectly aligned with center item */}
               <div className="pointer-events-none absolute inset-x-0.5 top-1/2 -translate-y-1/2 h-8 rounded-lg bg-primary/15 border border-primary/40 shadow-[0_0_0_1px_hsl(var(--primary)/0.08)_inset] z-0" />
-              <div ref={hourRef} className="h-full w-full overflow-y-auto scroll-smooth scrollbar-none">
+              <div ref={hourRef} className="h-full w-full overflow-y-auto scroll-smooth scrollbar-none" onScroll={() => handleScrollSnap(hourRef, HOURS, selectHour, hourScrollTimer)}>
                 {HOURS.map((h) => (
                   <button
                     key={h}
@@ -215,7 +245,7 @@ export function FlatTimePicker({
             <div className="text-[9px] uppercase tracking-widest text-muted-foreground mb-0.5 font-medium">Min</div>
             <div className="relative w-full h-36">
               <div className="pointer-events-none absolute inset-x-0.5 top-1/2 -translate-y-1/2 h-8 rounded-lg bg-primary/15 border border-primary/40 shadow-[0_0_0_1px_hsl(var(--primary)/0.08)_inset] z-0" />
-              <div ref={minRef} className="h-full w-full overflow-y-auto scroll-smooth scrollbar-none">
+              <div ref={minRef} className="h-full w-full overflow-y-auto scroll-smooth scrollbar-none" onScroll={() => handleScrollSnap(minRef, MINUTES, selectMin, minScrollTimer)}>
                 {MINUTES.map((m) => (
                   <button
                     key={m}
