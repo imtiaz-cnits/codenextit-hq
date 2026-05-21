@@ -447,17 +447,17 @@ export default function GeneratorLogsPage() {
 
   const paginatedRefuelLogs = useMemo(() => {
     const start = (refuelPage - 1) * pageSize;
-    return filteredRefuelLogs.slice(start, start + pageSize);
-  }, [filteredRefuelLogs, refuelPage, pageSize]);
+    return refuelLogs.slice(start, start + pageSize);
+  }, [refuelLogs, refuelPage, pageSize]);
 
   const paginatedMaintenanceLogs = useMemo(() => {
     const start = (maintenancePage - 1) * pageSize;
-    return filteredMaintenanceLogs.slice(start, start + pageSize);
-  }, [filteredMaintenanceLogs, maintenancePage, pageSize]);
+    return maintenanceLogs.slice(start, start + pageSize);
+  }, [maintenanceLogs, maintenancePage, pageSize]);
 
   const totalRunPages = Math.ceil(filteredRunLogs.length / pageSize);
-  const totalRefuelPages = Math.ceil(filteredRefuelLogs.length / pageSize);
-  const totalMaintenancePages = Math.ceil(filteredMaintenanceLogs.length / pageSize);
+  const totalRefuelPages = Math.ceil(refuelLogs.length / pageSize);
+  const totalMaintenancePages = Math.ceil(maintenanceLogs.length / pageSize);
 
   // If Supabase tables/columns are not found
   if (dbMissing) {
@@ -970,7 +970,7 @@ export default function GeneratorLogsPage() {
                 {totalRefuelPages > 1 && (
                   <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t mt-4">
                     <p className="text-xs text-muted-foreground">
-                      Showing <strong>{(refuelPage - 1) * pageSize + 1}</strong>–<strong>{Math.min(refuelPage * pageSize, filteredRefuelLogs.length)}</strong> of <strong>{filteredRefuelLogs.length}</strong> records
+                      Showing <strong>{(refuelPage - 1) * pageSize + 1}</strong>–<strong>{Math.min(refuelPage * pageSize, refuelLogs.length)}</strong> of <strong>{refuelLogs.length}</strong> records
                     </p>
                     <div className="flex items-center gap-1">
                       <Button variant="outline" size="sm" className="h-8 px-2 cursor-pointer" disabled={refuelPage <= 1} onClick={() => setRefuelPage(p => p - 1)}>
@@ -1081,7 +1081,7 @@ export default function GeneratorLogsPage() {
                 {totalMaintenancePages > 1 && (
                   <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t mt-4">
                     <p className="text-xs text-muted-foreground">
-                      Showing <strong>{(maintenancePage - 1) * pageSize + 1}</strong>–<strong>{Math.min(maintenancePage * pageSize, filteredMaintenanceLogs.length)}</strong> of <strong>{filteredMaintenanceLogs.length}</strong> records
+                      Showing <strong>{(maintenancePage - 1) * pageSize + 1}</strong>–<strong>{Math.min(maintenancePage * pageSize, maintenanceLogs.length)}</strong> of <strong>{maintenanceLogs.length}</strong> records
                     </p>
                     <div className="flex items-center gap-1">
                       <Button variant="outline" size="sm" className="h-8 px-2 cursor-pointer" disabled={maintenancePage <= 1} onClick={() => setMaintenancePage(p => p - 1)}>
