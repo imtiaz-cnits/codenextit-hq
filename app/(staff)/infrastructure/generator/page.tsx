@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "../../../../components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../../components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../../../../components/ui/dialog";
 import {
   Zap, Fuel, Wrench, History, Plus, Loader2, Calendar, TrendingUp, Coins, Gauge,
   Edit, Trash2, Settings, Clipboard, Check, Activity, Clock, AlertTriangle, AlertCircle, Copy, UserCheck,
@@ -196,6 +197,12 @@ export default function GeneratorLogsPage() {
   const [dbMissing, setDbMissing] = useState(false);
   const [dbAlterRequired, setDbAlterRequired] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
+
+  // View & Edit state
+  const [viewItem, setViewItem] = useState<{ type: "run" | "refuel" | "maintenance" | "equipment"; data: any } | null>(null);
+  const [editItem, setEditItem] = useState<{ type: "run" | "refuel" | "maintenance" | "equipment"; data: any } | null>(null);
+  const [editForm, setEditForm] = useState<Record<string, any>>({});
+  const [editSubmitting, setEditSubmitting] = useState(false);
 
   // Pagination & Filtering
   const [runPage, setRunPage] = useState(1);
@@ -786,9 +793,17 @@ export default function GeneratorLogsPage() {
                         <TableCell className="font-mono text-sm font-bold">{log.off_time || "—"}</TableCell>
                         <TableCell className="font-mono text-sm font-bold text-primary">{formatRuntime(log.duration_minutes)}</TableCell>
                         <TableCell className="text-right">
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive cursor-pointer" onClick={() => deleteItem("generator_run_logs", log.id)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                          <div className="flex justify-end gap-1">
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-primary cursor-pointer" onClick={() => setViewItem({ type: "run", data: log })}>
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer" onClick={() => handleEditClick("run", log)}>
+                              <Edit className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive cursor-pointer" onClick={() => deleteItem("generator_run_logs", log.id)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -826,9 +841,17 @@ export default function GeneratorLogsPage() {
                           <p className="text-[10px] uppercase font-bold text-muted-foreground mb-0.5">Operator</p>
                           <p className="text-sm font-semibold">{log.operator_name || "—"}</p>
                         </div>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive cursor-pointer" onClick={() => deleteItem("generator_run_logs", log.id)}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-primary cursor-pointer" onClick={() => setViewItem({ type: "run", data: log })}>
+                            <Eye className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer" onClick={() => handleEditClick("run", log)}>
+                            <Edit className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive cursor-pointer" onClick={() => deleteItem("generator_run_logs", log.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -911,9 +934,17 @@ export default function GeneratorLogsPage() {
                           <TableCell className="text-sm">{log.vendor || "—"}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{log.generators?.name || "—"}</TableCell>
                           <TableCell className="text-right">
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive cursor-pointer" onClick={() => deleteItem("generator_refueling_logs", log.id)}>
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
+                            <div className="flex justify-end gap-1">
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-primary cursor-pointer" onClick={() => setViewItem({ type: "refuel", data: log })}>
+                                <Eye className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer" onClick={() => handleEditClick("refuel", log)}>
+                                <Edit className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive cursor-pointer" onClick={() => deleteItem("generator_refueling_logs", log.id)}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
@@ -957,9 +988,17 @@ export default function GeneratorLogsPage() {
                             <p className="text-[10px] uppercase font-bold text-muted-foreground mb-0.5">Vendor</p>
                             <p className="text-sm">{log.vendor || "—"}</p>
                           </div>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive cursor-pointer" onClick={() => deleteItem("generator_refueling_logs", log.id)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                          <div className="flex gap-1">
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-primary cursor-pointer" onClick={() => setViewItem({ type: "refuel", data: log })}>
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer" onClick={() => handleEditClick("refuel", log)}>
+                              <Edit className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive cursor-pointer" onClick={() => deleteItem("generator_refueling_logs", log.id)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     );
@@ -1029,9 +1068,17 @@ export default function GeneratorLogsPage() {
                         <TableCell className="text-xs text-muted-foreground max-w-xs truncate">{log.details || "—"}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{log.generators?.name || "—"}</TableCell>
                         <TableCell className="text-right">
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive cursor-pointer" onClick={() => deleteItem("generator_maintenance_logs", log.id)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                          <div className="flex justify-end gap-1">
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-primary cursor-pointer" onClick={() => setViewItem({ type: "maintenance", data: log })}>
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer" onClick={() => handleEditClick("maintenance", log)}>
+                              <Edit className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive cursor-pointer" onClick={() => deleteItem("generator_maintenance_logs", log.id)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -1069,9 +1116,17 @@ export default function GeneratorLogsPage() {
                           <p className="text-[10px] uppercase font-bold text-muted-foreground mb-0.5">Details</p>
                           <p className="text-xs text-muted-foreground truncate">{log.details || "—"}</p>
                         </div>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive cursor-pointer shrink-0" onClick={() => deleteItem("generator_maintenance_logs", log.id)}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        <div className="flex gap-1 shrink-0">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-primary cursor-pointer" onClick={() => setViewItem({ type: "maintenance", data: log })}>
+                            <Eye className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer" onClick={() => handleEditClick("maintenance", log)}>
+                            <Edit className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive cursor-pointer" onClick={() => deleteItem("generator_maintenance_logs", log.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -1142,9 +1197,17 @@ export default function GeneratorLogsPage() {
                           {g.status === "broken" && <Badge className="bg-red-500/10 text-red-500 border-none capitalize">Broken</Badge>}
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive cursor-pointer" onClick={() => deleteItem("generators", g.id)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                          <div className="flex justify-end gap-1">
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-primary cursor-pointer" onClick={() => setViewItem({ type: "equipment", data: g })}>
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer" onClick={() => handleEditClick("equipment", g)}>
+                              <Edit className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive cursor-pointer" onClick={() => deleteItem("generators", g.id)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -1184,7 +1247,13 @@ export default function GeneratorLogsPage() {
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-end">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-primary cursor-pointer" onClick={() => setViewItem({ type: "equipment", data: g })}>
+                          <Eye className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer" onClick={() => handleEditClick("equipment", g)}>
+                          <Edit className="h-3.5 w-3.5" />
+                        </Button>
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive cursor-pointer" onClick={() => deleteItem("generators", g.id)}>
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -1197,6 +1266,211 @@ export default function GeneratorLogsPage() {
           </TabsContent>
         </Tabs>
       )}
+
+      {/* Quick View Dialog */}
+      <Dialog open={!!viewItem} onOpenChange={(o) => !o && setViewItem(null)}>
+        <DialogContent className="max-w-[95vw] sm:max-w-[450px] rounded-[1.5rem] p-6 sm:p-8 gap-6 border-none shadow-2xl">
+          <DialogHeader className="space-y-2">
+            <DialogTitle className="text-xl font-bold text-center">
+              {viewItem?.type === "run" && "Run Log Details"}
+              {viewItem?.type === "refuel" && "Refueling Details"}
+              {viewItem?.type === "maintenance" && "Service Details"}
+              {viewItem?.type === "equipment" && "Generator Details"}
+            </DialogTitle>
+          </DialogHeader>
+          {viewItem?.type === "run" && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Date</p><p className="text-sm font-bold">{viewItem.data.date ? formatDate(viewItem.data.date) : "—"}</p></div>
+                <div className="space-y-1"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Operator</p><p className="text-sm font-bold">{viewItem.data.operator_name || "—"}</p></div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">On Time</p><p className="font-mono text-sm font-bold">{viewItem.data.on_time || "—"}</p></div>
+                <div className="space-y-1"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Off Time</p><p className="font-mono text-sm font-bold">{viewItem.data.off_time || "—"}</p></div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Duration</p><p className="font-mono text-sm font-bold text-primary">{formatRuntime(viewItem.data.duration_minutes)}</p></div>
+                <div className="space-y-1"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Purpose</p><Badge variant="outline" className="capitalize">{viewItem.data.purpose}</Badge></div>
+              </div>
+              {viewItem.data.notes && <div className="space-y-1"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Notes</p><p className="text-sm text-muted-foreground italic border-l-2 border-primary/20 pl-3">"{viewItem.data.notes}"</p></div>}
+            </div>
+          )}
+          {viewItem?.type === "refuel" && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Date</p><p className="text-sm font-bold">{formatDate(viewItem.data.refueled_at)}</p></div>
+                <div className="space-y-1"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Item Type</p><Badge variant="outline" className="capitalize">{viewItem.data.item_type}</Badge></div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Quantity</p><p className="font-mono text-sm font-bold">{viewItem.data.liters_added} Liters</p></div>
+                <div className="space-y-1"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Total Cost</p><p className="font-mono text-sm font-bold">{formatCurrency(viewItem.data.cost, viewItem.data.currency)}</p></div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Vendor</p><p className="text-sm">{viewItem.data.vendor || "—"}</p></div>
+                <div className="space-y-1"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Generator</p><p className="text-sm">{viewItem.data.generators?.name || "—"}</p></div>
+              </div>
+              {viewItem.data.notes && <div className="space-y-1"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Notes</p><p className="text-sm text-muted-foreground italic border-l-2 border-primary/20 pl-3">"{viewItem.data.notes}"</p></div>}
+            </div>
+          )}
+          {viewItem?.type === "maintenance" && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Service Date</p><p className="text-sm font-bold">{formatDate(viewItem.data.service_date)}</p></div>
+                <div className="space-y-1"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Service Type</p><Badge variant="outline" className="capitalize">{viewItem.data.service_type}</Badge></div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Cost</p><p className="font-mono text-sm font-bold">{formatCurrency(viewItem.data.cost, viewItem.data.currency)}</p></div>
+                <div className="space-y-1"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Performed By</p><p className="text-sm">{viewItem.data.performed_by || "—"}</p></div>
+              </div>
+              {viewItem.data.details && <div className="space-y-1"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Details</p><p className="text-sm text-muted-foreground italic border-l-2 border-primary/20 pl-3">"{viewItem.data.details}"</p></div>}
+            </div>
+          )}
+          {viewItem?.type === "equipment" && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Name</p><p className="text-sm font-bold">{viewItem.data.name}</p></div>
+                <div className="space-y-1"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Model</p><p className="text-sm">{viewItem.data.model || "—"}</p></div>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-1"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Capacity</p><p className="text-sm font-bold">{viewItem.data.capacity || "—"}</p></div>
+                <div className="space-y-1"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Fuel</p><p className="text-sm capitalize">{viewItem.data.fuel_type}</p></div>
+                <div className="space-y-1"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Tank</p><p className="text-sm">{viewItem.data.fuel_capacity} L</p></div>
+              </div>
+              {viewItem.data.notes && <div className="space-y-1"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Notes</p><p className="text-sm text-muted-foreground italic border-l-2 border-primary/20 pl-3">"{viewItem.data.notes}"</p></div>}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" className="w-full rounded-xl h-11 font-bold cursor-pointer" onClick={() => setViewItem(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dialog */}
+      <Dialog open={!!editItem} onOpenChange={(o) => !o && setEditItem(null)}>
+        <DialogContent className="max-w-[95vw] sm:max-w-[450px] rounded-[1.5rem] p-6 sm:p-8 gap-5">
+          <DialogHeader>
+            <DialogTitle>
+              {editItem?.type === "run" && "Edit Run Log"}
+              {editItem?.type === "refuel" && "Edit Refueling Entry"}
+              {editItem?.type === "maintenance" && "Edit Service Log"}
+              {editItem?.type === "equipment" && "Edit Generator"}
+            </DialogTitle>
+            <DialogDescription>Modify the details below and save.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {editItem?.type === "run" && (
+              <>
+                <Fld label="Date"><FlatDatePicker date={editForm.date} onChange={v => setEditForm({ ...editForm, date: v })} /></Fld>
+                <Fld label="Operator">
+                  <Select value={editForm.operator_name} onValueChange={v => setEditForm({ ...editForm, operator_name: v })}>
+                    <SelectTrigger><SelectValue placeholder="Select operator" /></SelectTrigger>
+                    <SelectContent>{profiles.map(p => <SelectItem key={p.id} value={p.full_name}>{p.full_name}</SelectItem>)}</SelectContent>
+                  </Select>
+                </Fld>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Fld label="On Time"><FlatTimePicker value={editForm.on_time} onChange={v => setEditForm({ ...editForm, on_time: v })} /></Fld>
+                  <Fld label="Off Time"><FlatTimePicker value={editForm.off_time} onChange={v => setEditForm({ ...editForm, off_time: v })} /></Fld>
+                </div>
+                <Fld label="Purpose">
+                  <Select value={editForm.purpose} onValueChange={v => setEditForm({ ...editForm, purpose: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="outage">Grid Outage</SelectItem>
+                      <SelectItem value="testing">Testing</SelectItem>
+                      <SelectItem value="maintenance">Maintenance</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Fld>
+                <Fld label="Notes"><Textarea value={editForm.notes} onChange={e => setEditForm({ ...editForm, notes: e.target.value })} rows={2} /></Fld>
+              </>
+            )}
+            {editItem?.type === "refuel" && (
+              <>
+                <Fld label="Item Type">
+                  <Select value={editForm.item_type} onValueChange={v => setEditForm({ ...editForm, item_type: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="petrol">Petrol</SelectItem>
+                      <SelectItem value="mobil">Mobil (Engine Oil)</SelectItem>
+                      <SelectItem value="octane">Octane</SelectItem>
+                      <SelectItem value="diesel">Diesel</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Fld>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Fld label="Quantity (Liters)"><Input type="number" step="0.01" value={editForm.liters_added} onChange={e => setEditForm({ ...editForm, liters_added: e.target.value })} /></Fld>
+                  <Fld label="Total Cost"><Input type="number" step="0.01" value={editForm.cost} onChange={e => setEditForm({ ...editForm, cost: e.target.value })} /></Fld>
+                </div>
+                <Fld label="Vendor"><Input value={editForm.vendor} onChange={e => setEditForm({ ...editForm, vendor: e.target.value })} /></Fld>
+                <Fld label="Notes"><Textarea value={editForm.notes} onChange={e => setEditForm({ ...editForm, notes: e.target.value })} rows={2} /></Fld>
+              </>
+            )}
+            {editItem?.type === "maintenance" && (
+              <>
+                <Fld label="Service Date"><FlatDatePicker date={editForm.service_date} onChange={v => setEditForm({ ...editForm, service_date: v })} /></Fld>
+                <Fld label="Service Type">
+                  <Select value={editForm.service_type} onValueChange={v => setEditForm({ ...editForm, service_type: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Engine Tune-up">Engine Tune-up</SelectItem>
+                      <SelectItem value="Spark Plug Replacement">Spark Plug Replacement</SelectItem>
+                      <SelectItem value="Oil Change">Oil Change</SelectItem>
+                      <SelectItem value="Clean Carburetor">Clean Carburetor</SelectItem>
+                      <SelectItem value="Filter Clean/Replacement">Filter Cleaning</SelectItem>
+                      <SelectItem value="Other Repairs">Other Repairs</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Fld>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Fld label="Cost"><Input type="number" value={editForm.cost} onChange={e => setEditForm({ ...editForm, cost: e.target.value })} /></Fld>
+                  <Fld label="Performed By"><Input value={editForm.performed_by} onChange={e => setEditForm({ ...editForm, performed_by: e.target.value })} /></Fld>
+                </div>
+                <Fld label="Details"><Textarea value={editForm.details} onChange={e => setEditForm({ ...editForm, details: e.target.value })} rows={2} /></Fld>
+              </>
+            )}
+            {editItem?.type === "equipment" && (
+              <>
+                <Fld label="Generator Name"><Input required value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} /></Fld>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Fld label="Model"><Input value={editForm.model} onChange={e => setEditForm({ ...editForm, model: e.target.value })} /></Fld>
+                  <Fld label="Capacity"><Input value={editForm.capacity} onChange={e => setEditForm({ ...editForm, capacity: e.target.value })} /></Fld>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Fld label="Fuel Type">
+                    <Select value={editForm.fuel_type} onValueChange={v => setEditForm({ ...editForm, fuel_type: v })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="petrol">Petrol</SelectItem>
+                        <SelectItem value="octane">Octane</SelectItem>
+                        <SelectItem value="diesel">Diesel</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Fld>
+                  <Fld label="Tank Capacity (L)"><Input type="number" value={editForm.fuel_capacity} onChange={e => setEditForm({ ...editForm, fuel_capacity: e.target.value })} /></Fld>
+                </div>
+                <Fld label="Status">
+                  <Select value={editForm.status} onValueChange={v => setEditForm({ ...editForm, status: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="maintenance">Maintenance</SelectItem>
+                      <SelectItem value="standby">Standby</SelectItem>
+                      <SelectItem value="broken">Broken</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Fld>
+                <Fld label="Notes"><Textarea value={editForm.notes} onChange={e => setEditForm({ ...editForm, notes: e.target.value })} rows={2} /></Fld>
+              </>
+            )}
+          </div>
+          <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2">
+            <Button variant="outline" className="rounded-xl h-11 cursor-pointer" onClick={() => setEditItem(null)}>Cancel</Button>
+            <Button className="rounded-xl h-11 cursor-pointer" disabled={editSubmitting} onClick={handleSaveEdit}>
+              {editSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 
@@ -1210,6 +1484,53 @@ export default function GeneratorLogsPage() {
       void loadData();
     } catch (err: any) {
       toast.error(err.message || "Failed to delete record");
+    }
+  }
+
+  // --- Edit Handlers ---
+  function handleEditClick(type: "run" | "refuel" | "maintenance" | "equipment", data: any) {
+    setEditItem({ type, data });
+    if (type === "run") {
+      setEditForm({ date: data.date || "", on_time: data.on_time || "", off_time: data.off_time || "", operator_name: data.operator_name || "", purpose: data.purpose || "outage", notes: data.notes || "" });
+    } else if (type === "refuel") {
+      setEditForm({ item_type: data.item_type || "petrol", liters_added: String(data.liters_added || ""), cost: String(data.cost || ""), vendor: data.vendor || "", notes: data.notes || "" });
+    } else if (type === "maintenance") {
+      setEditForm({ service_date: data.service_date || "", service_type: data.service_type || "", cost: String(data.cost || ""), performed_by: data.performed_by || "", details: data.details || "" });
+    } else if (type === "equipment") {
+      setEditForm({ name: data.name || "", model: data.model || "", capacity: data.capacity || "", fuel_type: data.fuel_type || "petrol", fuel_capacity: String(data.fuel_capacity || ""), status: data.status || "active", notes: data.notes || "" });
+    }
+  }
+
+  async function handleSaveEdit() {
+    if (!editItem) return;
+    setEditSubmitting(true);
+    try {
+      let table = "";
+      let payload: any = {};
+
+      if (editItem.type === "run") {
+        table = "generator_run_logs";
+        payload = { date: editForm.date, on_time: editForm.on_time, off_time: editForm.off_time, operator_name: editForm.operator_name, purpose: editForm.purpose, notes: editForm.notes || null };
+      } else if (editItem.type === "refuel") {
+        table = "generator_refueling_logs";
+        payload = { item_type: editForm.item_type, liters_added: Number(editForm.liters_added) || 0, cost: Number(editForm.cost) || 0, vendor: editForm.vendor || null, notes: editForm.notes || null };
+      } else if (editItem.type === "maintenance") {
+        table = "generator_maintenance_logs";
+        payload = { service_date: editForm.service_date, service_type: editForm.service_type, cost: Number(editForm.cost) || 0, performed_by: editForm.performed_by || null, details: editForm.details || null };
+      } else if (editItem.type === "equipment") {
+        table = "generators";
+        payload = { name: editForm.name, model: editForm.model || null, capacity: editForm.capacity || null, fuel_type: editForm.fuel_type, fuel_capacity: Number(editForm.fuel_capacity) || 0, status: editForm.status, notes: editForm.notes || null };
+      }
+
+      const { error } = await supabaseClient.from(table).update(payload).eq("id", editItem.data.id);
+      if (error) throw error;
+      toast.success("Record updated successfully");
+      setEditItem(null);
+      void loadData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update record");
+    } finally {
+      setEditSubmitting(false);
     }
   }
 }

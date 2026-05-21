@@ -535,49 +535,51 @@ function LeaveDetailsDialog({
 
   return (
     <Dialog open={!!leave} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-[95vw] sm:max-w-[450px] rounded-[1.5rem] p-6 sm:p-8 gap-6 border-none shadow-2xl">
-        <DialogHeader className="space-y-2">
-          <DialogTitle className="text-xl sm:text-2xl font-bold text-center">Leave Application Details</DialogTitle>
+      <DialogContent className="sm:max-w-[550px] rounded-[1.5rem] p-5 sm:p-6 gap-4 border-none shadow-2xl">
+        <DialogHeader className="space-y-1">
+          <DialogTitle className="text-lg font-bold text-center">Leave Application Details</DialogTitle>
           <DialogDescription className="text-center text-xs">
             Submitted on {formatDate(leave.created_at)}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6">
-          <div className="flex items-center gap-4 p-4 bg-muted/30 rounded-2xl border border-muted-foreground/5">
-            <Avatar className="h-12 w-12 border shadow-sm">
+        <div className="space-y-3 overflow-hidden">
+          <div className="flex items-center gap-3 p-3 bg-muted/30 rounded-xl border border-muted-foreground/5">
+            <Avatar className="h-10 w-10 border shadow-sm shrink-0">
               {employee?.avatar_url && <AvatarImage src={employee.avatar_url} className="object-cover" />}
               <AvatarFallback className={cn("text-xs font-bold text-white", avatarColor(employee?.full_name || "?"))}>{initials(employee?.full_name || "?")}</AvatarFallback>
             </Avatar>
-            <div className="flex-1">
-              <div className="font-bold text-base">{employee?.full_name || "Unknown Employee"}</div>
-              <div className="text-[11px] text-muted-foreground uppercase tracking-wider">{employee?.department || "—"}</div>
+            <div className="flex-1 min-w-0">
+              <div className="font-bold text-sm truncate">{employee?.full_name || "Unknown Employee"}</div>
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{employee?.department || "—"}</div>
             </div>
-            <Badge className="capitalize font-bold text-[10px]" variant={leave.status === 'approved' ? 'default' : leave.status === 'rejected' ? 'destructive' : 'secondary'}>
+            <Badge className="capitalize font-bold text-[10px] shrink-0" variant={leave.status === 'approved' ? 'default' : leave.status === 'rejected' ? 'destructive' : 'secondary'}>
               {leave.status}
             </Badge>
           </div>
 
-          <div className="grid grid-cols-2 gap-6 px-1">
-            <div className="space-y-1.5">
+          <div className="grid grid-cols-2 gap-4 px-1">
+            <div className="space-y-1 min-w-0">
               <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Leave Type</p>
-              <Badge variant="outline" className={`capitalize font-bold px-3 py-1 rounded-full ${LEAVE_TONE[leave.type]}`}>{leave.type}</Badge>
+              <Badge variant="outline" className={`capitalize font-bold px-2 py-0.5 rounded-full text-[10px] ${LEAVE_TONE[leave.type]}`}>{leave.type}</Badge>
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-1 min-w-0">
               <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Duration</p>
-              <p className="text-sm font-bold text-primary">{formatDate(leave.from_date)} - {formatDate(leave.to_date)}</p>
+              <p className="text-xs font-bold text-primary break-words">{formatDate(leave.from_date)} - {formatDate(leave.to_date)}</p>
             </div>
           </div>
 
-          <div className="space-y-2 px-1">
-            <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Reason</p>
-            <div className="p-4 border rounded-2xl bg-muted/20 text-sm leading-relaxed italic text-muted-foreground border-dashed">
-              "{leave.reason || "No reason provided."}"
+          {leave.reason && (
+            <div className="space-y-1 px-1">
+              <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Reason</p>
+              <div className="p-2.5 border rounded-xl bg-muted/20 text-xs leading-relaxed italic text-muted-foreground border-dashed break-words">
+                "{leave.reason}"
+              </div>
             </div>
-          </div>
+          )}
 
           {leave.approved_at && (
-            <div className="pt-4 border-t border-dashed text-[10px] text-muted-foreground italic text-center">
+            <div className="pt-2 border-t border-dashed text-[10px] text-muted-foreground italic text-center">
               Processed at {formatDate(leave.approved_at)}
             </div>
           )}
@@ -586,19 +588,19 @@ function LeaveDetailsDialog({
         <div className="flex flex-col gap-2">
           {isSuperAdmin && leave.status === 'pending' && (
             <div className="flex gap-2">
-              <Button variant="destructive" className="flex-1 rounded-xl h-11 font-bold cursor-pointer" onClick={() => { onAction(leave.id, 'rejected'); onClose(); }}>Reject</Button>
-              <Button className="flex-1 rounded-xl h-11 font-bold cursor-pointer" onClick={() => { onAction(leave.id, 'approved'); onClose(); }}>Approve</Button>
+              <Button variant="destructive" className="flex-1 rounded-xl h-9 font-bold text-xs cursor-pointer" onClick={() => { onAction(leave.id, 'rejected'); onClose(); }}>Reject</Button>
+              <Button className="flex-1 rounded-xl h-9 font-bold text-xs cursor-pointer" onClick={() => { onAction(leave.id, 'approved'); onClose(); }}>Approve</Button>
             </div>
           )}
           {isSuperAdmin && leave.status !== 'pending' && (
-            <Button variant="secondary" className="w-full rounded-xl h-11 font-bold bg-muted/50 cursor-pointer" onClick={() => { onAction(leave.id, 'pending'); onClose(); }}>Reset to Pending</Button>
+            <Button variant="secondary" className="w-full rounded-xl h-9 font-bold text-xs bg-muted/50 cursor-pointer" onClick={() => { onAction(leave.id, 'pending'); onClose(); }}>Reset to Pending</Button>
           )}
           {isSuperAdmin && (
-            <Button variant="destructive" className="w-full rounded-xl h-11 font-bold cursor-pointer bg-destructive/10 text-destructive hover:bg-destructive/20 border-none" onClick={() => { onDelete?.(leave.id); onClose(); }}>
-              <Trash2 className="h-4 w-4 mr-1.5" /> Delete Request
+            <Button variant="destructive" className="w-full rounded-xl h-9 font-bold text-xs cursor-pointer bg-destructive/10 text-destructive hover:bg-destructive/20 border-none" onClick={() => { onDelete?.(leave.id); onClose(); }}>
+              <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Delete Request
             </Button>
           )}
-          <Button variant="outline" className="w-full rounded-xl h-11 font-bold border-muted-foreground/10 cursor-pointer" onClick={onClose}>Close</Button>
+          <Button variant="outline" className="w-full rounded-xl h-9 font-bold text-xs border-muted-foreground/10 cursor-pointer" onClick={onClose}>Close</Button>
         </div>
       </DialogContent>
     </Dialog>
