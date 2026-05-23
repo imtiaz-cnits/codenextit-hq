@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui
 import { Popover, PopoverContent, PopoverTrigger } from "../../../components/ui/popover";
 import { Plus, Check, X, Loader2, ChevronLeft, ChevronRight, RotateCcw, FileText, Download, Calendar as CalendarIcon, Eye, Trash2 } from "lucide-react";
 import { FlatDatePicker } from "../../../components/ui/flat-date-picker";
+import { FlatTimePicker } from "../../../components/ui/flat-time-picker";
 import { initials, avatarColor, formatDate } from "../../../lib/format";
 import { supabase } from "../../../integrations/supabase/client";
 import { toast } from "sonner";
@@ -30,6 +31,7 @@ import { cn } from "../../../lib/utils";
 
 type LeaveType = "sick" | "casual" | "annual" | "unpaid";
 type LeaveStatus = "pending" | "approved" | "rejected";
+type HalfDayPeriod = "first_half" | "second_half";
 interface Leave {
   id: string;
   employee_id: string;
@@ -41,6 +43,9 @@ interface Leave {
   approved_at: string | null;
   approved_by: string | null;
   created_at: string;
+  is_half_day?: boolean | null;
+  half_day_period?: HalfDayPeriod | null;
+  start_time?: string | null;
 }
 interface EmployeeRow {
   id: string;
@@ -413,9 +418,27 @@ function LeaveTable({
                             ) : <span className="text-xs text-muted-foreground italic">Unknown</span>}
                           </TableCell>
                         )}
-                        <TableCell><Badge variant="outline" className={`capitalize font-bold text-[10px] ${LEAVE_TONE[l.type]}`}>{l.type}</Badge></TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5">
+                            <Badge variant="outline" className={`capitalize font-bold text-[10px] ${LEAVE_TONE[l.type]}`}>{l.type}</Badge>
+                            {l.is_half_day && (
+                              <Badge variant="outline" className="text-[9px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30">
+                                ½ Day
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell className="text-sm font-semibold">{formatDate(l.from_date)}</TableCell>
-                        <TableCell className="text-sm font-semibold">{formatDate(l.to_date)}</TableCell>
+                        <TableCell className="text-sm font-semibold">
+                          {l.is_half_day ? (
+                            <span className="text-[11px] text-muted-foreground italic">
+                              {l.half_day_period === "first_half" ? "Morning" : "Afternoon"}
+                              {l.start_time && ` · ${l.start_time}`}
+                            </span>
+                          ) : (
+                            formatDate(l.to_date)
+                          )}
+                        </TableCell>
                         <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">{l.reason ?? "—"}</TableCell>
                         <TableCell>
                           <Badge variant={l.status === "approved" ? "default" : l.status === "rejected" ? "destructive" : "secondary"} className="capitalize text-[10px] font-bold">{l.status}</Badge>
@@ -477,7 +500,17 @@ function LeaveTable({
                     <div className="grid grid-cols-2 gap-2 py-2 border-y border-dashed">
                       <div>
                         <p className="text-[10px] uppercase font-bold text-muted-foreground mb-0.5">Duration</p>
-                        <p className="text-xs font-semibold">{formatDate(l.from_date)} - {formatDate(l.to_date)}</p>
+                        {l.is_half_day ? (
+                          <div>
+                            <p className="text-xs font-semibold">{formatDate(l.from_date)}</p>
+                            <p className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">
+                              ½ Day · {l.half_day_period === "first_half" ? "Morning" : "Afternoon"}
+                              {l.start_time && ` (${l.start_time})`}
+                            </p>
+                          </div>
+                        ) : (
+                          <p className="text-xs font-semibold">{formatDate(l.from_date)} - {formatDate(l.to_date)}</p>
+                        )}
                       </div>
                       <div className="text-right">
                         <p className="text-[10px] uppercase font-bold text-muted-foreground mb-1">Type</p>
@@ -565,7 +598,17 @@ function LeaveDetailsDialog({
             </div>
             <div className="space-y-1 min-w-0">
               <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Duration</p>
-              <p className="text-xs font-bold text-primary break-words">{formatDate(leave.from_date)} - {formatDate(leave.to_date)}</p>
+              {leave.is_half_day ? (
+                <div className="space-y-0.5">
+                  <p className="text-xs font-bold text-primary break-words">{formatDate(leave.from_date)}</p>
+                  <p className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                    Half Day · {leave.half_day_period === "first_half" ? "Morning" : "Afternoon"}
+                    {leave.start_time && ` (from ${leave.start_time})`}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs font-bold text-primary break-words">{formatDate(leave.from_date)} - {formatDate(leave.to_date)}</p>
+              )}
             </div>
           </div>
 
@@ -749,8 +792,14 @@ function NewLeaveSheet({
   const { notifyAdmins } = useMock();
   const [submitting, setSubmitting] = useState(false);
   const [f, setF] = useState({
-    employee_id: "", type: "casual" as LeaveType,
-    from_date: "", to_date: "", reason: "",
+    employee_id: "",
+    type: "casual" as LeaveType,
+    from_date: "",
+    to_date: "",
+    reason: "",
+    is_half_day: false,
+    half_day_period: "first_half" as HalfDayPeriod,
+    start_time: "",
   });
   useEffect(() => {
     if (isSuperAdmin) {
@@ -768,6 +817,9 @@ function NewLeaveSheet({
         from_date: "",
         to_date: "",
         reason: "",
+        is_half_day: false,
+        half_day_period: "first_half" as HalfDayPeriod,
+        start_time: "",
       });
     }
   }, [open, isSuperAdmin, employees, currentEmpId]);
@@ -777,32 +829,50 @@ function NewLeaveSheet({
     if (!f.employee_id) {
       return toast.error(isSuperAdmin ? "Select an employee" : "Employee profile not found. Please contact support.");
     }
+    if (!f.from_date) {
+      return toast.error("Please select a date");
+    }
+    if (f.is_half_day && !f.from_date) {
+      return toast.error("Please select the half-day date");
+    }
     setSubmitting(true);
-    const { error } = await supabase.from("leave_requests").insert([{
-      employee_id: f.employee_id, type: f.type,
-      from_date: f.from_date, to_date: f.to_date,
-      reason: f.reason || null, status: "pending" as const,
-    }]);
+
+    // For half-day leaves: from_date and to_date are the same
+    const toDate = f.is_half_day ? f.from_date : (f.to_date || f.from_date);
+
+    const payload: any = {
+      employee_id: f.employee_id,
+      type: f.type,
+      from_date: f.from_date,
+      to_date: toDate,
+      reason: f.reason || null,
+      status: "pending" as const,
+      is_half_day: f.is_half_day,
+      half_day_period: f.is_half_day ? f.half_day_period : null,
+      start_time: f.is_half_day && f.start_time ? f.start_time : null,
+    };
+
+    const { error } = await supabase.from("leave_requests").insert([payload]);
     setSubmitting(false);
     if (error) return toast.error(error.message);
 
     // Notify Admins
     const emp = employees.find(e => e.id === f.employee_id);
+    const leaveDesc = f.is_half_day ? `half-day ${f.type}` : f.type;
     await notifyAdmins({
       title: "New Leave Request",
-      body: `${emp?.full_name || "An employee"} has requested a ${f.type} leave.`,
+      body: `${emp?.full_name || "An employee"} has requested a ${leaveDesc} leave.`,
       type: "info"
     });
 
     toast.success("Leave request submitted");
     onOpenChange(false);
-    setF((p) => ({ ...p, from_date: "", to_date: "", reason: "" }));
     onCreated();
   }
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetTrigger asChild><Button><Plus className="h-4 w-4 mr-1.5" /> New request</Button></SheetTrigger>
-      <SheetContent>
+      <SheetContent className="overflow-y-auto">
         <SheetHeader>
           <SheetTitle>New leave request</SheetTitle>
           <SheetDescription>
@@ -832,22 +902,82 @@ function NewLeaveSheet({
               </SelectContent>
             </Select>
           </Fld>
-          <div className="grid grid-cols-2 gap-3">
-            <Fld label="From">
-              <FlatDatePicker
-                date={f.from_date}
-                onChange={d => setF({ ...f, from_date: d })}
-                placeholder="From"
-              />
-            </Fld>
-            <Fld label="To">
-              <FlatDatePicker
-                date={f.to_date}
-                onChange={d => setF({ ...f, to_date: d })}
-                placeholder="To"
-              />
-            </Fld>
+
+          {/* Leave Duration toggle: Full Day vs Half Day */}
+          <div className="space-y-2">
+            <Label className="text-xs">Leave Duration</Label>
+            <div className="grid grid-cols-2 gap-2 p-1 bg-muted/40 rounded-lg border">
+              <button
+                type="button"
+                onClick={() => setF({ ...f, is_half_day: false })}
+                className={cn(
+                  "h-9 rounded-md text-xs font-semibold transition-all cursor-pointer",
+                  !f.is_half_day ? "bg-background shadow-sm text-primary" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Full Day(s)
+              </button>
+              <button
+                type="button"
+                onClick={() => setF({ ...f, is_half_day: true, to_date: f.from_date })}
+                className={cn(
+                  "h-9 rounded-md text-xs font-semibold transition-all cursor-pointer",
+                  f.is_half_day ? "bg-background shadow-sm text-primary" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Half Day
+              </button>
+            </div>
           </div>
+
+          {f.is_half_day ? (
+            <>
+              <Fld label="Date">
+                <FlatDatePicker
+                  date={f.from_date}
+                  onChange={d => setF({ ...f, from_date: d, to_date: d })}
+                  placeholder="Select date"
+                />
+              </Fld>
+              <Fld label="Half Period">
+                <Select value={f.half_day_period} onValueChange={(v) => setF({ ...f, half_day_period: v as HalfDayPeriod })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="first_half">First Half (Morning) — সকাল</SelectItem>
+                    <SelectItem value="second_half">Second Half (Afternoon) — বিকাল</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Fld>
+              <Fld label="Leave Start Time (optional)">
+                <FlatTimePicker
+                  value={f.start_time}
+                  onChange={v => setF({ ...f, start_time: v })}
+                  placeholder="e.g. 1:30 PM (when leaving early)"
+                />
+              </Fld>
+              <div className="text-[11px] text-muted-foreground bg-muted/30 rounded-lg p-2.5 border border-dashed">
+                <span className="font-semibold">ℹ️ Half-day leave</span> = 0.5 day deducted from leave balance. Use start time if leaving mid-day.
+              </div>
+            </>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <Fld label="From">
+                <FlatDatePicker
+                  date={f.from_date}
+                  onChange={d => setF({ ...f, from_date: d })}
+                  placeholder="From"
+                />
+              </Fld>
+              <Fld label="To">
+                <FlatDatePicker
+                  date={f.to_date}
+                  onChange={d => setF({ ...f, to_date: d })}
+                  placeholder="To"
+                />
+              </Fld>
+            </div>
+          )}
+
           <Fld label="Reason"><Textarea value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} rows={3} /></Fld>
           <SheetFooter><Button type="submit" disabled={submitting}>{submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Submit request"}</Button></SheetFooter>
         </form>

@@ -68,16 +68,17 @@ export default function Dashboard() {
     new Date(l.from_date).getFullYear() === currentYear
   );
 
-  const calculateDays = (start: string, end: string) => {
+  const calculateDays = (start: string, end: string, isHalfDay?: boolean) => {
+    if (isHalfDay) return 0.5;
     const s = new Date(start);
     const e = new Date(end);
     return Math.ceil(Math.abs(e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1;
   };
 
-  const usedYearly = myApprovedLeaves.reduce((acc, l) => acc + calculateDays(l.from_date, l.to_date), 0);
+  const usedYearly = myApprovedLeaves.reduce((acc, l: any) => acc + calculateDays(l.from_date, l.to_date, l.is_half_day), 0);
   const usedMonthly = myApprovedLeaves
     .filter(l => new Date(l.from_date).getMonth() === currentMonth)
-    .reduce((acc, l) => acc + calculateDays(l.from_date, l.to_date), 0);
+    .reduce((acc, l: any) => acc + calculateDays(l.from_date, l.to_date, l.is_half_day), 0);
 
   const leaveBalance = 20 - usedYearly;
   const monthlyBalanceRemaining = 2 - usedMonthly;

@@ -1789,11 +1789,58 @@ export default function GeneratorLogsPage() {
     }
   }
 
+  // Helper: parse "07:05 pm" → "19:05" (24h)
+  function parse12hTo24h(t12: string): string {
+    if (!t12) return "";
+    const m = t12.trim().match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/i);
+    if (!m) return t12; // already 24h or unparseable, leave as-is
+    let h = parseInt(m[1]);
+    const min = m[2];
+    const ampm = (m[3] || "").toLowerCase();
+    if (ampm === "pm" && h !== 12) h += 12;
+    if (ampm === "am" && h === 12) h = 0;
+    return `${String(h).padStart(2, "0")}:${min}`;
+  }
+
+  // Helper: format "19:05" → "07:05 pm" (12h)
+  function format24To12(t24: string): string {
+    if (!t24) return "";
+    const m = t24.trim().match(/^(\d{1,2}):(\d{2})/);
+    if (!m) return t24;
+    let h = parseInt(m[1]);
+    const min = m[2];
+    const ampm = h >= 12 ? "pm" : "am";
+    h = h % 12;
+    if (h === 0) h = 12;
+    return `${String(h).padStart(2, "0")}:${min} ${ampm}`;
+  }
+
+  // Helper: minutes diff between 24h "HH:MM" → "HH:MM" (handles midnight crossing)
+  function calcDurationMin(on24: string, off24: string): number | null {
+    if (!on24 || !off24) return null;
+    const [hOn, mOn] = on24.split(":").map(Number);
+    const [hOff, mOff] = off24.split(":").map(Number);
+    if (isNaN(hOn) || isNaN(mOn) || isNaN(hOff) || isNaN(mOff)) return null;
+    const onMin = hOn * 60 + mOn;
+    const offMin = hOff * 60 + mOff;
+    let diff = offMin - onMin;
+    if (diff < 0) diff += 24 * 60;
+    return diff;
+  }
+
   // --- Edit Handlers ---
   function handleEditClick(type: "run" | "refuel" | "maintenance" | "equipment", data: any) {
     setEditItem({ type, data });
     if (type === "run") {
-      setEditForm({ date: data.date || "", on_time: data.on_time || "", off_time: data.off_time || "", operator_name: data.operator_name || "", purpose: data.purpose || "outage", notes: data.notes || "" });
+      // Convert stored 12h time to 24h for FlatTimePicker
+      setEditForm({
+        date: data.date || "",
+        on_time: parse12hTo24h(data.on_time || ""),
+        off_time: parse12hTo24h(data.off_time || ""),
+        operator_name: data.operator_name || "",
+        purpose: data.purpose || "outage",
+        notes: data.notes || ""
+      });
     } else if (type === "refuel") {
       setEditForm({ item_type: data.item_type || "petrol", liters_added: String(data.liters_added || ""), cost: String(data.cost || ""), vendor: data.vendor || "", notes: data.notes || "" });
     } else if (type === "maintenance") {
@@ -1812,7 +1859,39 @@ export default function GeneratorLogsPage() {
 
       if (editItem.type === "run") {
         table = "generator_run_logs";
-        payload = { date: editForm.date, on_time: editForm.on_time, off_time: editForm.off_time, operator_name: editForm.operator_name, purpose: editForm.purpose, notes: editForm.notes || null };
+        // Convert FlatTimePicker 24h output back to "HH:MM am/pm" 12h for storage
+        const onTime12 = format24To12(editForm.on_time);
+        const offTime12 = editForm.off_time ? format24To12(editForm.off_time) : null;
+        const durationMin = editForm.off_time ? calcDurationMin(editForm.on_time, editForm.off_time) : null;
+
+        // Rebuild started_at and stopped_at ISO timestamps based on date + 24h time
+        const buildIso = (dateStr: string, t24: string): string | null => {
+          if (!dateStr || !t24) return null;
+          const [hr, mn] = t24.split(":").map(Number);
+          const [y, m, d] = dateStr.split("-").map(Number);
+          if ([hr, mn, y, m, d].some(n => isNaN(n))) return null;
+          // Construct as if BD time, then convert to UTC ISO. Simplest: build a Date in browser local and adjust offset.
+          // We treat the time string as Bangladesh time. Compute offset from UTC.
+          const localDate = new Date(y, m - 1, d, hr, mn, 0);
+          // BD is UTC+6. Adjust so that the resulting ISO represents the BD wall clock time.
+          const bdOffsetMs = 6 * 60 * 60 * 1000;
+          const utcDate = new Date(localDate.getTime() - localDate.getTimezoneOffset() * 60 * 1000 - bdOffsetMs + localDate.getTimezoneOffset() * 60 * 1000);
+          // Simpler approach: use Date.UTC then subtract BD offset
+          const utcMs = Date.UTC(y, m - 1, d, hr, mn, 0) - bdOffsetMs;
+          return new Date(utcMs).toISOString();
+        };
+
+        payload = {
+          date: editForm.date,
+          on_time: onTime12,
+          off_time: offTime12,
+          duration_minutes: durationMin,
+          operator_name: editForm.operator_name,
+          purpose: editForm.purpose,
+          notes: editForm.notes || null,
+          started_at: buildIso(editForm.date, editForm.on_time),
+          stopped_at: editForm.off_time ? buildIso(editForm.date, editForm.off_time) : null,
+        };
       } else if (editItem.type === "refuel") {
         table = "generator_refueling_logs";
         payload = { item_type: editForm.item_type, liters_added: Number(editForm.liters_added) || 0, cost: Number(editForm.cost) || 0, vendor: editForm.vendor || null, notes: editForm.notes || null };
