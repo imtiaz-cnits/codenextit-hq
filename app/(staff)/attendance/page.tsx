@@ -65,11 +65,16 @@ export default function AttendancePage() {
   // Database States
   const [holidays, setHolidays] = useState<{ date: string, name: string, id?: string }[]>([]);
   const [officeSettings, setOfficeSettings] = useState<{ start: string, end: string, weekend: number }>({
-    start: "09:00", end: "18:00", weekend: 5
+    start: "11:00", end: "20:00", weekend: 5
   });
   const [leaves, setLeaves] = useState<any[]>([]);
+  const [latePermissions, setLatePermissions] = useState<{ id?: string; employee_id: string; date: string; permitted_minutes: number; reason: string | null }[]>([]);
   const [fetching, setFetching] = useState(true);
   const [overrideHoliday, setOverrideHoliday] = useState(false);
+
+  // Late Permission Dialog State
+  const [latePermDialogOpen, setLatePermDialogOpen] = useState(false);
+  const [latePermForm, setLatePermForm] = useState({ employee_id: "", date: today, permitted_minutes: 60, reason: "" });
 
   // New Holiday Input States
   const [newHDate, setNewHDate] = useState("");
@@ -110,7 +115,32 @@ export default function AttendancePage() {
     });
   };
 
-  const isLate = (clockIn: string | null, emp: any) => {
+  // Get late permission for a given employee on a specific date
+  const getLatePermission = (employeeId: string, dateStr: string) => {
+    return latePermissions.find(lp => lp.employee_id === employeeId && lp.date === dateStr);
+  };
+
+  // Has approved late permission for this date (for display purposes)
+  const hasLatePermission = (employeeId: string, dateStr?: string) => {
+    const checkDate = dateStr || today;
+    return !!getLatePermission(employeeId, checkDate);
+  };
+
+  // Check if current BD time is before office start (today only)
+  const isBeforeOfficeStart = useMemo(() => {
+    const [startH, startM] = officeSettings.start.split(":").map(Number);
+    const bdParts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Dhaka",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(new Date());
+    const nowH = parseInt(bdParts.find(p => p.type === "hour")?.value || "0");
+    const nowM = parseInt(bdParts.find(p => p.type === "minute")?.value || "0");
+    return (nowH * 60 + nowM) < (startH * 60 + startM);
+  }, [officeSettings.start]);
+
+  const isLate = (clockIn: string | null, emp: any, dateStr?: string) => {
     if (!clockIn || !emp) return false;
 
     // Skip for Management department or Super Admin designation
@@ -126,10 +156,35 @@ export default function AttendancePage() {
     const startTimeInMinutes = startH * 60 + startM;
     const clockInTimeInMinutes = clockInH * 60 + clockInM;
 
-    return clockInTimeInMinutes > (startTimeInMinutes + 15);
+    // Default 15-min grace
+    let allowedGrace = 15;
+
+    // If pre-approved late permission exists for this date, extend the grace window
+    const checkDate = dateStr || (clockIn ? new Date(clockIn).toISOString().split("T")[0] : today);
+    const permission = getLatePermission(emp.id, checkDate);
+    if (permission && permission.permitted_minutes > 0) {
+      // Permission grants a window in minutes from office start
+      allowedGrace = Math.max(allowedGrace, permission.permitted_minutes);
+    }
+
+    return clockInTimeInMinutes > (startTimeInMinutes + allowedGrace);
   };
 
-  const fmtTime = (iso: string | null) => iso ? new Date(iso).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : "—";
+  const fmtTime = (iso: string | null) => iso ? new Date(iso).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }) : "—";
+
+  // Format 24h "HH:MM" (e.g. from FlatTimePicker) to 12h "1:30 PM"
+  const fmt12hFromTimeStr = (t?: string | null) => {
+    if (!t) return "";
+    const m = t.trim().match(/^(\d{1,2}):(\d{2})/);
+    if (!m) return t;
+    let h = parseInt(m[1]);
+    if (isNaN(h)) return t;
+    const min = m[2];
+    const ampm = h >= 12 ? "PM" : "AM";
+    h = h % 12;
+    if (h === 0) h = 12;
+    return `${h}:${min} ${ampm}`;
+  };
 
 
   const handleManualClick = () => {
@@ -178,6 +233,33 @@ export default function AttendancePage() {
     }
   };
 
+  async function handleSaveLatePermission() {
+    if (!latePermForm.employee_id || !latePermForm.date) {
+      toast.error("Please select staff and date");
+      return;
+    }
+    try {
+      const payload: any = {
+        employee_id: latePermForm.employee_id,
+        date: latePermForm.date,
+        permitted_minutes: latePermForm.permitted_minutes,
+        reason: latePermForm.reason || null,
+        approved_by: user?.id || null,
+      };
+      // Upsert via unique (employee_id, date)
+      const { error } = await supabase.from("late_permissions" as any).upsert(payload, { onConflict: "employee_id,date" });
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      toast.success("Late permission granted");
+      setLatePermDialogOpen(false);
+      void loadData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save");
+    }
+  }
+
   async function loadData() {
     setFetching(true);
     try {
@@ -189,6 +271,15 @@ export default function AttendancePage() {
 
       const { data: lData } = await supabase.from("leave_requests" as any).select("*").eq("status", "approved");
       if (lData) setLeaves(lData as any || []);
+
+      // Fetch late permissions
+      const { data: lpData, error: lpError } = await supabase.from("late_permissions" as any).select("*");
+      if (lpError) {
+        // Table may not exist yet — ignore silently, fallback to empty
+        console.warn("late_permissions table not available:", lpError.message);
+      } else if (lpData) {
+        setLatePermissions(lpData as any || []);
+      }
     } catch (err) {
       console.error("Error loading data:", err);
     } finally {
@@ -267,8 +358,21 @@ export default function AttendancePage() {
           l.status === 'approved'
         );
 
+        const isHalfDayLeave = leave && (leave as any).is_half_day === true;
+        const halfDayPeriod = isHalfDayLeave ? (leave as any).half_day_period : null;
+        const leaveStartTime = isHalfDayLeave ? (leave as any).start_time : null;
+
         if (a) {
-          data.push({ ...a, employee: emp, isOnLeave: !!leave, isHoliday });
+          // If half-day leave + present → mark as half-day-with-attendance, NOT full leave
+          data.push({
+            ...a,
+            employee: emp,
+            isOnLeave: !!leave && !isHalfDayLeave, // only "full" leaves count as on-leave when there's attendance
+            isHalfDayLeave: !!isHalfDayLeave,
+            halfDayPeriod,
+            leaveStartTime,
+            isHoliday
+          });
         } else if (dStr <= today) {
           if (leave) {
             data.push({
@@ -278,12 +382,17 @@ export default function AttendancePage() {
               clock_in: null,
               clock_out: null,
               employee: emp,
-              isOnLeave: true,
+              isOnLeave: !isHalfDayLeave, // half-day with no attendance still treats as half-day-leave
+              isHalfDayLeave: !!isHalfDayLeave,
+              halfDayPeriod,
+              leaveStartTime,
               isHoliday,
-              status: 'leave',
+              status: isHalfDayLeave ? 'half_day_leave' : 'leave',
               isVirtual: true
             });
           } else if (!isHoliday) {
+            // For today: if it's before office start time, mark as pending (not absent yet)
+            const isPendingToday = dStr === today && isBeforeOfficeStart;
             data.push({
               id: `absent-${emp.id}-${dStr}`,
               employee_id: emp.id,
@@ -292,8 +401,10 @@ export default function AttendancePage() {
               clock_out: null,
               employee: emp,
               isOnLeave: false,
+              isHalfDayLeave: false,
               isHoliday: false,
-              isAbsent: true,
+              isAbsent: !isPendingToday,
+              isPending: isPendingToday,
               isVirtual: true
             });
           }
@@ -308,7 +419,7 @@ export default function AttendancePage() {
     }
 
     if (filterStatus === "late") {
-      filtered = filtered.filter(r => !r.isAbsent && !r.isOnLeave && isLate(r.clock_in, r.employee));
+      filtered = filtered.filter(r => !r.isAbsent && !r.isOnLeave && isLate(r.clock_in, r.employee, r.date));
     } else if (filterStatus === "absent") {
       filtered = filtered.filter(r => r.isAbsent);
     } else if (filterStatus === "present") {
@@ -462,13 +573,17 @@ export default function AttendancePage() {
                   <TableBody>
                     {displayEmployees.map((e) => {
                       const a = displayAttendance.find((x) => x.employee_id === e.id);
-                      const isOnLeave = leaves.some(l =>
+                      const todayLeave = leaves.find(l =>
                         l.employee_id === e.id &&
                         today >= l.from_date &&
                         today <= l.to_date
                       );
+                      const isOnLeave = !!todayLeave;
+                      const isHalfDayLeave = isOnLeave && (todayLeave as any).is_half_day === true;
+                      const halfDayPeriod = isHalfDayLeave ? (todayLeave as any).half_day_period : null;
+                      const halfDayStartTime = isHalfDayLeave ? (todayLeave as any).start_time : null;
                       const status = !a?.clock_in
-                        ? (isOnLeave ? "leave" : (isTodayHoliday && !overrideHoliday ? "holiday" : "absent"))
+                        ? (isOnLeave && !isHalfDayLeave ? "leave" : (isTodayHoliday && !overrideHoliday ? "holiday" : (isHalfDayLeave ? "half_leave_absent" : "absent")))
                         : (a.clock_out ? "out" : "in");
                       return (
                         <TableRow key={e.id} className="hover:bg-muted/10 transition-colors">
@@ -488,14 +603,33 @@ export default function AttendancePage() {
                           <TableCell className="font-mono text-xs font-bold">{fmtTime(a?.clock_in ?? null)}</TableCell>
                           <TableCell className="font-mono text-xs font-bold">{fmtTime(a?.clock_out ?? null)}</TableCell>
                           <TableCell>
-                            <div className="flex items-center gap-2">
-                              {status === "in" && <Badge className="bg-green-500/10 text-green-600 border-green-500/20 px-2 py-0.5">Working</Badge>}
-                              {status === "out" && <Badge variant="secondary" className="px-2 py-0.5">Done</Badge>}
-                              {status === "absent" && <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-500/20 px-2 py-0.5">Absent</Badge>}
-                              {status === "holiday" && <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/20 px-2 py-0.5">Holiday</Badge>}
-                              {status === "leave" && <Badge variant="outline" className="bg-orange-500/10 text-orange-600 border-orange-500/20 px-2 py-0.5">On Leave</Badge>}
-                              {(status === "in" || status === "out") && isLate(a?.clock_in ?? null, e) && (
-                                <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-500/20 px-2 py-0.5 animate-pulse">Late</Badge>
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {status === "in" && <Badge className="bg-green-500/10 text-green-600 border-green-500/20 px-2 py-0.5">Working</Badge>}
+                                {status === "out" && <Badge variant="secondary" className="px-2 py-0.5">Done</Badge>}
+                                {status === "absent" && (
+                                  isBeforeOfficeStart
+                                    ? <Badge variant="outline" className="bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20 px-2 py-0.5">Yet to Clock In</Badge>
+                                    : <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-500/20 px-2 py-0.5">Absent</Badge>
+                                )}
+                                {status === "holiday" && <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/20 px-2 py-0.5">Holiday</Badge>}
+                                {status === "leave" && <Badge variant="outline" className="bg-orange-500/10 text-orange-600 border-orange-500/20 px-2 py-0.5">On Leave</Badge>}
+                                {status === "half_leave_absent" && <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 px-2 py-0.5">½ Day Leave</Badge>}
+                                {isHalfDayLeave && (status === "in" || status === "out") && (
+                                  <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 px-2 py-0.5">½ Day Leave</Badge>
+                                )}
+                                {(status === "in" || status === "out") && !isHalfDayLeave && hasLatePermission(e.id, today) && !isLate(a?.clock_in ?? null, e, today) && (
+                                  <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/20 px-2 py-0.5">Permitted Late</Badge>
+                                )}
+                                {(status === "in" || status === "out") && !isHalfDayLeave && isLate(a?.clock_in ?? null, e, today) && (
+                                  <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-500/20 px-2 py-0.5 animate-pulse">Late</Badge>
+                                )}
+                              </div>
+                              {isHalfDayLeave && (
+                                <span className="text-[10px] text-amber-600 dark:text-amber-400 italic">
+                                  {halfDayPeriod === "first_half" ? "Morning" : "Afternoon"}
+                                  {halfDayStartTime && ` · from ${fmt12hFromTimeStr(halfDayStartTime)}`}
+                                </span>
                               )}
                             </div>
                           </TableCell>
@@ -531,13 +665,17 @@ export default function AttendancePage() {
               <div className="md:hidden space-y-3">
                 {displayEmployees.map((e) => {
                   const a = displayAttendance.find((x) => x.employee_id === e.id);
-                  const isOnLeave = leaves.some(l =>
+                  const todayLeave = leaves.find(l =>
                     l.employee_id === e.id &&
                     today >= l.from_date &&
                     today <= l.to_date
                   );
+                  const isOnLeave = !!todayLeave;
+                  const isHalfDayLeave = isOnLeave && (todayLeave as any).is_half_day === true;
+                  const halfDayPeriod = isHalfDayLeave ? (todayLeave as any).half_day_period : null;
+                  const halfDayStartTime = isHalfDayLeave ? (todayLeave as any).start_time : null;
                   const status = !a?.clock_in
-                    ? (isOnLeave ? "leave" : (isTodayHoliday && !overrideHoliday ? "holiday" : "absent"))
+                    ? (isOnLeave && !isHalfDayLeave ? "leave" : (isTodayHoliday && !overrideHoliday ? "holiday" : (isHalfDayLeave ? "half_leave_absent" : "absent")))
                     : (a.clock_out ? "out" : "in");
 
                   return (
@@ -567,14 +705,29 @@ export default function AttendancePage() {
                         </div>
                       </div>
 
+                      {isHalfDayLeave && (
+                        <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-2 text-[11px] text-amber-700 dark:text-amber-300">
+                          <span className="font-semibold">½ Day Leave · {halfDayPeriod === "first_half" ? "Morning" : "Afternoon"}</span>
+                          {halfDayStartTime && <span className="ml-1">(from {fmt12hFromTimeStr(halfDayStartTime)})</span>}
+                        </div>
+                      )}
+
                       <div className="flex items-center justify-between pt-1">
                         <div className="flex flex-wrap gap-1">
                           {status === "in" && <Badge className="bg-green-500/10 text-green-600 border-green-500/20 px-2 py-0.5 text-[10px]">Working</Badge>}
                           {status === "out" && <Badge variant="secondary" className="px-2 py-0.5 text-[10px]">Done</Badge>}
-                          {status === "absent" && <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-500/20 px-2 py-0.5 text-[10px]">Absent</Badge>}
+                          {status === "absent" && (
+                            isBeforeOfficeStart
+                              ? <Badge variant="outline" className="bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20 px-2 py-0.5 text-[10px]">Yet to Clock In</Badge>
+                              : <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-500/20 px-2 py-0.5 text-[10px]">Absent</Badge>
+                          )}
                           {status === "holiday" && <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/20 px-2 py-0.5 text-[10px]">Holiday</Badge>}
                           {status === "leave" && <Badge variant="outline" className="bg-orange-500/10 text-orange-600 border-orange-500/20 px-2 py-0.5 text-[10px]">On Leave</Badge>}
-                          {(status === "in" || status === "out") && isLate(a?.clock_in ?? null, e) && (
+                          {status === "half_leave_absent" && <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 px-2 py-0.5 text-[10px]">½ Day Leave</Badge>}
+                          {(status === "in" || status === "out") && !isHalfDayLeave && hasLatePermission(e.id, today) && !isLate(a?.clock_in ?? null, e, today) && (
+                            <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/20 px-2 py-0.5 text-[10px]">Permitted Late</Badge>
+                          )}
+                          {(status === "in" || status === "out") && !isHalfDayLeave && isLate(a?.clock_in ?? null, e, today) && (
                             <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-500/20 px-2 py-0.5 text-[10px] animate-pulse">Late</Badge>
                           )}
                         </div>
@@ -612,11 +765,16 @@ export default function AttendancePage() {
                   <CardTitle className="text-lg">Attendance Reports</CardTitle>
                   <CardDescription className="text-xs sm:text-sm">View and export historical attendance data.</CardDescription>
                 </div>
-                <div className="flex items-center gap-2 w-full sm:w-auto">
+                <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
                   {isSuperAdmin && (
-                    <Button variant="outline" size="sm" className="flex-1 sm:flex-none h-9 font-semibold border-primary text-primary cursor-pointer" onClick={handleManualClick}>
-                      <Plus className="h-4 w-4 mr-2" /> Manual Entry
-                    </Button>
+                    <>
+                      <Button variant="outline" size="sm" className="flex-1 sm:flex-none h-9 font-semibold border-blue-500/40 text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 cursor-pointer" onClick={() => { setLatePermForm({ employee_id: employees[0]?.id || "", date: today, permitted_minutes: 60, reason: "" }); setLatePermDialogOpen(true); }}>
+                        <Clock className="h-4 w-4 mr-2" /> Late Permission
+                      </Button>
+                      <Button variant="outline" size="sm" className="flex-1 sm:flex-none h-9 font-semibold border-primary text-primary cursor-pointer" onClick={handleManualClick}>
+                        <Plus className="h-4 w-4 mr-2" /> Manual Entry
+                      </Button>
+                    </>
                   )}
                   <Button variant="outline" size="sm" className="flex-1 sm:flex-none h-9 font-semibold cursor-pointer" onClick={exportPDF}>
                     <FileDown className="h-4 w-4 mr-2 text-red-500" /> Export PDF
@@ -713,18 +871,30 @@ export default function AttendancePage() {
                             <TableCell className="py-2 px-4 font-mono text-xs font-bold">{fmtTime(r.clock_out)}</TableCell>
                             <TableCell className="py-2 px-4 text-center font-mono text-[10px] text-muted-foreground">{r.ip_address || "—"}</TableCell>
                             <TableCell className="py-2 px-4">
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <Badge
                                   variant={r.isAbsent ? "destructive" : (r.isOnLeave ? "outline" : "secondary")}
                                   className={cn(
                                     "px-2 py-0.5 text-[10px] font-bold",
+                                    r.isPending && "bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20",
                                     r.isOnLeave && "bg-orange-500/10 text-orange-600 border-orange-500/20",
                                     r.isAbsent && "bg-red-500/10 text-red-600 border-red-500/20"
                                   )}
                                 >
-                                  {r.isAbsent ? "ABSENT" : (r.isOnLeave ? "ON LEAVE" : (r.clock_out ? "PRESENT" : "ACTIVE"))}
+                                  {r.isPending ? "YET TO CLOCK IN" : (r.isAbsent ? "ABSENT" : (r.isOnLeave ? "ON LEAVE" : (r.clock_out ? "PRESENT" : "ACTIVE")))}
                                 </Badge>
-                                {!r.isOnLeave && !r.isAbsent && isLate(r.clock_in, r.employee) && (
+                                {r.isHalfDayLeave && (
+                                  <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 px-2 py-0.5 text-[10px] font-bold" title={`${r.halfDayPeriod === "first_half" ? "Morning" : "Afternoon"}${r.leaveStartTime ? ` from ${fmt12hFromTimeStr(r.leaveStartTime)}` : ""}`}>
+                                    ½ DAY · {r.halfDayPeriod === "first_half" ? "AM" : "PM"}
+                                    {r.leaveStartTime && ` · ${fmt12hFromTimeStr(r.leaveStartTime)}`}
+                                  </Badge>
+                                )}
+                                {!r.isOnLeave && !r.isAbsent && !r.isHalfDayLeave && r.clock_in && hasLatePermission(r.employee_id, r.date) && !isLate(r.clock_in, r.employee, r.date) && (
+                                  <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/20 px-2 py-0.5 text-[10px] font-bold" title="Late permission was granted in advance">
+                                    PERMITTED LATE
+                                  </Badge>
+                                )}
+                                {!r.isOnLeave && !r.isAbsent && !r.isHalfDayLeave && isLate(r.clock_in, r.employee, r.date) && (
                                   <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-500/20 px-2 py-0.5 text-[10px] font-bold">LATE</Badge>
                                 )}
                               </div>
@@ -772,13 +942,23 @@ export default function AttendancePage() {
                               variant={r.isAbsent ? "destructive" : (r.isOnLeave ? "outline" : "secondary")}
                               className={cn(
                                 "px-2 py-0.5 text-[10px] font-bold",
+                                r.isPending && "bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20",
                                 r.isOnLeave && "bg-orange-500/10 text-orange-600 border-orange-500/20",
                                 r.isAbsent && "bg-red-500/10 text-red-600 border-red-500/20"
                               )}
                             >
-                              {r.isAbsent ? "ABSENT" : (r.isOnLeave ? "ON LEAVE" : (r.clock_out ? "PRESENT" : "ACTIVE"))}
+                              {r.isPending ? "YET TO CLOCK IN" : (r.isAbsent ? "ABSENT" : (r.isOnLeave ? "ON LEAVE" : (r.clock_out ? "PRESENT" : "ACTIVE")))}
                             </Badge>
-                            {!r.isOnLeave && !r.isAbsent && isLate(r.clock_in, r.employee) && (
+                            {r.isHalfDayLeave && (
+                              <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 px-2 py-0.5 text-[10px] font-bold">
+                                ½ DAY · {r.halfDayPeriod === "first_half" ? "AM" : "PM"}
+                                {r.leaveStartTime && ` · ${fmt12hFromTimeStr(r.leaveStartTime)}`}
+                              </Badge>
+                            )}
+                            {!r.isOnLeave && !r.isAbsent && !r.isHalfDayLeave && r.clock_in && hasLatePermission(r.employee_id, r.date) && !isLate(r.clock_in, r.employee, r.date) && (
+                              <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/20 px-2 py-0.5 text-[10px] font-bold">PERMITTED LATE</Badge>
+                            )}
+                            {!r.isOnLeave && !r.isAbsent && !r.isHalfDayLeave && isLate(r.clock_in, r.employee, r.date) && (
                               <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-500/20 px-2 py-0.5 text-[10px] font-bold">LATE</Badge>
                             )}
                           </div>
@@ -1121,6 +1301,140 @@ export default function AttendancePage() {
           <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
             <Button variant="outline" className="rounded-xl h-11" onClick={() => { setEditingEntry(null); setManualEntry(null); }}>Cancel</Button>
             <Button className="rounded-xl h-11 bg-primary hover:bg-primary/90" onClick={handleSaveEdit}>Save changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Late Permission Dialog */}
+      <Dialog open={latePermDialogOpen} onOpenChange={setLatePermDialogOpen}>
+        <DialogContent className="sm:max-w-[440px] rounded-2xl p-4 sm:p-5 gap-3 border-none shadow-2xl">
+          <DialogHeader className="space-y-1">
+            <div className="mx-auto p-2 rounded-full bg-blue-500/10 w-fit">
+              <Clock className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            </div>
+            <DialogTitle className="text-base font-bold text-center">Grant Late Permission</DialogTitle>
+            <DialogDescription className="text-center text-[11px] leading-snug">
+              Pre-approve a staff member's late arrival within the permitted window.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2.5">
+            <div>
+              <Label className="text-[11px]">Staff</Label>
+              <Select value={latePermForm.employee_id} onValueChange={(v) => setLatePermForm({ ...latePermForm, employee_id: v })}>
+                <SelectTrigger className="mt-1 h-9"><SelectValue placeholder="Select staff" /></SelectTrigger>
+                <SelectContent>
+                  {employees.filter(e => e.status !== "disabled" && e.department !== "Management" && e.designation !== "Super Admin").map(e => (
+                    <SelectItem key={e.id} value={e.id}>{e.full_name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className="text-[11px]">Date</Label>
+              <div className="mt-1">
+                <FlatDatePicker date={latePermForm.date} onChange={(d) => setLatePermForm({ ...latePermForm, date: d })} />
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-[11px]">Permitted Window (after office start)</Label>
+              <div className="grid grid-cols-4 gap-1.5 mt-1">
+                {[
+                  { mins: 60, label: "1h" },
+                  { mins: 90, label: "1.5h" },
+                  { mins: 120, label: "2h" },
+                  { mins: 150, label: "2.5h" },
+                ].map(({ mins, label }) => (
+                  <button
+                    key={mins}
+                    type="button"
+                    onClick={() => setLatePermForm({ ...latePermForm, permitted_minutes: mins })}
+                    className={cn(
+                      "h-8 rounded-md text-[11px] font-bold border transition-all cursor-pointer",
+                      latePermForm.permitted_minutes === mins
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-input hover:border-primary/40 text-muted-foreground"
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Manual time input — Super Admin only */}
+              {isSuperAdmin && (
+                <div className="mt-1.5 flex items-center gap-1.5">
+                  <div className="flex-1 flex items-center gap-1.5 rounded-md border border-dashed border-primary/30 bg-primary/5 px-2.5 py-1">
+                    <Input
+                      type="number"
+                      min={1}
+                      max={600}
+                      value={latePermForm.permitted_minutes}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value);
+                        if (!isNaN(v) && v > 0) setLatePermForm({ ...latePermForm, permitted_minutes: v });
+                      }}
+                      className="h-7 border-0 bg-transparent shadow-none focus-visible:ring-0 text-xs font-mono font-bold p-0"
+                      placeholder="Custom"
+                    />
+                    <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-bold shrink-0">min</span>
+                  </div>
+                  <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[9px] font-bold shrink-0 px-2">
+                    Admin
+                  </Badge>
+                </div>
+              )}
+
+              <p className="text-[10px] text-muted-foreground mt-1.5">
+                Office starts at {officeSettings.start} → grace until {(() => {
+                  const [h, m] = officeSettings.start.split(":").map(Number);
+                  const total = h * 60 + m + latePermForm.permitted_minutes;
+                  const hh = Math.floor(total / 60) % 24;
+                  const mm = total % 60;
+                  let h12 = hh % 12; if (h12 === 0) h12 = 12;
+                  const ampm = hh >= 12 ? "PM" : "AM";
+                  return `${h12}:${String(mm).padStart(2, "0")} ${ampm}`;
+                })()}
+              </p>
+            </div>
+
+            <div>
+              <Label className="text-[11px]">Reason (optional)</Label>
+              <Input
+                value={latePermForm.reason}
+                onChange={(e) => setLatePermForm({ ...latePermForm, reason: e.target.value })}
+                placeholder="e.g. Doctor's appointment, traffic"
+                className="mt-1 h-9 text-xs"
+              />
+            </div>
+
+            {/* Show existing permissions for this staff in the same month */}
+            {latePermForm.employee_id && (() => {
+              const monthPrefix = latePermForm.date.slice(0, 7);
+              const existing = latePermissions.filter(lp => lp.employee_id === latePermForm.employee_id && lp.date.startsWith(monthPrefix));
+              if (existing.length === 0) return null;
+              return (
+                <div className="rounded-md border border-dashed bg-muted/20 p-2 text-[10px]">
+                  <p className="font-semibold text-muted-foreground mb-1">{existing.length} this month:</p>
+                  <div className="flex flex-wrap gap-1">
+                    {existing.map(lp => (
+                      <Badge key={lp.id || lp.date} variant="outline" className="bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20 text-[9px] px-1.5 py-0">
+                        {formatDate(lp.date)} · {lp.permitted_minutes}m
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-1">
+            <Button variant="outline" className="rounded-lg h-9 text-xs cursor-pointer" onClick={() => setLatePermDialogOpen(false)}>Cancel</Button>
+            <Button className="rounded-lg h-9 text-xs cursor-pointer" onClick={handleSaveLatePermission} disabled={!latePermForm.employee_id || !latePermForm.date}>
+              <Clock className="h-3.5 w-3.5 mr-1" /> Grant Permission
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

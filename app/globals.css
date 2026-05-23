@@ -55,6 +55,7 @@
   --font-sans: var(--font-primary);
   --font-secondary: var(--font-secondary);
   --font-mono: var(--font-mono);
+  --font-bengali: var(--font-bengali);
 }
 
 :root {

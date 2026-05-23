@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Card, CardContent } from "../ui/card";
 import { Badge } from "../ui/badge";
-import { Clock, Sun, Moon, Sunrise, Sunset, Coffee, Briefcase } from "lucide-react";
+import { Clock, Sun, Moon, Sunrise, Sunset, Coffee, Briefcase, CalendarDays, Flame, Snowflake, Cloud, Droplets, Sparkles, Timer } from "lucide-react";
 import { cn } from "../../lib/utils";
 
 const BD_TIMEZONE = "Asia/Dhaka";
@@ -11,11 +11,93 @@ const BD_TIMEZONE = "Asia/Dhaka";
 const BENGALI_DAYS = ["রবিবার", "সোমবার", "মঙ্গলবার", "বুধবার", "বৃহস্পতিবার", "শুক্রবার", "শনিবার"];
 const BENGALI_MONTHS = ["জানুয়ারি", "ফেব্রুয়ারি", "মার্চ", "এপ্রিল", "মে", "জুন", "জুলাই", "আগস্ট", "সেপ্টেম্বর", "অক্টোবর", "নভেম্বর", "ডিসেম্বর"];
 
+// Bengali Calendar (Bangladesh) — approximate. Bengali New Year is 14 April (Pohela Boishakh).
+const BENGALI_CALENDAR_MONTHS = ["বৈশাখ", "জ্যৈষ্ঠ", "আষাঢ়", "শ্রাবণ", "ভাদ্র", "আশ্বিন", "কার্তিক", "অগ্রহায়ণ", "পৌষ", "মাঘ", "ফাল্গুন", "চৈত্র"];
+
 // Convert English digits to Bengali
 const toBengaliNum = (str: string | number): string => {
   const map: Record<string, string> = { "0": "০", "1": "১", "2": "২", "3": "৩", "4": "৪", "5": "৫", "6": "৬", "7": "৭", "8": "৮", "9": "৯" };
   return String(str).replace(/[0-9]/g, (d) => map[d] || d);
 };
+
+// Approximate Bengali calendar conversion (Bangladesh civil calendar, post-1966 reform)
+function getBengaliDate(date: Date): { day: number; month: string; year: number; season: string; seasonBn: string; seasonIcon: React.ReactNode } {
+  const d = date.getDate();
+  const m = date.getMonth() + 1; // 1-12
+  const y = date.getFullYear();
+  // Bengali year = Gregorian year - 593 (April onwards), - 594 (Jan-March)
+  let bnYear = y - 594;
+  let bnMonthIdx = 0;
+  let bnDay = 0;
+
+  // Bangladesh civil Bengali calendar:
+  // Boishakh: 14 Apr - 14 May (31 days)
+  // Jyaishtho: 15 May - 14 Jun (31)
+  // Asharh: 15 Jun - 15 Jul (31)
+  // Shrabon: 16 Jul - 15 Aug (31)
+  // Bhadro: 16 Aug - 15 Sep (31)
+  // Ashwin: 16 Sep - 15 Oct (30)
+  // Kartik: 16 Oct - 14 Nov (30)
+  // Agrahayan: 15 Nov - 14 Dec (30)
+  // Poush: 15 Dec - 13 Jan (30)
+  // Magh: 14 Jan - 12 Feb (30)
+  // Falgun: 13 Feb - 14 Mar (30/31 leap)
+  // Chaitra: 15 Mar - 13 Apr (30)
+  const dayOfYear = (() => {
+    const start = new Date(date.getFullYear(), 0, 0);
+    return Math.floor((date.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+  })();
+
+  // Day of Bengali year: from 14 April (= Boishakh 1) of previous Gregorian year (if before 14 April) or current.
+  let bnYearStart: Date;
+  if (m < 4 || (m === 4 && d < 14)) {
+    bnYearStart = new Date(y - 1, 3, 14); // April is month 3
+    bnYear = y - 594;
+  } else {
+    bnYearStart = new Date(y, 3, 14);
+    bnYear = y - 593;
+  }
+
+  const daysSinceBnNewYear = Math.floor((date.getTime() - bnYearStart.getTime()) / (1000 * 60 * 60 * 24));
+  // Cumulative day counts for each Bengali month
+  const monthLengths = [31, 31, 31, 31, 31, 30, 30, 30, 30, 30, 30, 30];
+  let acc = 0;
+  for (let i = 0; i < 12; i++) {
+    if (daysSinceBnNewYear < acc + monthLengths[i]) {
+      bnMonthIdx = i;
+      bnDay = daysSinceBnNewYear - acc + 1;
+      break;
+    }
+    acc += monthLengths[i];
+  }
+
+  // Six seasons: Boishakh-Jyaishtho=Grishmo, Asharh-Shrabon=Borsha, Bhadro-Ashwin=Sharot,
+  // Kartik-Agrahayan=Hemonto, Poush-Magh=Sheet, Falgun-Chaitra=Boshonto
+  const seasonMap = [
+    { name: "Summer", bn: "গ্রীষ্ম", icon: <Flame className="h-3 w-3" /> },
+    { name: "Summer", bn: "গ্রীষ্ম", icon: <Flame className="h-3 w-3" /> },
+    { name: "Monsoon", bn: "বর্ষা", icon: <Droplets className="h-3 w-3" /> },
+    { name: "Monsoon", bn: "বর্ষা", icon: <Droplets className="h-3 w-3" /> },
+    { name: "Autumn", bn: "শরৎ", icon: <Cloud className="h-3 w-3" /> },
+    { name: "Autumn", bn: "শরৎ", icon: <Cloud className="h-3 w-3" /> },
+    { name: "Late Autumn", bn: "হেমন্ত", icon: <Cloud className="h-3 w-3" /> },
+    { name: "Late Autumn", bn: "হেমন্ত", icon: <Cloud className="h-3 w-3" /> },
+    { name: "Winter", bn: "শীত", icon: <Snowflake className="h-3 w-3" /> },
+    { name: "Winter", bn: "শীত", icon: <Snowflake className="h-3 w-3" /> },
+    { name: "Spring", bn: "বসন্ত", icon: <Sparkles className="h-3 w-3" /> },
+    { name: "Spring", bn: "বসন্ত", icon: <Sparkles className="h-3 w-3" /> },
+  ];
+  const season = seasonMap[bnMonthIdx];
+
+  return {
+    day: bnDay,
+    month: BENGALI_CALENDAR_MONTHS[bnMonthIdx],
+    year: bnYear,
+    season: season.name,
+    seasonBn: season.bn,
+    seasonIcon: season.icon,
+  };
+}
 
 // Get time-based greeting and icon
 function getGreeting(hour: number): { greeting: string; icon: React.ReactNode; tone: string; bnGreeting: string } {
@@ -31,12 +113,37 @@ function getWorkStatus(hour: number, minute: number, day: number): { status: str
   // Friday is weekend in Bangladesh (day === 5)
   if (day === 5) return { status: "Weekend", icon: <Coffee className="h-3.5 w-3.5" />, color: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30" };
   const totalMin = hour * 60 + minute;
-  // Office hours typically 9 AM - 6 PM
-  if (totalMin < 9 * 60) return { status: "Before Office", icon: <Coffee className="h-3.5 w-3.5" />, color: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30" };
-  if (totalMin >= 9 * 60 && totalMin < 13 * 60) return { status: "Working Hours", icon: <Briefcase className="h-3.5 w-3.5" />, color: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30" };
+  // Office hours 11 AM - 7 PM (8h)
+  if (totalMin < 11 * 60) return { status: "Before Office", icon: <Coffee className="h-3.5 w-3.5" />, color: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30" };
+  if (totalMin >= 11 * 60 && totalMin < 13 * 60) return { status: "Working Hours", icon: <Briefcase className="h-3.5 w-3.5" />, color: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30" };
   if (totalMin >= 13 * 60 && totalMin < 14 * 60) return { status: "Lunch Break", icon: <Coffee className="h-3.5 w-3.5" />, color: "bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30" };
-  if (totalMin >= 14 * 60 && totalMin < 18 * 60) return { status: "Working Hours", icon: <Briefcase className="h-3.5 w-3.5" />, color: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30" };
+  if (totalMin >= 14 * 60 && totalMin < 19 * 60) return { status: "Working Hours", icon: <Briefcase className="h-3.5 w-3.5" />, color: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30" };
   return { status: "After Office", icon: <Moon className="h-3.5 w-3.5" />, color: "bg-slate-500/15 text-slate-600 dark:text-slate-400 border-slate-500/30" };
+}
+
+// Office context: time until office starts/ends, or off-info
+function getOfficeContext(hour: number, minute: number, day: number): { label: string; value: string; icon: React.ReactNode } {
+  if (day === 5) return { label: "Office Resumes", value: "Tomorrow 11:00 AM", icon: <Sunrise className="h-3.5 w-3.5" /> };
+  const totalMin = hour * 60 + minute;
+  const fmt = (mins: number) => {
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    if (h === 0) return `${m} min`;
+    if (m === 0) return `${h}h`;
+    return `${h}h ${m}m`;
+  };
+  if (totalMin < 11 * 60) {
+    return { label: "Office Starts In", value: fmt(11 * 60 - totalMin), icon: <Timer className="h-3.5 w-3.5" /> };
+  }
+  if (totalMin < 19 * 60) {
+    return { label: "Office Ends In", value: fmt(19 * 60 - totalMin), icon: <Timer className="h-3.5 w-3.5" /> };
+  }
+  // After office — calculate hours until tomorrow 11 AM
+  const tomorrowDay = (day + 1) % 7;
+  if (tomorrowDay === 5) {
+    return { label: "Weekend Tomorrow", value: "Friday off", icon: <Coffee className="h-3.5 w-3.5" /> };
+  }
+  return { label: "Tomorrow Office", value: "11:00 AM", icon: <Sunrise className="h-3.5 w-3.5" /> };
 }
 
 function getDayOfYear(date: Date): number {
@@ -57,7 +164,24 @@ function getWeekNumber(date: Date): number {
   return 1 + Math.ceil((firstThursday - target.valueOf()) / 604800000);
 }
 
-export function BdClockWidget() {
+// Days remaining in month
+function getDaysLeftInMonth(date: Date): number {
+  const last = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+  return last.getDate() - date.getDate();
+}
+
+// Quarter info
+function getQuarter(date: Date): { quarter: number; daysIntoQuarter: number; totalDays: number } {
+  const month = date.getMonth();
+  const quarter = Math.floor(month / 3) + 1;
+  const qStart = new Date(date.getFullYear(), (quarter - 1) * 3, 1);
+  const qEnd = new Date(date.getFullYear(), quarter * 3, 0);
+  const daysInto = Math.floor((date.getTime() - qStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  const totalDays = Math.floor((qEnd.getTime() - qStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  return { quarter, daysIntoQuarter: daysInto, totalDays };
+}
+
+export function BdClockWidget({ userName }: { userName?: string }) {
   const [now, setNow] = React.useState<Date | null>(null);
 
   React.useEffect(() => {
@@ -109,94 +233,127 @@ export function BdClockWidget() {
 
   const greeting = getGreeting(hour24);
   const workStatus = getWorkStatus(hour24, minute, dayIndex);
+  const officeCtx = getOfficeContext(hour24, minute, dayIndex);
 
   // Day progress (% through the day)
   const dayProgressPct = ((hour24 * 3600 + minute * 60 + second) / 86400) * 100;
 
-  // Day of year + week
+  // BD-aware Date object for derived calculations
   const bdNow = new Date(now.toLocaleString("en-US", { timeZone: BD_TIMEZONE }));
   const dayOfYear = getDayOfYear(bdNow);
   const weekNum = getWeekNumber(bdNow);
+  const bnDate = getBengaliDate(bdNow);
 
   return (
     <Card className={cn("overflow-hidden border-2 border-primary/10 shadow-sm")}>
       <div className={cn("h-1 w-full bg-gradient-to-r", greeting.tone)} />
-      <CardContent className="p-5 space-y-4">
-        {/* Top: Greeting + Status */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <div className={cn("p-2 rounded-lg bg-gradient-to-br", greeting.tone)}>
+      <CardContent className="p-5 sm:p-6 space-y-5">
+        {/* Top row: Greeting + Username + Big Time + Work Status */}
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className={cn("p-2.5 rounded-xl bg-gradient-to-br shrink-0", greeting.tone)}>
               {greeting.icon}
             </div>
-            <div>
-              <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">{greeting.greeting}</p>
-              <p className="text-sm font-semibold">{greeting.bnGreeting}</p>
+            <div className="min-w-0 space-y-1">
+              <p className="text-xs uppercase font-bold text-muted-foreground tracking-widest leading-none">{greeting.greeting}</p>
+              <p className="text-lg font-semibold leading-none">
+                <span className="font-bengali">{greeting.bnGreeting}</span>
+                {userName && <span className="text-foreground/80">, {userName}</span>}
+              </p>
             </div>
           </div>
-          <Badge variant="outline" className={cn("gap-1 text-[10px] font-bold px-2 py-1", workStatus.color)}>
+
+          <div className="flex items-baseline gap-2 ml-auto">
+            <div className="text-4xl font-bold font-mono tabular-nums text-primary tracking-tight leading-none">
+              {String(h12).padStart(2, "0")}
+              <span className="animate-pulse text-primary/60">:</span>
+              {String(minute).padStart(2, "0")}
+            </div>
+            <div className="text-base font-mono tabular-nums text-muted-foreground leading-none">
+              :{String(second).padStart(2, "0")}
+            </div>
+            <div className="text-sm font-bold text-muted-foreground leading-none">{ampm}</div>
+          </div>
+
+          <Badge variant="outline" className={cn("gap-1.5 text-xs font-bold px-3 py-1.5", workStatus.color)}>
             {workStatus.icon}
             {workStatus.status}
           </Badge>
         </div>
 
-        {/* Big Time Display */}
-        <div className="flex items-baseline gap-2">
-          <div className="text-4xl font-bold font-mono tabular-nums text-primary tracking-tight">
-            {String(h12).padStart(2, "0")}
-            <span className="animate-pulse text-primary/60">:</span>
-            {String(minute).padStart(2, "0")}
-          </div>
-          <div className="text-sm font-mono tabular-nums text-muted-foreground">
-            :{String(second).padStart(2, "0")}
-          </div>
-          <div className="text-xs font-bold text-muted-foreground ml-1">{ampm}</div>
-          <Badge variant="outline" className="ml-auto text-[9px] font-mono px-1.5 py-0 h-5">BD · UTC+6</Badge>
-        </div>
-
-        {/* Date row */}
-        <div className="grid grid-cols-2 gap-2 text-xs">
-          <div className="flex items-center gap-1.5 p-2 rounded-lg bg-muted/40 border border-muted-foreground/5">
-            <Clock className="h-3 w-3 text-primary shrink-0" />
-            <div className="min-w-0">
-              <p className="text-[9px] uppercase font-bold text-muted-foreground tracking-wider">English</p>
-              <p className="font-semibold truncate">{weekday}, {month} {day}</p>
+        {/* Date row: English + Bengali calendar + Office Context */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-stretch">
+          <div className="flex items-center gap-2.5 p-3 rounded-lg bg-muted/40 border border-muted-foreground/5">
+            <CalendarDays className="h-4 w-4 text-primary shrink-0" />
+            <div className="min-w-0 space-y-1">
+              <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider leading-none">English Calendar</p>
+              <p className="text-sm font-semibold truncate leading-none">{weekday}, {month} {day}, {year}</p>
             </div>
           </div>
-          <div className="flex items-center gap-1.5 p-2 rounded-lg bg-muted/40 border border-muted-foreground/5">
-            <Clock className="h-3 w-3 text-primary shrink-0" />
-            <div className="min-w-0">
-              <p className="text-[9px] uppercase font-bold text-muted-foreground tracking-wider">বাংলা</p>
-              <p className="font-semibold truncate">{BENGALI_DAYS[dayIndex]}, {toBengaliNum(day)} {BENGALI_MONTHS[monthIndex]}</p>
+          <div className="flex items-center gap-2.5 p-3 rounded-lg bg-muted/40 border border-muted-foreground/5">
+            <CalendarDays className="h-4 w-4 text-primary shrink-0" />
+            <div className="min-w-0 space-y-1">
+              <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider leading-none font-bengali">বাংলা ক্যালেন্ডার</p>
+              <p className="text-sm font-semibold truncate leading-none font-bengali">
+                {BENGALI_DAYS[dayIndex]}, {toBengaliNum(bnDate.day)} {bnDate.month} {toBengaliNum(bnDate.year)}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5 p-3 rounded-lg bg-gradient-to-br from-primary/5 to-primary/10 border border-primary/15">
+            <span className="text-primary shrink-0">{officeCtx.icon}</span>
+            <div className="min-w-0 space-y-1">
+              <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider leading-none">{officeCtx.label}</p>
+              <p className="text-sm font-bold truncate leading-none font-mono tabular-nums">{officeCtx.value}</p>
             </div>
           </div>
         </div>
 
-        {/* Day progress bar */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between text-[10px] font-medium text-muted-foreground">
-            <span>Day Progress</span>
-            <span className="font-mono tabular-nums">{dayProgressPct.toFixed(1)}%</span>
+        {/* Day Progress with timeline markers */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
+            <span className="font-semibold">Day Progress</span>
+            <span className="font-mono tabular-nums font-bold text-foreground">{dayProgressPct.toFixed(1)}%</span>
           </div>
-          <div className="h-1.5 bg-muted/60 rounded-full overflow-hidden">
+          <div className="h-2 bg-muted/60 rounded-full overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-primary/60 to-primary transition-all duration-1000 ease-linear"
               style={{ width: `${dayProgressPct}%` }}
             />
           </div>
-          <div className="flex items-center justify-between text-[10px] text-muted-foreground/80 pt-1">
+          <div className="flex items-center justify-between text-[10px] text-muted-foreground/80 pt-0.5">
             <span className="flex items-center gap-1"><Sunrise className="h-3 w-3" /> 12 AM</span>
             <span className="flex items-center gap-1">12 PM <Sun className="h-3 w-3" /></span>
             <span className="flex items-center gap-1">12 AM <Moon className="h-3 w-3" /></span>
           </div>
-        </div>
-
-        {/* Footer stats */}
-        <div className="flex items-center justify-between pt-2 border-t border-dashed text-[10px] text-muted-foreground">
-          <span>Day <span className="font-bold text-foreground font-mono">{dayOfYear}</span> of {year}</span>
-          <span>Week <span className="font-bold text-foreground font-mono">{weekNum}</span></span>
-          <span className="font-mono">{toBengaliNum(year)}</span>
+          <div className="flex items-center justify-between pt-1.5 border-t border-dashed text-[11px] text-muted-foreground">
+            <span>Day <span className="font-bold text-foreground font-mono">{dayOfYear}</span> of {year}</span>
+            <span>Week <span className="font-bold text-foreground font-mono">{weekNum}</span></span>
+            <span className="font-bengali font-bold">{toBengaliNum(year)}</span>
+          </div>
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function ProgressStat({ label, pct, subtitle, bn }: { label: string; pct: number; subtitle: string; bn: string }) {
+  const clampedPct = Math.min(100, Math.max(0, pct));
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
+        <span className="font-semibold">{label}</span>
+        <span className="font-mono tabular-nums font-bold text-foreground">{clampedPct.toFixed(1)}%</span>
+      </div>
+      <div className="h-2 bg-muted/60 rounded-full overflow-hidden">
+        <div
+          className="h-full bg-gradient-to-r from-primary/60 to-primary transition-all duration-1000 ease-linear"
+          style={{ width: `${clampedPct}%` }}
+        />
+      </div>
+      <div className="flex items-center justify-between text-[10px] text-muted-foreground/80">
+        <span className="italic truncate flex-1 mr-2">{subtitle}</span>
+        <span className="font-bengali shrink-0">{bn}</span>
+      </div>
+    </div>
   );
 }

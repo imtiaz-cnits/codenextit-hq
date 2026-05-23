@@ -85,6 +85,101 @@ export default function Dashboard() {
 
   const isOnLeaveToday = myApprovedLeaves.find(l => t >= l.from_date && t <= l.to_date);
 
+  // Detect if current BD time is before standard office start (11:00) — show "Yet to Clock In" instead of "Absent"
+  const isBeforeOfficeStart = (() => {
+    const officeStart = "11:00"; // matches global default; could fetch from workspace_settings
+    const [sh, sm] = officeStart.split(":").map(Number);
+    const bdParts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Dhaka", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date());
+    const nh = parseInt(bdParts.find(p => p.type === "hour")?.value || "0");
+    const nm = parseInt(bdParts.find(p => p.type === "minute")?.value || "0");
+    return (nh * 60 + nm) < (sh * 60 + sm);
+  })();
+
+  // ==== Daily & Weekly Hour Calculations (Bangladesh time) ====
+  const calcWorkedMinutes = (clockIn: string | null, clockOut: string | null) => {
+    if (!clockIn) return 0;
+    const inMs = new Date(clockIn).getTime();
+    const outMs = clockOut ? new Date(clockOut).getTime() : Date.now();
+    if (isNaN(inMs) || isNaN(outMs) || outMs <= inMs) return 0;
+    return Math.floor((outMs - inMs) / 60000);
+  };
+
+  const formatHrMin = (mins: number) => {
+    if (mins < 1) return "0h 0m";
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return `${h}h ${m}m`;
+  };
+
+  // Office hours: 11 AM – 7 PM (8 hours/day)
+  const dailyTargetMin = 8 * 60;
+  // Working week: Saturday to Thursday (6 days, Friday is weekend)
+  const weeklyTargetMin = 6 * 8 * 60;
+
+  // Today's worked minutes for current user
+  const todayWorkedMin = currentEmployee
+    ? calcWorkedMinutes(todayAttendance?.clock_in ?? null, todayAttendance?.clock_out ?? null)
+    : 0;
+
+  // Today's leave credit (full = 8h, half = 4h)
+  const todayLeaveCreditMin = (() => {
+    if (!isOnLeaveToday) return 0;
+    return (isOnLeaveToday as any).is_half_day ? Math.round(dailyTargetMin / 2) : dailyTargetMin;
+  })();
+
+  // This week's worked minutes (Saturday → today, BD timezone — week starts Saturday)
+  // Plus credit hours for approved leaves within the week
+  const { weeklyWorkedMin, weeklyLeaveCreditMin, weeklyDaysClocked, weeklyLeaveDays } = (() => {
+    if (!currentEmployee) return { weeklyWorkedMin: 0, weeklyLeaveCreditMin: 0, weeklyDaysClocked: 0, weeklyLeaveDays: 0 };
+    const todayBD = new Date(t);
+    const dayOfWeek = todayBD.getDay();
+    const daysSinceSat = (dayOfWeek + 1) % 7;
+    const sat = new Date(todayBD);
+    sat.setDate(todayBD.getDate() - daysSinceSat);
+    const satStr = `${sat.getFullYear()}-${String(sat.getMonth() + 1).padStart(2, "0")}-${String(sat.getDate()).padStart(2, "0")}`;
+    const myWeekAtt = attendance.filter(a =>
+      a.employee_id === currentEmployee.id &&
+      a.date >= satStr &&
+      a.date <= t
+    );
+    const workedMin = myWeekAtt.reduce((acc, a) => acc + calcWorkedMinutes(a.clock_in ?? null, a.clock_out ?? null), 0);
+    // Approved leaves within this week
+    const weekLeaves = myApprovedLeaves.filter((l: any) => {
+      // Any overlap between leave range and the week
+      return l.from_date <= t && l.to_date >= satStr;
+    });
+    let leaveCreditMin = 0;
+    let leaveDays = 0;
+    weekLeaves.forEach((l: any) => {
+      if (l.is_half_day) {
+        // half day leave: credit 4h
+        leaveCreditMin += Math.round(dailyTargetMin / 2);
+        leaveDays += 0.5;
+      } else {
+        // count overlap days within the week (excluding Friday weekend)
+        const start = l.from_date < satStr ? satStr : l.from_date;
+        const end = l.to_date > t ? t : l.to_date;
+        let cur = new Date(start);
+        const last = new Date(end);
+        while (cur <= last) {
+          if (cur.getDay() !== 5) { // skip Friday
+            leaveCreditMin += dailyTargetMin;
+            leaveDays += 1;
+          }
+          cur.setDate(cur.getDate() + 1);
+        }
+      }
+    });
+    return { weeklyWorkedMin: workedMin, weeklyLeaveCreditMin: leaveCreditMin, weeklyDaysClocked: myWeekAtt.length, weeklyLeaveDays: leaveDays };
+  })();
+
+  // Daily total = worked + leave credit (capped at target)
+  const todayTotalMin = todayWorkedMin + todayLeaveCreditMin;
+  const weeklyTotalMin = weeklyWorkedMin + weeklyLeaveCreditMin;
+
+  const dailyProgress = Math.min(100, (todayTotalMin / dailyTargetMin) * 100);
+  const weeklyProgress = Math.min(100, (weeklyTotalMin / weeklyTargetMin) * 100);
+
   return (
     <div className="space-y-6">
       <div className="flex items-end justify-between flex-wrap gap-4">
@@ -103,7 +198,7 @@ export default function Dashboard() {
       </div>
 
       {/* BD Time & Date Widget */}
-      <BdClockWidget />
+      <BdClockWidget userName={profile?.full_name || "User"} />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
         {isSuperAdmin && (
@@ -126,16 +221,16 @@ export default function Dashboard() {
           <>
             <KpiCard 
               label="Today's Attendance" 
-              value={isOnLeaveToday ? "On Leave" : (todayAttendance ? (todayAttendance.clock_out ? "Logged Out" : "Present") : "Absent")} 
+              value={isOnLeaveToday ? "On Leave" : (todayAttendance ? (todayAttendance.clock_out ? "Logged Out" : "Present") : (isBeforeOfficeStart ? "Yet to Clock In" : "Absent"))} 
               delta={isOnLeaveToday 
                 ? "Approved Leave" 
                 : (todayAttendance 
                     ? (todayAttendance.clock_out 
                         ? `Clocked out at ${new Date(todayAttendance.clock_out).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`
                         : `Clocked in at ${new Date(todayAttendance.clock_in!).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`)
-                    : "Not yet clocked in")} 
+                    : (isBeforeOfficeStart ? "Office starts at 11:00 AM" : "Not yet clocked in"))} 
               icon={Clock} 
-              accent={isOnLeaveToday ? "info" : (todayAttendance ? (todayAttendance.clock_out ? "warning" : "success") : "warning")} 
+              accent={isOnLeaveToday ? "info" : (todayAttendance ? (todayAttendance.clock_out ? "warning" : "success") : (isBeforeOfficeStart ? "info" : "warning"))} 
             />
             {!isSuperAdmin && (
               <>
@@ -183,52 +278,86 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
-            <CardDescription>Jump right in</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {currentEmployee && (
-              <Button 
-                variant={todayAttendance && !todayAttendance.clock_out ? "outline" : "default"} 
-                className={cn(
-                  "w-full justify-start font-bold mb-2",
-                  todayAttendance && !todayAttendance.clock_out ? "border-primary text-primary hover:bg-primary/5" : "bg-primary hover:bg-primary/90"
-                )}
-                onClick={() => toggleClock(currentEmployee.id)}
-              >
-                {todayAttendance && !todayAttendance.clock_out ? (
-                  <>
-                    <LogOut className="h-4 w-4 mr-2" />
-                    Clock Out
-                  </>
-                ) : (
-                  <>
-                    <LogIn className="h-4 w-4 mr-2" />
-                    Clock In
-                  </>
-                )}
-                <Badge variant="secondary" className="ml-auto text-[10px] h-5">Today</Badge>
-              </Button>
-            )}
-            {[
-              ...(isSuperAdmin ? [
-                { icon: TrendingUp, label: "Add New Lead" },
-                { icon: Receipt, label: "Create Invoice" },
-              ] : []),
-              { icon: Clock, label: "Log Time" },
-              { icon: LifeBuoy, label: "New Ticket" },
-              { icon: FileText, label: "New Quotation" },
-            ].map((a) => (
-              <Button key={a.label} variant="outline" className="w-full justify-start">
-                <a.icon className="h-4 w-4 mr-2" />
-                {a.label}
-                <ArrowUpRight className="h-3.5 w-3.5 ml-auto text-muted-foreground" />
-              </Button>
-            ))}
-          </CardContent>
-        </Card>
+        {!isClient && currentEmployee ? (
+          <div className="space-y-4">
+            <HoursCard
+              label="Today's Hours"
+              workedMin={todayWorkedMin}
+              leaveCreditMin={todayLeaveCreditMin}
+              targetMin={dailyTargetMin}
+              progress={dailyProgress}
+              officeRange="11 AM – 7 PM (8h)"
+              isActive={!!todayAttendance?.clock_in && !todayAttendance?.clock_out}
+              isOnLeave={!!isOnLeaveToday}
+              isHalfDayLeave={!!(isOnLeaveToday as any)?.is_half_day}
+              subtitle={
+                todayAttendance?.clock_in
+                  ? (todayAttendance.clock_out
+                      ? `${new Date(todayAttendance.clock_in).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} → ${new Date(todayAttendance.clock_out).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
+                      : `Started ${new Date(todayAttendance.clock_in).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} · still clocked in`)
+                  : (isOnLeaveToday
+                      ? ((isOnLeaveToday as any).is_half_day ? "½ day approved leave (4h credited)" : "Full day approved leave (8h credited)")
+                      : "Not clocked in yet")
+              }
+            />
+            <HoursCard
+              label="This Week's Hours"
+              workedMin={weeklyWorkedMin}
+              leaveCreditMin={weeklyLeaveCreditMin}
+              targetMin={weeklyTargetMin}
+              progress={weeklyProgress}
+              officeRange="Sat–Thu · 48h target"
+              subtitle={`${weeklyDaysClocked} day${weeklyDaysClocked !== 1 ? "s" : ""} clocked${weeklyLeaveDays > 0 ? ` · ${weeklyLeaveDays} on leave` : ""} · ${formatHrMin(weeklyWorkedMin)} worked`}
+            />
+          </div>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>Quick Actions</CardTitle>
+              <CardDescription>Jump right in</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {currentEmployee && (
+                <Button
+                  variant={todayAttendance && !todayAttendance.clock_out ? "outline" : "default"}
+                  className={cn(
+                    "w-full justify-start font-bold mb-2",
+                    todayAttendance && !todayAttendance.clock_out ? "border-primary text-primary hover:bg-primary/5" : "bg-primary hover:bg-primary/90"
+                  )}
+                  onClick={() => toggleClock(currentEmployee.id)}
+                >
+                  {todayAttendance && !todayAttendance.clock_out ? (
+                    <>
+                      <LogOut className="h-4 w-4 mr-2" />
+                      Clock Out
+                    </>
+                  ) : (
+                    <>
+                      <LogIn className="h-4 w-4 mr-2" />
+                      Clock In
+                    </>
+                  )}
+                  <Badge variant="secondary" className="ml-auto text-[10px] h-5">Today</Badge>
+                </Button>
+              )}
+              {[
+                ...(isSuperAdmin ? [
+                  { icon: TrendingUp, label: "Add New Lead" },
+                  { icon: Receipt, label: "Create Invoice" },
+                ] : []),
+                { icon: Clock, label: "Log Time" },
+                { icon: LifeBuoy, label: "New Ticket" },
+                { icon: FileText, label: "New Quotation" },
+              ].map((a) => (
+                <Button key={a.label} variant="outline" className="w-full justify-start">
+                  <a.icon className="h-4 w-4 mr-2" />
+                  {a.label}
+                  <ArrowUpRight className="h-3.5 w-3.5 ml-auto text-muted-foreground" />
+                </Button>
+              ))}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );
@@ -261,4 +390,114 @@ function KpiCard({ label, value, delta, icon: Icon, accent }: {
       </CardContent>
     </Card>
   );
+}
+
+function HoursCard({ label, workedMin, leaveCreditMin = 0, targetMin, progress, subtitle, isActive, officeRange, isOnLeave, isHalfDayLeave }: {
+  label: string;
+  workedMin: number;
+  leaveCreditMin?: number;
+  targetMin: number;
+  progress: number;
+  subtitle: string;
+  isActive?: boolean;
+  officeRange?: string;
+  isOnLeave?: boolean;
+  isHalfDayLeave?: boolean;
+}) {
+  const totalMin = workedMin + leaveCreditMin;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  const targetH = Math.floor(targetMin / 60);
+  const remainingMin = Math.max(0, targetMin - totalMin);
+  const remH = Math.floor(remainingMin / 60);
+  const remM = remainingMin % 60;
+  const isComplete = totalMin >= targetMin;
+
+  // Color based on progress
+  const tone = isComplete
+    ? { bg: "bg-emerald-500/10 dark:bg-emerald-400/10", text: "text-emerald-600 dark:text-emerald-400", border: "border-emerald-500/20", bar: "from-emerald-500 to-emerald-400" }
+    : progress >= 50
+      ? { bg: "bg-primary/10", text: "text-primary", border: "border-primary/20", bar: "from-primary/70 to-primary" }
+      : { bg: "bg-amber-500/10 dark:bg-amber-400/10", text: "text-amber-600 dark:text-amber-400", border: "border-amber-500/20", bar: "from-amber-500 to-amber-400" };
+
+  return (
+    <Card className="shadow-card overflow-hidden">
+      <CardContent className="p-5 space-y-3">
+        <div className="flex items-start justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                {label}
+                {isActive && (
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                  </span>
+                )}
+              </p>
+              {officeRange && (
+                <span className="text-[10px] text-muted-foreground/70 font-medium">· {officeRange}</span>
+              )}
+            </div>
+            <p className="text-3xl font-bold mt-1.5 font-mono tabular-nums">
+              {h}<span className="text-muted-foreground text-xl">h</span> {m}<span className="text-muted-foreground text-xl">m</span>
+              {leaveCreditMin > 0 && (
+                <span className="text-xs font-normal text-muted-foreground ml-2">
+                  (worked {formatHrMinInline(workedMin)} + leave {formatHrMinInline(leaveCreditMin)})
+                </span>
+              )}
+            </p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              of {targetH}h target
+              {!isComplete && remainingMin > 0 && (
+                <span className={`ml-1.5 font-semibold ${tone.text}`}>· {remH}h {remM}m to go</span>
+              )}
+              {isComplete && <span className="ml-1.5 font-semibold text-emerald-600 dark:text-emerald-400">· target met ✓</span>}
+            </p>
+          </div>
+          <div className={`flex h-10 w-10 items-center justify-center rounded-lg shrink-0 ${tone.bg} ${tone.text}`}>
+            <Clock className="h-5 w-5" />
+          </div>
+        </div>
+
+        {/* Status badges */}
+        {(isOnLeave || isHalfDayLeave) && (
+          <div className="flex flex-wrap gap-1.5">
+            {isHalfDayLeave ? (
+              <Badge variant="outline" className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 text-[10px] font-bold">
+                ½ DAY LEAVE · 4h credited
+              </Badge>
+            ) : isOnLeave ? (
+              <Badge variant="outline" className="bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20 text-[10px] font-bold">
+                FULL DAY LEAVE · 8h credited
+              </Badge>
+            ) : null}
+          </div>
+        )}
+
+        {/* Progress bar */}
+        <div className="space-y-1.5">
+          <div className={`h-2 rounded-full overflow-hidden ${tone.bg} border ${tone.border}`}>
+            <div
+              className={`h-full bg-gradient-to-r ${tone.bar} transition-all duration-500`}
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+            <span className="italic truncate flex-1 mr-2">{subtitle}</span>
+            <span className={`font-mono font-bold ${tone.text}`}>{progress.toFixed(0)}%</span>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function formatHrMinInline(mins: number): string {
+  if (mins < 1) return "0m";
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
 }

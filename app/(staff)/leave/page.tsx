@@ -64,6 +64,20 @@ const LEAVE_TONE: Record<LeaveType, string> = {
   unpaid: "bg-muted text-muted-foreground border-border",
 };
 
+// Format 24h "HH:MM" or "13:30" to 12h "1:30 PM"
+function format12h(t?: string | null): string {
+  if (!t) return "";
+  const m = t.trim().match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return t;
+  let h = parseInt(m[1]);
+  const min = m[2];
+  if (isNaN(h)) return t;
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12;
+  if (h === 0) h = 12;
+  return `${h}:${min} ${ampm}`;
+}
+
 export default function LeavePage() {
   const { user, hasRole } = useAuth();
   const { addNotification, notifyAdmins } = useMock();
@@ -433,7 +447,7 @@ function LeaveTable({
                           {l.is_half_day ? (
                             <span className="text-[11px] text-muted-foreground italic">
                               {l.half_day_period === "first_half" ? "Morning" : "Afternoon"}
-                              {l.start_time && ` · ${l.start_time}`}
+                              {l.start_time && ` · ${format12h(l.start_time)}`}
                             </span>
                           ) : (
                             formatDate(l.to_date)
@@ -505,7 +519,7 @@ function LeaveTable({
                             <p className="text-xs font-semibold">{formatDate(l.from_date)}</p>
                             <p className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">
                               ½ Day · {l.half_day_period === "first_half" ? "Morning" : "Afternoon"}
-                              {l.start_time && ` (${l.start_time})`}
+                              {l.start_time && ` (${format12h(l.start_time)})`}
                             </p>
                           </div>
                         ) : (
@@ -603,7 +617,7 @@ function LeaveDetailsDialog({
                   <p className="text-xs font-bold text-primary break-words">{formatDate(leave.from_date)}</p>
                   <p className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">
                     Half Day · {leave.half_day_period === "first_half" ? "Morning" : "Afternoon"}
-                    {leave.start_time && ` (from ${leave.start_time})`}
+                    {leave.start_time && ` (from ${format12h(leave.start_time)})`}
                   </p>
                 </div>
               ) : (

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Bricolage_Grotesque, Inter, Roboto_Mono } from "next/font/google";
+import { Bricolage_Grotesque, Inter, Roboto_Mono, Noto_Sans_Bengali } from "next/font/google";
 import "./globals.css";
 import { Providers } from "../components/providers";
 
@@ -20,6 +20,13 @@ const monoFont = Roboto_Mono({
   subsets: ["latin"],
   display: "swap",
   weight: ["400", "500", "700"],
+});
+
+const bengaliFont = Noto_Sans_Bengali({
+  variable: "--font-bengali",
+  subsets: ["bengali"],
+  display: "swap",
+  weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
@@ -57,7 +64,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${primaryFont.variable} ${secondaryFont.variable} ${monoFont.variable} antialiased`}
+      className={`${primaryFont.variable} ${secondaryFont.variable} ${monoFont.variable} ${bengaliFont.variable} antialiased`}
     >
       <head>
         <Script
