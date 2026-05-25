@@ -181,7 +181,12 @@ function getQuarter(date: Date): { quarter: number; daysIntoQuarter: number; tot
   return { quarter, daysIntoQuarter: daysInto, totalDays };
 }
 
-export function BdClockWidget({ userName }: { userName?: string }) {
+export function BdClockWidget({ userName, ongoingHoliday, upcomingHoliday, daysUntilHoliday }: {
+  userName?: string;
+  ongoingHoliday?: { baseName: string; days: { date: string; name: string }[]; firstDate: string; lastDate: string } | null;
+  upcomingHoliday?: { baseName: string; days: { date: string; name: string }[]; firstDate: string; lastDate: string } | null;
+  daysUntilHoliday?: number | null;
+}) {
   const [now, setNow] = React.useState<Date | null>(null);
 
   React.useEffect(() => {
@@ -244,6 +249,17 @@ export function BdClockWidget({ userName }: { userName?: string }) {
   const weekNum = getWeekNumber(bdNow);
   const bnDate = getBengaliDate(bdNow);
 
+  // BD-aware date string YYYY-MM-DD (for matching holiday days)
+  const bdDateStr = (() => {
+    const dParts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: BD_TIMEZONE, year: "numeric", month: "2-digit", day: "2-digit",
+    }).formatToParts(now);
+    const y = dParts.find(p => p.type === "year")?.value || "1970";
+    const mo = dParts.find(p => p.type === "month")?.value || "01";
+    const d = dParts.find(p => p.type === "day")?.value || "01";
+    return `${y}-${mo}-${d}`;
+  })();
+
   return (
     <Card className={cn("overflow-hidden border-2 border-primary/10 shadow-sm")}>
       <div className={cn("h-1 w-full bg-gradient-to-r", greeting.tone)} />
@@ -275,9 +291,11 @@ export function BdClockWidget({ userName }: { userName?: string }) {
             <div className="text-sm font-bold text-muted-foreground leading-none">{ampm}</div>
           </div>
 
-          <Badge variant="outline" className={cn("gap-1.5 text-xs font-bold px-3 py-1.5", workStatus.color)}>
-            {workStatus.icon}
-            {workStatus.status}
+          <Badge variant="outline" className={cn("gap-1.5 text-xs font-bold px-3 py-1.5",
+            ongoingHoliday ? "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30" : workStatus.color
+          )}>
+            {ongoingHoliday ? <Coffee className="h-3.5 w-3.5" /> : workStatus.icon}
+            {ongoingHoliday ? "Holiday" : workStatus.status}
           </Badge>
         </div>
 
@@ -300,10 +318,35 @@ export function BdClockWidget({ userName }: { userName?: string }) {
             </div>
           </div>
           <div className="flex items-center gap-2.5 p-3 rounded-lg bg-gradient-to-br from-primary/5 to-primary/10 border border-primary/15">
-            <span className="text-primary shrink-0">{officeCtx.icon}</span>
+            <span className="text-primary shrink-0">
+              {ongoingHoliday ? <Coffee className="h-4 w-4" /> : (upcomingHoliday ? <CalendarDays className="h-4 w-4" /> : officeCtx.icon)}
+            </span>
             <div className="min-w-0 space-y-1">
-              <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider leading-none">{officeCtx.label}</p>
-              <p className="text-sm font-bold truncate leading-none font-mono tabular-nums">{officeCtx.value}</p>
+              {ongoingHoliday ? (
+                <>
+                  <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider leading-none">Currently on Holiday</p>
+                  <p className="text-sm font-bold truncate leading-none">
+                    {ongoingHoliday.baseName}
+                    {ongoingHoliday.days.length > 1 && (
+                      <span className="text-muted-foreground font-mono ml-1.5 text-xs">
+                        Day {ongoingHoliday.days.findIndex(d => d.date.split("T")[0] === bdDateStr) + 1}/{ongoingHoliday.days.length}
+                      </span>
+                    )}
+                  </p>
+                </>
+              ) : upcomingHoliday && daysUntilHoliday !== null && daysUntilHoliday !== undefined && daysUntilHoliday <= 30 ? (
+                <>
+                  <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider leading-none">Next Holiday</p>
+                  <p className="text-sm font-bold truncate leading-none">
+                    {upcomingHoliday.baseName} <span className="text-muted-foreground font-mono ml-1 text-xs">in {daysUntilHoliday}d</span>
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider leading-none">{officeCtx.label}</p>
+                  <p className="text-sm font-bold truncate leading-none font-mono tabular-nums">{officeCtx.value}</p>
+                </>
+              )}
             </div>
           </div>
         </div>

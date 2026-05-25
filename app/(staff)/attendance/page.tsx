@@ -76,9 +76,14 @@ export default function AttendancePage() {
   const [latePermDialogOpen, setLatePermDialogOpen] = useState(false);
   const [latePermForm, setLatePermForm] = useState({ employee_id: "", date: today, permitted_minutes: 60, reason: "" });
 
+  // Holiday Details Dialog State
+  const [holidayDetailGroup, setHolidayDetailGroup] = useState<{ name: string; days: typeof holidays } | null>(null);
+
   // New Holiday Input States
   const [newHDate, setNewHDate] = useState("");
+  const [newHEndDate, setNewHEndDate] = useState("");
   const [newHName, setNewHName] = useState("");
+  const [isHRange, setIsHRange] = useState(false);
 
   // Report State
   const [rangeType, setRangeType] = useState<RangeType>("monthly");
@@ -301,12 +306,42 @@ export default function AttendancePage() {
       toast.error("Please fill both date and name");
       return;
     }
-    const { data, error } = await supabase.from("company_holidays" as any).insert([{ date: newHDate, name: newHName }]).select();
+    if (isHRange && !newHEndDate) {
+      toast.error("Please pick an end date for the range");
+      return;
+    }
+    if (isHRange && newHEndDate < newHDate) {
+      toast.error("End date must be after start date");
+      return;
+    }
+
+    // Build list of dates (single or range, one row per date)
+    const dates: string[] = [];
+    if (isHRange) {
+      const start = new Date(newHDate);
+      const end = new Date(newHEndDate);
+      let cur = new Date(start);
+      while (cur <= end) {
+        dates.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`);
+        cur.setDate(cur.getDate() + 1);
+      }
+    } else {
+      dates.push(newHDate);
+    }
+
+    const rows = dates.map((d, idx) => ({
+      date: d,
+      name: dates.length > 1 ? `${newHName} (Day ${idx + 1}/${dates.length})` : newHName,
+    }));
+
+    const { data, error } = await supabase.from("company_holidays" as any).insert(rows).select();
     if (!error && data) {
-      setHolidays([...holidays, (data as any)[0]]);
+      setHolidays([...holidays, ...((data as any[]) || [])]);
       setNewHDate("");
+      setNewHEndDate("");
       setNewHName("");
-      toast.success("Holiday added");
+      setIsHRange(false);
+      toast.success(`${rows.length} holiday day${rows.length > 1 ? "s" : ""} added`);
     } else {
       console.error(error);
       toast.error("Could not add holiday. Make sure the table exists.");
@@ -1084,14 +1119,70 @@ export default function AttendancePage() {
               </CardHeader>
               <CardContent className="p-6 space-y-6">
                 <div className="flex flex-col gap-4 p-4 bg-muted/20 rounded-2xl border border-dashed border-primary/20">
+                  {/* Single / Range toggle */}
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-bold uppercase tracking-wider">Select Date</Label>
-                    <FlatDatePicker date={newHDate} onChange={setNewHDate} placeholder="Choose holiday date" className="cursor-pointer" />
+                    <Label className="text-xs font-bold uppercase tracking-wider">Holiday Duration</Label>
+                    <div className="grid grid-cols-2 gap-2 p-1 bg-muted/40 rounded-lg border">
+                      <button
+                        type="button"
+                        onClick={() => { setIsHRange(false); setNewHEndDate(""); }}
+                        className={cn(
+                          "h-9 rounded-md text-xs font-semibold transition-all cursor-pointer",
+                          !isHRange ? "bg-background shadow-sm text-primary" : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        Single Day
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsHRange(true)}
+                        className={cn(
+                          "h-9 rounded-md text-xs font-semibold transition-all cursor-pointer",
+                          isHRange ? "bg-background shadow-sm text-primary" : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        Date Range
+                      </button>
+                    </div>
                   </div>
+
+                  {isHRange ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-bold uppercase tracking-wider">From</Label>
+                        <FlatDatePicker date={newHDate} onChange={setNewHDate} placeholder="Start date" className="cursor-pointer" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-bold uppercase tracking-wider">To</Label>
+                        <FlatDatePicker date={newHEndDate} onChange={setNewHEndDate} placeholder="End date" className="cursor-pointer" />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-bold uppercase tracking-wider">Select Date</Label>
+                      <FlatDatePicker date={newHDate} onChange={setNewHDate} placeholder="Choose holiday date" className="cursor-pointer" />
+                    </div>
+                  )}
+
                   <div className="space-y-1.5">
                     <Label className="text-xs font-bold uppercase tracking-wider">Holiday Name</Label>
                     <Input placeholder="e.g. Eid-ul-Fitr" value={newHName} onChange={e => setNewHName(e.target.value)} className="rounded-xl h-10" />
                   </div>
+
+                  {isHRange && newHDate && newHEndDate && newHEndDate >= newHDate && (
+                    <div className="text-[11px] text-primary bg-primary/5 border border-primary/15 rounded-lg p-2.5 leading-relaxed">
+                      <span className="font-semibold">📅 Will create {(() => {
+                        const start = new Date(newHDate);
+                        const end = new Date(newHEndDate);
+                        return Math.floor((end.getTime() - start.getTime()) / 86400000) + 1;
+                      })()} holiday day{(() => {
+                        const start = new Date(newHDate);
+                        const end = new Date(newHEndDate);
+                        return Math.floor((end.getTime() - start.getTime()) / 86400000) + 1 > 1 ? "s" : "";
+                      })()}</span> from {formatDate(newHDate)} to {formatDate(newHEndDate)}
+                    </div>
+                  )}
+
                   <Button className="w-full rounded-xl shadow-md h-10 font-bold cursor-pointer" onClick={addHoliday}>
                     <Plus className="h-4 w-4 mr-2" /> Add Holiday
                   </Button>
@@ -1103,17 +1194,68 @@ export default function AttendancePage() {
                       {holidays.length === 0 ? (
                         <TableRow><TableCell className="h-20 text-center text-muted-foreground text-xs italic">No holidays added yet.</TableCell></TableRow>
                       ) : (
-                        holidays.map((h, i) => (
-                          <TableRow key={i} className="hover:bg-muted/5 transition-colors">
-                            <TableCell className="font-semibold text-sm">{formatDate(h.date)}</TableCell>
-                            <TableCell className="text-sm font-medium">{h.name}</TableCell>
-                            <TableCell className="text-right">
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => deleteHoliday(h.id!)}>
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))
+                        (() => {
+                          // Group multi-day holidays sharing the same base name (e.g. "Eid Ul Adha (Day 1/8)")
+                          const stripDayLabel = (n: string) => n.replace(/\s*\(Day\s+\d+\/\d+\)\s*$/i, "").trim();
+                          const groups: { baseName: string; days: typeof holidays }[] = [];
+                          const sorted = [...holidays].sort((a, b) => a.date.localeCompare(b.date));
+                          for (const h of sorted) {
+                            const base = stripDayLabel(h.name);
+                            const existing = groups.find(g => g.baseName === base);
+                            if (existing) existing.days.push(h);
+                            else groups.push({ baseName: base, days: [h] });
+                          }
+                          // Sort groups by earliest date desc
+                          groups.sort((a, b) => b.days[0].date.localeCompare(a.days[0].date));
+
+                          return groups.map((g, i) => {
+                            const isMulti = g.days.length > 1;
+                            const firstDate = g.days[0].date;
+                            const lastDate = g.days[g.days.length - 1].date;
+                            return (
+                              <TableRow
+                                key={`${g.baseName}-${i}`}
+                                className={cn("transition-colors", isMulti ? "cursor-pointer hover:bg-primary/5" : "hover:bg-muted/5")}
+                                onClick={isMulti ? () => setHolidayDetailGroup({ name: g.baseName, days: g.days }) : undefined}
+                              >
+                                <TableCell className="font-semibold text-sm">
+                                  {isMulti ? `${formatDate(firstDate)} – ${formatDate(lastDate)}` : formatDate(firstDate)}
+                                </TableCell>
+                                <TableCell className="text-sm font-medium">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span>{g.baseName}</span>
+                                    {isMulti && (
+                                      <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20 text-[10px] font-bold">
+                                        {g.days.length} days
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  {isMulti ? (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 text-destructive hover:bg-destructive/10 cursor-pointer"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (confirm(`Delete all ${g.days.length} day${g.days.length > 1 ? "s" : ""} of ${g.baseName}?`)) {
+                                          g.days.forEach(d => d.id && deleteHoliday(d.id));
+                                        }
+                                      }}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  ) : (
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10 cursor-pointer" onClick={() => deleteHoliday(g.days[0].id!)}>
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          });
+                        })()
                       )}
                     </TableBody>
                   </Table>
@@ -1301,6 +1443,77 @@ export default function AttendancePage() {
           <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
             <Button variant="outline" className="rounded-xl h-11" onClick={() => { setEditingEntry(null); setManualEntry(null); }}>Cancel</Button>
             <Button className="rounded-xl h-11 bg-primary hover:bg-primary/90" onClick={handleSaveEdit}>Save changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Holiday Details Dialog */}
+      <Dialog open={!!holidayDetailGroup} onOpenChange={(o) => !o && setHolidayDetailGroup(null)}>
+        <DialogContent className="sm:max-w-[460px] rounded-2xl p-5 sm:p-6 gap-4 border-none shadow-2xl">
+          <DialogHeader className="space-y-2">
+            <div className="mx-auto p-2.5 rounded-full bg-primary/10 w-fit">
+              <CalendarCheck2 className="h-5 w-5 text-primary" />
+            </div>
+            <DialogTitle className="text-base font-bold text-center">{holidayDetailGroup?.name}</DialogTitle>
+            <DialogDescription className="text-center text-xs">
+              {holidayDetailGroup && (
+                <>
+                  {holidayDetailGroup.days.length} consecutive day{holidayDetailGroup.days.length > 1 ? "s" : ""}
+                  {" · "}
+                  {formatDate(holidayDetailGroup.days[0].date)} – {formatDate(holidayDetailGroup.days[holidayDetailGroup.days.length - 1].date)}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="rounded-xl border bg-muted/20 max-h-[280px] overflow-y-auto">
+            {holidayDetailGroup?.days.map((d, i) => (
+              <div key={d.id || i} className="flex items-center justify-between px-4 py-2.5 border-b last:border-b-0">
+                <div className="flex items-center gap-3 min-w-0">
+                  <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 text-[10px] font-bold shrink-0 font-mono">
+                    Day {i + 1}
+                  </Badge>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold truncate">{formatDate(d.date)}</p>
+                    <p className="text-[10px] text-muted-foreground">{new Date(d.date).toLocaleDateString("en-US", { weekday: "long" })}</p>
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-destructive hover:bg-destructive/10 cursor-pointer shrink-0"
+                  onClick={() => {
+                    if (d.id) deleteHoliday(d.id);
+                    // Update local state
+                    if (holidayDetailGroup) {
+                      const remaining = holidayDetailGroup.days.filter(x => x.id !== d.id);
+                      if (remaining.length === 0) setHolidayDetailGroup(null);
+                      else setHolidayDetailGroup({ ...holidayDetailGroup, days: remaining });
+                    }
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
+          </div>
+
+          <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+            <Button variant="outline" className="rounded-lg h-9 cursor-pointer" onClick={() => setHolidayDetailGroup(null)}>Close</Button>
+            {holidayDetailGroup && (
+              <Button
+                variant="destructive"
+                className="rounded-lg h-9 cursor-pointer"
+                onClick={() => {
+                  if (confirm(`Delete all ${holidayDetailGroup.days.length} days of ${holidayDetailGroup.name}?`)) {
+                    holidayDetailGroup.days.forEach(d => d.id && deleteHoliday(d.id));
+                    setHolidayDetailGroup(null);
+                  }
+                }}
+              >
+                <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Delete All
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

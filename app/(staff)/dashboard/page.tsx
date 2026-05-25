@@ -1,15 +1,17 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { useMock } from "../../../lib/mock-store";
 import { useAuth } from "../../../lib/auth-context";
-import { formatCurrency, toLocalDateString } from "../../../lib/format";
+import { supabase } from "../../../integrations/supabase/client";
+import { formatCurrency, toLocalDateString, formatDate } from "../../../lib/format";
 import {
   TrendingUp, Users, Server, LifeBuoy, Plus, Receipt, Clock, FileText,
   ArrowUpRight, Activity, Briefcase, CheckCircle, ListTodo, CalendarDays,
-  LogIn, LogOut
+  LogIn, LogOut, Coffee
 } from "lucide-react";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { cn } from "../../../lib/utils";
@@ -33,6 +35,15 @@ export default function Dashboard() {
     toggleClock, loading
   } = useMock();
   const { hasRole, profile, user } = useAuth();
+
+  // Holidays from Supabase (multi-day ranges represented as one row per day)
+  const [holidays, setHolidays] = useState<{ id?: string; date: string; name: string }[]>([]);
+  useEffect(() => {
+    void (async () => {
+      const { data } = await supabase.from("company_holidays" as any).select("*").order("date", { ascending: true });
+      if (data) setHolidays(data as any);
+    })();
+  }, []);
   
   if (loading) return <DashboardSkeleton />;
   
@@ -84,6 +95,48 @@ export default function Dashboard() {
   const monthlyBalanceRemaining = 2 - usedMonthly;
 
   const isOnLeaveToday = myApprovedLeaves.find(l => t >= l.from_date && t <= l.to_date);
+
+  // Holiday detection — today is holiday? (multi-day ranges merge)
+  const todayHoliday = holidays.find(h => h.date === t);
+  const isTodayHoliday = !!todayHoliday;
+
+  // Friday weekly off
+  const todayDay = new Date(t).getDay();
+  const isWeeklyOff = todayDay === 5;
+
+  // Group holidays into multi-day ranges sharing same base name
+  const holidayGroups = useMemo(() => {
+    const stripDayLabel = (n: string) => n.replace(/\s*\(Day\s+\d+\/\d+\)\s*$/i, "").trim();
+    const groups: { baseName: string; days: typeof holidays; firstDate: string; lastDate: string }[] = [];
+    const sorted = [...holidays].sort((a, b) => a.date.localeCompare(b.date));
+    for (const h of sorted) {
+      const base = stripDayLabel(h.name);
+      const existing = groups.find(g => g.baseName === base);
+      if (existing) existing.days.push(h);
+      else groups.push({ baseName: base, days: [h], firstDate: h.date, lastDate: h.date });
+    }
+    groups.forEach(g => {
+      g.firstDate = g.days[0].date;
+      g.lastDate = g.days[g.days.length - 1].date;
+    });
+    return groups;
+  }, [holidays]);
+
+  // Find ongoing holiday (today is in range)
+  const ongoingHoliday = holidayGroups.find(g => t >= g.firstDate && t <= g.lastDate);
+
+  // Find next upcoming holiday (date > today, within 60 days)
+  const upcomingHoliday = (() => {
+    const sixtyDaysOut = new Date(Date.now() + 60 * 24 * 3600 * 1000).toISOString().split("T")[0];
+    return holidayGroups
+      .filter(g => g.firstDate > t && g.firstDate <= sixtyDaysOut)
+      .sort((a, b) => a.firstDate.localeCompare(b.firstDate))[0];
+  })();
+
+  // Days until next holiday
+  const daysUntilHoliday = upcomingHoliday
+    ? Math.ceil((new Date(upcomingHoliday.firstDate).getTime() - new Date(t).getTime()) / (24 * 3600 * 1000))
+    : null;
 
   // Detect if current BD time is before standard office start (11:00) — show "Yet to Clock In" instead of "Absent"
   const isBeforeOfficeStart = (() => {
@@ -198,7 +251,12 @@ export default function Dashboard() {
       </div>
 
       {/* BD Time & Date Widget */}
-      <BdClockWidget userName={profile?.full_name || "User"} />
+      <BdClockWidget
+        userName={profile?.full_name?.split(" ")[0] || "User"}
+        ongoingHoliday={ongoingHoliday}
+        upcomingHoliday={upcomingHoliday}
+        daysUntilHoliday={daysUntilHoliday}
+      />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
         {isSuperAdmin && (
@@ -221,16 +279,36 @@ export default function Dashboard() {
           <>
             <KpiCard 
               label="Today's Attendance" 
-              value={isOnLeaveToday ? "On Leave" : (todayAttendance ? (todayAttendance.clock_out ? "Logged Out" : "Present") : (isBeforeOfficeStart ? "Yet to Clock In" : "Absent"))} 
-              delta={isOnLeaveToday 
-                ? "Approved Leave" 
-                : (todayAttendance 
-                    ? (todayAttendance.clock_out 
-                        ? `Clocked out at ${new Date(todayAttendance.clock_out).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`
-                        : `Clocked in at ${new Date(todayAttendance.clock_in!).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`)
-                    : (isBeforeOfficeStart ? "Office starts at 11:00 AM" : "Not yet clocked in"))} 
-              icon={Clock} 
-              accent={isOnLeaveToday ? "info" : (todayAttendance ? (todayAttendance.clock_out ? "warning" : "success") : (isBeforeOfficeStart ? "info" : "warning"))} 
+              value={
+                isTodayHoliday
+                  ? "Holiday"
+                  : isWeeklyOff
+                    ? "Weekend"
+                    : isOnLeaveToday
+                      ? "On Leave"
+                      : (todayAttendance ? (todayAttendance.clock_out ? "Logged Out" : "Present") : (isBeforeOfficeStart ? "Yet to Clock In" : "Absent"))
+              }
+              delta={
+                isTodayHoliday
+                  ? `${ongoingHoliday?.baseName || todayHoliday?.name}${ongoingHoliday && ongoingHoliday.days.length > 1 ? ` · Day ${ongoingHoliday.days.findIndex(d => d.date === t) + 1}/${ongoingHoliday.days.length}` : ""}`
+                  : isWeeklyOff
+                    ? "Friday weekly off"
+                    : isOnLeaveToday
+                      ? "Approved Leave"
+                      : (todayAttendance 
+                          ? (todayAttendance.clock_out 
+                              ? `Clocked out at ${new Date(todayAttendance.clock_out).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`
+                              : `Clocked in at ${new Date(todayAttendance.clock_in!).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`)
+                          : (isBeforeOfficeStart ? "Office starts at 11:00 AM" : "Not yet clocked in"))
+              }
+              icon={isTodayHoliday || isWeeklyOff ? Coffee : Clock} 
+              accent={
+                isTodayHoliday || isWeeklyOff
+                  ? "info"
+                  : isOnLeaveToday
+                    ? "info"
+                    : (todayAttendance ? (todayAttendance.clock_out ? "warning" : "success") : (isBeforeOfficeStart ? "info" : "warning"))
+              }
             />
             {!isSuperAdmin && (
               <>
