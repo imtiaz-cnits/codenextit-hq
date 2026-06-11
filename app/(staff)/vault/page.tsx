@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../../integrations/supabase/client";
-import { TableSkeleton } from "../../../components/loading-skeletons";
+import { CardGridSkeleton } from "../../../components/loading-skeletons";
 import { toast } from "sonner";
 import { CredentialsTab } from "./credentials-tab";
 
@@ -49,9 +49,7 @@ export default function VaultPage() {
           <h1 className="text-3xl font-bold tracking-tight">Vault</h1>
           <p className="text-muted-foreground mt-1">Secure storage for credentials.</p>
         </div>
-        <div className="py-20 flex justify-center">
-          <TableSkeleton rows={5} cols={5} />
-        </div>
+        <CardGridSkeleton count={8} />
       </div>
     );
   }
