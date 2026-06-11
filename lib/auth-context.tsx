@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useState, useMemo, type ReactNode
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "../integrations/supabase/client";
 
-export type AppRole = "super_admin" | "project_manager" | "staff" | "client";
+export type AppRole = string;
 
 export interface AuthProfile {
   id: string;
@@ -34,7 +34,7 @@ export interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const STAFF_ROLES: AppRole[] = ["super_admin", "project_manager", "staff"];
+const STAFF_ROLES: AppRole[] = ["super_admin", "admin", "project_manager", "staff"];
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -46,22 +46,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loadProfileAndRoles = async (userId: string) => {
     try {
-      const [{ data: profileData }, { data: rolesData }, { data: permissionsData }] = await Promise.all([
+      const [{ data: profileData }, { data: rolesData }] = await Promise.all([
         supabase
           .from("profiles")
           .select("id, full_name, email, designation, avatar_url, client_id")
           .eq("id", userId)
           .maybeSingle(),
         supabase.from("user_roles" as any).select("role").eq("user_id", userId) as any,
-        supabase.from("user_permissions" as any).select("module_name").eq("user_id", userId).eq("is_enabled", true) as any,
       ]);
+      
       setProfile(profileData ?? null);
-      setRoles((rolesData ?? []).map((r: any) => r.role as AppRole));
-      setPermissions((permissionsData ?? []).map((p: any) => p.module_name));
+      const userRoles = (rolesData ?? []).map((r: any) => r.role as string);
+      setRoles(userRoles);
+
+      // Fetch role-based permissions
+      let rolePerms: string[] = [];
+      if (userRoles.length > 0) {
+        const { data: rolePermissionsData } = await supabase
+          .from("role_permissions" as any)
+          .select("module_name")
+          .in("role", userRoles)
+          .eq("is_enabled", true);
+        rolePerms = (rolePermissionsData ?? []).map((p: any) => p.module_name);
+      }
+
+      // Fetch user-specific overrides from user_permissions
+      const { data: userPermissionsData } = await supabase
+        .from("user_permissions" as any)
+        .select("module_name")
+        .eq("user_id", userId)
+        .eq("is_enabled", true);
+      const userPerms = (userPermissionsData ?? []).map((p: any) => p.module_name);
+
+      // Combine both lists (union of role-based and user-specific permissions)
+      const combinedPermissions = Array.from(new Set([...rolePerms, ...userPerms]));
+      setPermissions(combinedPermissions);
     } catch (error) {
       console.error("Error loading profile and roles:", error);
-      // Don't throw, just let the app continue with empty roles/profile if needed
-      // or handle as appropriate
     }
   };
 
@@ -129,7 +150,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     permissions,
     loading,
     isAuthenticated: !!user,
-    isStaff: roles.some((r) => STAFF_ROLES.includes(r)),
+    isStaff: roles.length > 0 && roles.some((r) => r !== "client"),
     isClient: roles.includes("client"),
     hasRole: (role) => roles.includes(role),
     hasAnyRole: (rs) => rs.some((r) => roles.includes(r)),

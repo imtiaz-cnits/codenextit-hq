@@ -202,7 +202,7 @@ const nowIso = () => new Date().toISOString();
 
 export function MockProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
-  const { user, hasRole, profile } = useAuth();
+  const { user, hasRole, profile, refresh } = useAuth();
   const isSuperAdmin = hasRole("super_admin");
   const [currentEmployee, setCurrentEmployee] = useState<Employee | null>(null);
   const t = todayStr();
@@ -253,13 +253,15 @@ export function MockProvider({ children }: { children: ReactNode }) {
 
   // Auto-create employee record for Super Admin if missing
   useEffect(() => {
-    const shouldCreate = 
-      !loadingEmployees && 
-      user && 
-      isSuperAdmin && 
-      !currentEmployee;
+    if (loadingEmployees || !user || !isSuperAdmin) return;
 
-    if (shouldCreate) {
+    // Check if the current super admin already has an employee record in the loaded list
+    const hasEmployeeRecord = employees.some(
+      (e: any) => e.profile_id === user.id || 
+                  (e.email && user.email && e.email.toLowerCase() === user.email.toLowerCase())
+    );
+
+    if (!hasEmployeeRecord) {
       console.log("Super Admin detected without employee record. Creating one...");
       const newEmp: Omit<Employee, "id"> = {
         full_name: profile?.full_name || user.email?.split('@')[0] || "Super Admin",
@@ -281,11 +283,16 @@ export function MockProvider({ children }: { children: ReactNode }) {
         if (!error) {
           queryClient.invalidateQueries({ queryKey: ["employees"] });
         } else {
-          console.error("Failed to auto-create employee record:", error);
+          console.error("Failed to auto-create employee record:", {
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+            code: error.code
+          });
         }
       });
     }
-  }, [loadingEmployees, user, isSuperAdmin, currentEmployee, profile, employees, queryClient]);
+  }, [loadingEmployees, user, isSuperAdmin, profile, employees, queryClient]);
 
   const { data: attendance = [], isLoading: loadingAttendance } = useQuery({
     queryKey: ["attendance", currentEmployee?.id, isSuperAdmin],
@@ -394,12 +401,38 @@ export function MockProvider({ children }: { children: ReactNode }) {
 
   const addEmployeeMutation = useMutation({
     mutationFn: async (newEmp: Omit<Employee, "id">) => {
+      // Auto-link profile if email matches
+      let profileId = null;
+      if (newEmp.email) {
+        const { data: prof } = await supabase
+          .from("profiles")
+          .select("id")
+          .eq("email", newEmp.email)
+          .maybeSingle();
+        if (prof?.id) {
+          profileId = prof.id;
+        }
+      }
+
       const { data, error } = await supabase
         .from("employees")
-        .insert([newEmp] as any)
+        .insert([{
+          ...newEmp,
+          profile_id: profileId || null
+        }] as any)
         .select()
         .single();
       if (error) throw error;
+
+      // If profile exists, sync fields to profiles table
+      if (profileId && (newEmp.avatar_url || newEmp.full_name || newEmp.designation)) {
+        await supabase.from("profiles").update({
+          avatar_url: newEmp.avatar_url || undefined,
+          full_name: newEmp.full_name || undefined,
+          designation: newEmp.designation || undefined
+        }).eq("id", profileId);
+      }
+
       return data;
     },
     onSuccess: () => {
@@ -415,18 +448,39 @@ export function MockProvider({ children }: { children: ReactNode }) {
       const { error } = await (supabase.from("employees") as any).update(patch).eq("id", id);
       if (error) throw error;
 
-      // Sync key fields to profile table if profile_id exists
-      if (emp?.profile_id && (patch.avatar_url || patch.full_name || patch.designation)) {
+      // Sync key fields to profile table if profile_id exists or if email matches a profile
+      let profileId = emp?.profile_id;
+      if (!profileId && patch.email) {
+        const emailToSearch = patch.email;
+        if (emailToSearch) {
+          const { data: prof } = await supabase
+            .from("profiles")
+            .select("id")
+            .eq("email", emailToSearch)
+            .maybeSingle();
+          if (prof?.id) {
+            profileId = prof.id;
+            // Link employee to profile
+            await supabase.from("employees").update({ profile_id: prof.id }).eq("id", id);
+          }
+        }
+      }
+
+      if (profileId && (patch.avatar_url || patch.full_name || patch.designation)) {
         await supabase.from("profiles").update({
           avatar_url: patch.avatar_url,
           full_name: patch.full_name,
           designation: patch.designation
-        }).eq("id", emp.profile_id);
+        }).eq("id", profileId);
       }
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["employees"] });
       toast.success("Employee updated");
+      // If the updated employee was the current user, refresh the auth profile!
+      if (variables.id === currentEmployee?.id) {
+        refresh();
+      }
     },
     onError: (err: any) => toast.error(err.message),
   });

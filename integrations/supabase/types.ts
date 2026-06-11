@@ -128,6 +128,7 @@ export type Database = {
         Row: {
           avatar_url: string | null
           blood_group: string | null
+          email: string | null
           emergency_contact: string | null
           full_name: string | null
           notes: string | null
@@ -148,6 +149,7 @@ export type Database = {
         Insert: {
           avatar_url?: string | null
           blood_group?: string | null
+          email?: string | null
           emergency_contact?: string | null
           full_name?: string | null
           notes?: string | null
@@ -168,6 +170,7 @@ export type Database = {
         Update: {
           avatar_url?: string | null
           blood_group?: string | null
+          email?: string | null
           emergency_contact?: string | null
           full_name?: string | null
           notes?: string | null

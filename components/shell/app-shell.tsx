@@ -41,10 +41,10 @@ interface NavItem {
   module?: string;
 }
 
-const STAFF_GROUPS: { label: string; items: NavItem[] }[] = [
+export const STAFF_GROUPS: { label: string; items: NavItem[] }[] = [
   {
     label: "Overview",
-    items: [{ to: "/dashboard", label: "Command Center", icon: LayoutDashboard }],
+    items: [{ to: "/dashboard", label: "Command Center", icon: LayoutDashboard, module: "dashboard" }],
   },
   {
     label: "Sales",
@@ -72,7 +72,7 @@ const STAFF_GROUPS: { label: string; items: NavItem[] }[] = [
   {
     label: "Infrastructure",
     items: [
-      { to: "/infrastructure/generator", label: "Generator Logs", icon: Zap },
+      { to: "/infrastructure/generator", label: "Generator Logs", icon: Zap, module: "infrastructure" },
     ],
   },
   {
@@ -90,8 +90,8 @@ const STAFF_GROUPS: { label: string; items: NavItem[] }[] = [
   {
     label: "Workspace",
     items: [
-      { to: "/vault", label: "File Vault", icon: FolderLock, module: "vault" },
-      { to: "/settings", label: "Settings", icon: Settings },
+      { to: "/vault", label: "Vault", icon: FolderLock, module: "vault" },
+      { to: "/settings", label: "Settings", icon: Settings, module: "settings" },
     ],
   },
 ];

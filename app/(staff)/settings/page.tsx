@@ -15,18 +15,45 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../../components/ui/tabs";
 import { Textarea } from "../../../components/ui/textarea";
 import { initials, avatarColor } from "../../../lib/format";
-import { Shield, User, Users, Loader2, UserCog, Link as LinkIcon, Palette, Upload, Trash2, Webhook, Copy, RefreshCw, Eye, EyeOff, Globe, HardDrive, LifeBuoy, TrendingUp, FolderKanban, ListTodo, Clock, CalendarDays, Wallet, Receipt, Banknote, FolderLock } from "lucide-react";
+import { Shield, User, Users, Loader2, UserCog, Link as LinkIcon, Palette, Upload, Trash2, Webhook, Copy, RefreshCw, Eye, EyeOff, Globe, HardDrive, LifeBuoy, TrendingUp, FolderKanban, ListTodo, Clock, CalendarDays, Wallet, Receipt, Banknote, FolderLock, Folder, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "../../../integrations/supabase/client";
 import { fetchWorkspaceSettings, invalidateWorkspaceSettings, DEFAULT_SETTINGS, type WorkspaceSettings } from "../../../hooks/use-workspace-settings";
 import { cn } from "../../../lib/utils";
 import { TableSkeleton, CardGridSkeleton } from "../../../components/loading-skeletons";
+import { STAFF_GROUPS } from "../../../components/shell/app-shell";
 
-const ROLES: AppRole[] = ["super_admin", "project_manager", "staff", "client"];
-const MODULES = [
-  "leads", "clients", "projects", "tasks", "attendance", "leave", 
-  "payroll", "finance", "accounts", "infrastructure", "tickets", "vault"
-];
+const ALL_MODULES = (() => {
+  const list = STAFF_GROUPS.flatMap(group => 
+    group.items.map(item => ({
+      module: item.module || item.label.toLowerCase().replace(/\s+/g, "_"),
+      label: item.label,
+      group: group.label,
+      icon: item.icon
+    }))
+  );
+  
+  const seen = new Set();
+  const filtered: typeof list = [];
+  
+  for (const item of list) {
+    if (!seen.has(item.module)) {
+      seen.add(item.module);
+      
+      // Customize specific group modules for clear labeling in permissions panel
+      if (item.module === "finance") {
+        item.label = "Finance (Quotes/Invoices)";
+        item.icon = Receipt;
+      } else if (item.module === "accounts") {
+        item.label = "Accounts (Income/Expense/Investment/Due/Salary)";
+        item.icon = Banknote;
+      }
+      
+      filtered.push(item);
+    }
+  }
+  return filtered;
+})();
 
 export default function SettingsPage() {
   const { hasRole } = useAuth();
@@ -37,15 +64,17 @@ export default function SettingsPage() {
         <p className="text-muted-foreground mt-1">Manage your profile, team and access roles.</p>
       </div>
       <Tabs defaultValue="profile">
-        <TabsList>
-          <TabsTrigger value="profile"><User className="h-3.5 w-3.5 mr-1.5" /> Profile</TabsTrigger>
-          {hasRole("super_admin") && <TabsTrigger value="users"><UserCog className="h-3.5 w-3.5 mr-1.5" /> Users & Roles</TabsTrigger>}
-          {hasRole("super_admin") && <TabsTrigger value="branding"><Palette className="h-3.5 w-3.5 mr-1.5" /> Branding</TabsTrigger>}
-          {hasRole("super_admin") && <TabsTrigger value="integrations"><Webhook className="h-3.5 w-3.5 mr-1.5" /> Integrations</TabsTrigger>}
-          <TabsTrigger value="workspace"><Shield className="h-3.5 w-3.5 mr-1.5" /> Workspace</TabsTrigger>
+        <TabsList className="bg-muted/40 p-1 rounded-xl cursor-pointer">
+          <TabsTrigger value="profile" className="cursor-pointer"><User className="h-3.5 w-3.5 mr-1.5" /> Profile</TabsTrigger>
+          {hasRole("super_admin") && <TabsTrigger value="users" className="cursor-pointer"><UserCog className="h-3.5 w-3.5 mr-1.5" /> Users List</TabsTrigger>}
+          {hasRole("super_admin") && <TabsTrigger value="roles" className="cursor-pointer"><Shield className="h-3.5 w-3.5 mr-1.5" /> Roles & Permissions</TabsTrigger>}
+          {hasRole("super_admin") && <TabsTrigger value="branding" className="cursor-pointer"><Palette className="h-3.5 w-3.5 mr-1.5" /> Branding</TabsTrigger>}
+          {hasRole("super_admin") && <TabsTrigger value="integrations" className="cursor-pointer"><Webhook className="h-3.5 w-3.5 mr-1.5" /> Integrations</TabsTrigger>}
+          <TabsTrigger value="workspace" className="cursor-pointer"><Shield className="h-3.5 w-3.5 mr-1.5" /> Workspace</TabsTrigger>
         </TabsList>
         <TabsContent value="profile" className="mt-4"><ProfilePanel /></TabsContent>
         {hasRole("super_admin") && <TabsContent value="users" className="mt-4"><UsersPanel /></TabsContent>}
+        {hasRole("super_admin") && <TabsContent value="roles" className="mt-4"><RolesPanel /></TabsContent>}
         {hasRole("super_admin") && <TabsContent value="branding" className="mt-4"><BrandingPanel /></TabsContent>}
         {hasRole("super_admin") && <TabsContent value="integrations" className="mt-4"><IntegrationsPanel /></TabsContent>}
         <TabsContent value="workspace" className="mt-4"><WorkspacePanel /></TabsContent>
@@ -93,8 +122,19 @@ function ProfilePanel() {
       .update({ avatar_url: publicUrl })
       .eq('id', profile.id);
 
-    // Sync to employees table as well
-    await supabase.from('employees').update({ avatar_url: publicUrl }).eq('profile_id', profile.id);
+    // Sync to employees table as well. Try profile_id first, then fallback to email to ensure auto-linking.
+    const { data: updatedEmp } = await supabase
+      .from('employees')
+      .update({ avatar_url: publicUrl })
+      .eq('profile_id', profile.id)
+      .select();
+
+    if (!updatedEmp || updatedEmp.length === 0) {
+      await supabase
+        .from('employees')
+        .update({ profile_id: profile.id, avatar_url: publicUrl })
+        .eq('email', profile.email);
+    }
 
     setUploading(false);
     if (updateError) return toast.error(updateError.message);
@@ -130,14 +170,30 @@ function ProfilePanel() {
       avatar_url: profile.avatar_url // ensure sync
     }).eq("id", profile.id);
 
-    const { error: eErr } = await supabase.from("employees").update({ 
-      full_name: name, // assuming it exists
+    // Try updating by profile_id first
+    let { data: updatedEmp, error: eErr } = await supabase.from("employees").update({ 
+      full_name: name,
       designation,
       phone,
       emergency_contact: emergencyContact, 
       notes,
       avatar_url: profile.avatar_url // ensure sync
-    }).eq("profile_id", profile.id);
+    }).eq("profile_id", profile.id).select() as any;
+
+    // Fallback to email if profile_id was not linked in employees table yet
+    if (!pErr && (!updatedEmp || updatedEmp.length === 0)) {
+      const { error: emailUpdateErr } = await supabase.from("employees").update({ 
+        profile_id: profile.id,
+        full_name: name,
+        designation,
+        phone,
+        emergency_contact: emergencyContact, 
+        notes,
+        avatar_url: profile.avatar_url
+      }).eq("email", profile.email);
+      if (emailUpdateErr) eErr = emailUpdateErr;
+    }
+
     setSaving(false);
     if (pErr || eErr) return toast.error(pErr?.message || eErr?.message);
     toast.success("Profile updated");
@@ -202,37 +258,65 @@ function UsersPanel() {
   const [active, setActive] = useState<UserRow | null>(null);
   const [permUser, setPermUser] = useState<UserRow | null>(null);
   const [userPerms, setUserPerms] = useState<string[]>([]);
-  const [savingPerms, setSavingPerms] = useState(false);
+  const [dbRoles, setDbRoles] = useState<{ id: string; name: string }[]>([]);
+
+  const getRoleBadgeStyle = (r: string) => {
+    const defaultStyles: Record<string, string> = {
+      super_admin: "bg-destructive/15 text-destructive border-destructive/20",
+      admin: "bg-indigo-500/15 text-indigo-500 border-indigo-500/20",
+      project_manager: "bg-info/10 text-info border-info/20",
+      staff: "bg-primary/10 text-primary border-primary/20",
+      client: "bg-success/10 text-success border-success/20",
+    };
+    return defaultStyles[r] || "bg-amber-500/10 text-amber-500 border-amber-500/20";
+  };
 
   const load = async () => {
     setLoading(true);
-    const [{ data: profs }, { data: rolesData }, { data: cs }] = await Promise.all([
-      supabase.from("profiles").select("id, email, full_name, designation, client_id, avatar_url"),
-      supabase.from("user_roles").select("user_id, role"),
-      supabase.from("clients").select("id, company_name").order("company_name"),
-    ]);
-    const map = (profs ?? []).map((p: any) => ({
-      ...p,
-      roles: (rolesData ?? []).filter((r: any) => r.user_id === p.id).map((r: any) => r.role as AppRole),
-    }));
-    setUsers(map as UserRow[]);
-    setClients(cs as ClientRow[] ?? []);
-    setLoading(false);
+    try {
+      const [{ data: profs }, { data: rolesData }, { data: cs }, { data: customRoles }] = await Promise.all([
+        supabase.from("profiles").select("id, email, full_name, designation, client_id, avatar_url"),
+        supabase.from("user_roles" as any).select("user_id, role") as any,
+        supabase.from("clients").select("id, company_name").order("company_name"),
+        supabase.from("custom_roles" as any).select("id, name").order("name") as any
+      ]);
+
+      const map = (profs ?? []).map((p: any) => ({
+        ...p,
+        roles: (rolesData ?? []).filter((r: any) => r.user_id === p.id).map((r: any) => r.role as AppRole),
+      }));
+      setUsers(map as UserRow[]);
+      setClients(cs as ClientRow[] ?? []);
+
+      const defaultRolesFallback = [
+        { id: "super_admin", name: "Super Admin" },
+        { id: "admin", name: "Admin" },
+        { id: "project_manager", name: "Project Manager" },
+        { id: "staff", name: "Staff" },
+        { id: "client", name: "Client" },
+      ];
+      setDbRoles(customRoles && customRoles.length > 0 ? customRoles : defaultRolesFallback);
+    } catch (err) {
+      console.error("Error loading UsersPanel:", err);
+    } finally {
+      setLoading(false);
+    }
   };
+
   useEffect(() => { void load(); }, []);
 
   const toggleRole = async (user: UserRow, role: AppRole, on: boolean) => {
     if (on) {
-      const { error } = await supabase.from("user_roles").insert({ user_id: user.id, role });
+      const { error } = await supabase.from("user_roles" as any).insert({ user_id: user.id, role } as any);
       if (error) return toast.error(error.message);
     } else {
-      const { error } = await supabase.from("user_roles").delete().eq("user_id", user.id).eq("role", role);
+      const { error } = await supabase.from("user_roles" as any).delete().eq("user_id", user.id).eq("role", role);
       if (error) return toast.error(error.message);
     }
     toast.success(`Role ${on ? "added" : "removed"}`);
     await load();
     if (active?.id === user.id) {
-      const { data } = await supabase.from("user_roles").select("role").eq("user_id", user.id);
+      const { data } = await supabase.from("user_roles" as any).select("role").eq("user_id", user.id) as any;
       setActive({ ...active, roles: (data ?? []).map((r: any) => r.role as AppRole) });
     }
   };
@@ -245,15 +329,6 @@ function UsersPanel() {
     if (active?.id === user.id) setActive({ ...active, client_id: clientId });
   };
 
-  const updateDesignation = async (user: UserRow, val: string) => {
-    const { error: pErr } = await supabase.from("profiles").update({ designation: val }).eq("id", user.id);
-    const { error: eErr } = await supabase.from("employees").update({ designation: val }).eq("profile_id", user.id);
-    if (pErr || eErr) return toast.error(pErr?.message || eErr?.message);
-    toast.success("Designation updated");
-    await load();
-    if (active?.id === user.id) setActive({ ...active, designation: val });
-  };
-  
   const loadPerms = async (user: UserRow) => {
     setPermUser(user);
     const { data } = await (supabase.from("user_permissions" as any) as any).select("module_name").eq("user_id", user.id).eq("is_enabled", true);
@@ -273,18 +348,11 @@ function UsersPanel() {
 
   if (loading) return <TableSkeleton rows={8} cols={5} />;
 
-  const roleColor: Record<AppRole, string> = {
-    super_admin: "bg-destructive/15 text-destructive border-destructive/20",
-    project_manager: "bg-info/10 text-info border-info/20",
-    staff: "bg-primary/10 text-primary border-primary/20",
-    client: "bg-success/10 text-success border-success/20",
-  };
-
   return (
     <>
-      <Card>
+      <Card className="border border-border/50 bg-card/60">
         <CardHeader>
-          <CardTitle>Users & Roles</CardTitle>
+          <CardTitle>Users List</CardTitle>
           <CardDescription>Promote staff, link clients to portal accounts. Only super admins see this tab.</CardDescription>
         </CardHeader>
         <CardContent>
@@ -311,17 +379,17 @@ function UsersPanel() {
                   <TableCell className="text-sm text-muted-foreground">{u.designation ?? "—"}</TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
-                      {u.roles.map((r) => <Badge key={r} variant="outline" className={roleColor[r] + " capitalize text-[10px]"}>{r.replace("_", " ")}</Badge>)}
+                      {u.roles.map((r) => <Badge key={r} variant="outline" className={getRoleBadgeStyle(r) + " capitalize text-[10px]"}>{r.replace("_", " ")}</Badge>)}
                       {u.roles.length === 0 && <span className="text-xs text-muted-foreground">None</span>}
                     </div>
                   </TableCell>
                   <TableCell className="text-sm">{clients.find((c) => c.id === u.client_id)?.company_name ?? "—"}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
-                      <Button size="sm" variant="outline" onClick={() => loadPerms(u)}>
+                      <Button size="sm" variant="outline" onClick={() => loadPerms(u)} className="cursor-pointer">
                         <Shield className="h-3 w-3 mr-1.5" /> Permissions
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => setActive(u)}>Manage</Button>
+                      <Button size="sm" variant="outline" onClick={() => setActive(u)} className="cursor-pointer">Manage</Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -343,14 +411,15 @@ function UsersPanel() {
                 <div>
                   <Label className="text-xs uppercase tracking-wider text-muted-foreground">Roles</Label>
                   <div className="space-y-2 mt-2">
-                    {ROLES.map((r) => {
+                    {dbRoles.map((roleObj) => {
+                      const r = roleObj.id;
                       const has = active.roles.includes(r);
                       return (
                         <div key={r} className="flex items-center justify-between rounded-md border border-border p-2.5">
                           <div className="flex items-center gap-2">
-                            <Badge variant="outline" className={roleColor[r] + " capitalize"}>{r.replace("_", " ")}</Badge>
+                            <Badge variant="outline" className={getRoleBadgeStyle(r) + " capitalize text-[11px]"}>{roleObj.name}</Badge>
                           </div>
-                          <Button size="sm" variant={has ? "outline" : "default"} onClick={() => toggleRole(active, r, !has)}>
+                          <Button size="sm" variant={has ? "outline" : "default"} onClick={() => toggleRole(active, r, !has)} className="cursor-pointer">
                             {has ? "Remove" : "Grant"}
                           </Button>
                         </div>
@@ -363,10 +432,10 @@ function UsersPanel() {
                   <p className="text-xs text-muted-foreground mt-1 mb-2">If this user is a client, link their account to a company so they only see their own data.</p>
                   <div className="flex gap-2">
                     <Select value={active.client_id ?? "none"} onValueChange={(v) => linkClient(active, v === "none" ? null : v)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="cursor-pointer"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">— Not linked —</SelectItem>
-                        {clients.map((c) => <SelectItem key={c.id} value={c.id}>{c.company_name}</SelectItem>)}
+                        <SelectItem value="none" className="cursor-pointer">— Not linked —</SelectItem>
+                        {clients.map((c) => <SelectItem key={c.id} value={c.id} className="cursor-pointer">{c.company_name}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
@@ -375,7 +444,7 @@ function UsersPanel() {
                 <div className="pt-6 border-t mt-4">
                   <Button 
                     variant="destructive" 
-                    className="w-full gap-2 shadow-sm"
+                    className="w-full gap-2 shadow-sm cursor-pointer"
                     onClick={async () => {
                       if (!active) return;
                       if (confirm(`Are you sure you want to permanently delete the user account for ${active.full_name || active.email}? This will remove their profile and all assigned roles.`)) {
@@ -413,19 +482,13 @@ function UsersPanel() {
           </DialogHeader>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 py-6">
-            {MODULES.map((m) => {
-              const has = userPerms.includes(m);
-              const icons: Record<string, any> = {
-                leads: TrendingUp, clients: Users, projects: FolderKanban, 
-                tasks: ListTodo, attendance: Clock, leave: CalendarDays, 
-                payroll: Wallet, finance: Receipt, accounts: Banknote, 
-                infrastructure: Globe, tickets: LifeBuoy, vault: FolderLock
-              };
-              const Icon = icons[m] || Shield;
+            {ALL_MODULES.map((m) => {
+              const has = userPerms.includes(m.module);
+              const Icon = m.icon || Shield;
 
               return (
                 <div 
-                  key={m} 
+                  key={m.module} 
                   className={cn(
                     "flex items-center justify-between p-3.5 border rounded-xl transition-all duration-200",
                     has ? "bg-primary/5 border-primary/20 shadow-sm" : "bg-muted/30 border-transparent hover:border-border"
@@ -439,15 +502,15 @@ function UsersPanel() {
                       <Icon className="h-4 w-4" />
                     </div>
                     <div>
-                      <div className="text-sm font-semibold capitalize">{m}</div>
-                      <div className="text-[10px] text-muted-foreground uppercase tracking-tight">Module</div>
+                      <div className="text-sm font-semibold capitalize">{m.label}</div>
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-tight">{m.group} Group</div>
                     </div>
                   </div>
                   <Button 
                     size="sm" 
                     variant={has ? "default" : "outline"}
-                    className={cn("h-8 px-3 rounded-full text-[11px] font-bold uppercase tracking-wider", !has && "text-muted-foreground")}
-                    onClick={() => togglePerm(m, !has)}
+                    className={cn("h-8 px-3 rounded-full text-[11px] font-bold uppercase tracking-wider cursor-pointer", !has && "text-muted-foreground")}
+                    onClick={() => togglePerm(m.module, !has)}
                   >
                     {has ? "Active" : "Hidden"}
                   </Button>
@@ -459,6 +522,366 @@ function UsersPanel() {
             <RefreshCw className="h-3.5 w-3.5 text-muted-foreground animate-spin-slow" />
             <p className="text-[11px] text-muted-foreground font-medium">Changes take effect after user refreshes their dashboard.</p>
           </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function RolesPanel() {
+  const [loading, setLoading] = useState(true);
+  const [dbRoles, setDbRoles] = useState<{ id: string; name: string }[]>([]);
+  const [createRoleOpen, setCreateRoleOpen] = useState(false);
+  const [newRoleName, setNewRoleName] = useState("");
+  const [creatingRole, setCreatingRole] = useState(false);
+
+  // Role permissions states
+  const [selectedRole, setSelectedRole] = useState<string | null>(null);
+  const [rolePermissionsMap, setRolePermissionsMap] = useState<Record<string, boolean>>({});
+  const [loadingRolePerms, setLoadingRolePerms] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { data: customRoles } = await supabase.from("custom_roles" as any).select("id, name").order("name") as any;
+
+      const defaultRolesFallback = [
+        { id: "super_admin", name: "Super Admin" },
+        { id: "admin", name: "Admin" },
+        { id: "project_manager", name: "Project Manager" },
+        { id: "staff", name: "Staff" },
+        { id: "client", name: "Client" },
+      ];
+      setDbRoles(customRoles && customRoles.length > 0 ? customRoles : defaultRolesFallback);
+    } catch (err) {
+      console.error("Error loading RolesPanel:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void load(); }, []);
+
+  const handleCreateRole = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRoleName.trim()) return toast.error("Role name is required");
+    const roleId = newRoleName.trim().toLowerCase().replace(/\s+/g, "_");
+    setCreatingRole(true);
+    try {
+      const { error } = await supabase
+        .from("custom_roles" as any)
+        .insert({ id: roleId, name: newRoleName.trim() });
+      if (error) throw error;
+      toast.success("Role created successfully");
+      setNewRoleName("");
+      setCreateRoleOpen(false);
+      await load();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to create role");
+    } finally {
+      setCreatingRole(false);
+    }
+  };
+
+  const handleDeleteRole = async (roleId: string, roleName: string) => {
+    const defaultRoles = ["super_admin", "admin", "project_manager", "staff", "client"];
+    if (defaultRoles.includes(roleId)) {
+      return toast.error("Cannot delete default system roles.");
+    }
+    if (!confirm(`Are you sure you want to delete the role "${roleName}"? This will delete all permissions and remove this role from all users.`)) return;
+    try {
+      const { error } = await supabase
+        .from("custom_roles" as any)
+        .delete()
+        .eq("id", roleId);
+      if (error) throw error;
+      toast.success("Role deleted successfully");
+      if (selectedRole === roleId) {
+        setSelectedRole(null);
+      }
+      await load();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete role");
+    }
+  };
+
+  const selectRoleAndLoadPermissions = async (roleId: string) => {
+    setSelectedRole(roleId);
+    setLoadingRolePerms(true);
+    try {
+      const { data, error } = await supabase
+        .from("role_permissions" as any)
+        .select("module_name, is_enabled")
+        .eq("role", roleId);
+      
+      if (error) throw error;
+      
+      const map: Record<string, boolean> = {};
+      ALL_MODULES.forEach(m => {
+        map[m.module] = false;
+      });
+      (data || []).forEach((row: any) => {
+        map[row.module_name] = row.is_enabled;
+      });
+      setRolePermissionsMap(map);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to load permissions");
+    } finally {
+      setLoadingRolePerms(false);
+    }
+  };
+
+  const handleToggleRolePerm = (module: string) => {
+    setRolePermissionsMap(prev => ({
+      ...prev,
+      [module]: !prev[module]
+    }));
+  };
+
+  const handleSaveRolePermissions = async () => {
+    if (!selectedRole) return;
+    setLoadingRolePerms(true);
+    try {
+      const upsertRecords = Object.entries(rolePermissionsMap).map(([module_name, is_enabled]) => ({
+        role: selectedRole,
+        module_name,
+        is_enabled
+      }));
+
+      const { error: delErr } = await supabase
+        .from("role_permissions" as any)
+        .delete()
+        .eq("role", selectedRole);
+
+      if (delErr) throw delErr;
+
+      if (upsertRecords.length > 0) {
+        const { error: insErr } = await supabase
+          .from("role_permissions" as any)
+          .insert(upsertRecords);
+        if (insErr) throw insErr;
+      }
+
+      toast.success("Role permissions updated successfully");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save permissions");
+    } finally {
+      setLoadingRolePerms(false);
+    }
+  };
+
+  if (loading) return <TableSkeleton rows={8} cols={5} />;
+
+  return (
+    <>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Roles List Card */}
+        <Card className="md:col-span-1 border border-border/50 bg-card/60">
+          <CardHeader className="pb-3 flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-base font-semibold">User Roles</CardTitle>
+              <CardDescription className="text-xs">Select a role to manage its menu access.</CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs cursor-pointer flex items-center gap-1"
+              onClick={() => setCreateRoleOpen(true)}
+            >
+              <Plus className="h-3.5 w-3.5" /> Add
+            </Button>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y divide-border/40">
+              {dbRoles.map(role => {
+                const isSelected = selectedRole === role.id;
+                const isDefault = ["super_admin", "admin", "project_manager", "staff", "client"].includes(role.id);
+
+                return (
+                  <div
+                    key={role.id}
+                    className={cn(
+                      "flex items-center justify-between p-4 cursor-pointer transition-colors hover:bg-muted/40",
+                      isSelected && "bg-muted/70 hover:bg-muted/70"
+                    )}
+                    onClick={() => selectRoleAndLoadPermissions(role.id)}
+                  >
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-sm font-medium">{role.name}</span>
+                      <span className="text-[10px] text-muted-foreground font-mono">{role.id}</span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-[11px] cursor-pointer text-primary"
+                        onClick={() => selectRoleAndLoadPermissions(role.id)}
+                      >
+                        Configure
+                      </Button>
+                      {!isDefault && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 cursor-pointer text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => handleDeleteRole(role.id, role.name)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Permissions Config Grid */}
+        <Card className="md:col-span-2 border border-border/50 bg-card/60">
+          <CardHeader className="border-b border-border/40 pb-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base font-semibold">
+                  {selectedRole 
+                    ? `Permissions for: ${dbRoles.find(r => r.id === selectedRole)?.name}`
+                    : "Configure Permissions"
+                  }
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  {selectedRole
+                    ? "Check sidebar menus this role is allowed to see."
+                    : "Select a user role from the left list to edit menu permissions."
+                  }
+                </CardDescription>
+              </div>
+              {selectedRole && selectedRole !== "super_admin" && (
+                <Button
+                  size="sm"
+                  className="cursor-pointer"
+                  onClick={handleSaveRolePermissions}
+                  disabled={loadingRolePerms}
+                >
+                  {loadingRolePerms ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                  ) : (
+                    "Save Permissions"
+                  )}
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="p-6">
+            {!selectedRole ? (
+              <div className="flex flex-col items-center justify-center py-20 text-muted-foreground text-center">
+                <Shield className="h-10 w-10 text-muted-foreground/40 mb-3" />
+                <p className="font-semibold text-sm">No Role Selected</p>
+                <p className="text-xs max-w-xs mt-1">Select a role on the left sidebar to start toggling access permissions.</p>
+              </div>
+            ) : selectedRole === "super_admin" ? (
+              <div className="flex flex-col items-center justify-center py-20 text-muted-foreground text-center">
+                <Shield className="h-10 w-10 text-primary mb-3 animate-pulse" />
+                <p className="font-semibold text-sm text-foreground">Super Admin Full Access</p>
+                <p className="text-xs max-w-sm mt-1">The Super Admin role bypasses permission checks and has full access to all workspace menus by default.</p>
+              </div>
+            ) : loadingRolePerms ? (
+              <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+                <Loader2 className="h-8 w-8 animate-spin mb-2" />
+                <p className="text-xs">Loading permissions config...</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {ALL_MODULES.map(m => {
+                  const hasAccess = rolePermissionsMap[m.module] || false;
+                  const MenuIcon = m.icon || Shield;
+
+                  return (
+                    <div
+                      key={m.module}
+                      onClick={() => handleToggleRolePerm(m.module)}
+                      className={cn(
+                        "flex items-center justify-between p-4 border rounded-2xl cursor-pointer transition-all duration-300",
+                        hasAccess 
+                          ? "bg-primary/5 border-primary/20 shadow-sm" 
+                          : "bg-muted/10 border-border/40 hover:border-border/80"
+                      )}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={cn(
+                          "h-9 w-9 rounded-xl flex items-center justify-center transition-colors",
+                          hasAccess ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                        )}>
+                          <MenuIcon className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold truncate">{m.label}</div>
+                          <div className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">{m.group}</div>
+                        </div>
+                      </div>
+
+                      <Badge 
+                        variant="outline" 
+                        className={cn(
+                          "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5",
+                          hasAccess 
+                            ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" 
+                            : "bg-muted text-muted-foreground border-transparent"
+                        )}
+                      >
+                        {hasAccess ? "Allowed" : "Blocked"}
+                      </Badge>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Create Dynamic Role Dialog Modal */}
+      <Dialog open={createRoleOpen} onOpenChange={setCreateRoleOpen}>
+        <DialogContent className="max-w-[420px] bg-card/95 border border-border/60 rounded-3xl shadow-xl backdrop-blur-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Folder className="h-5 w-5 text-primary" /> Create Access Role
+            </DialogTitle>
+            <DialogDescription>
+              Enter a name for the new user role template.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleCreateRole} className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <Label htmlFor="roleName" className="text-xs">Role Name</Label>
+              <Input
+                id="roleName"
+                value={newRoleName}
+                onChange={e => setNewRoleName(e.target.value)}
+                placeholder="e.g. Sales Executive, Administrator"
+                required
+                className="col-span-3"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setCreateRoleOpen(false)}
+                className="cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={creatingRole} className="cursor-pointer">
+                {creatingRole ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                ) : (
+                  "Create Role"
+                )}
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
     </>
