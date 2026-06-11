@@ -711,7 +711,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
         <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
           <Button
             onClick={openAddSheet}
-            className="flex items-center justify-center gap-2 w-full sm:w-auto cursor-pointer"
+            className="flex items-center justify-center gap-1.5 w-full sm:w-auto cursor-pointer"
           >
             <Plus className="h-4 w-4" /> Add Credential
           </Button>

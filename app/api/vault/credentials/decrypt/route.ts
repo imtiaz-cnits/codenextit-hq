@@ -27,6 +27,39 @@ async function checkIsSuperAdmin(userId: string): Promise<boolean> {
   return data?.some((r: any) => r.role === "super_admin" || r.role === "admin") ?? false;
 }
 
+// Helper to check if user has access to a folder
+async function checkHasFolderAccess(userId: string, clientId: string, isAdmin: boolean): Promise<boolean> {
+  const { data: folderAccess } = await (supabaseAdmin
+    .from("folder_access" as any) as any)
+    .select("id")
+    .eq("client_id", clientId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (folderAccess) return true;
+
+  const { data: client } = await supabaseAdmin
+    .from("clients")
+    .select("created_by")
+    .eq("id", clientId)
+    .maybeSingle();
+
+  if (client?.created_by === userId) return true;
+
+  if (isAdmin) {
+    if (!client?.created_by) return true; // System folder
+
+    const { data: creatorRole } = await supabaseAdmin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", client.created_by);
+    const isCreatorAdmin = creatorRole?.some((r: any) => r.role === "super_admin" || r.role === "admin") ?? false;
+    if (isCreatorAdmin) return true;
+  }
+
+  return false;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const user = await getAuthUser(req);
@@ -74,21 +107,7 @@ export async function POST(req: NextRequest) {
 
     if (!hasAccess && cred.client_id !== null) {
       const isAdmin = await checkIsSuperAdmin(user.id);
-      if (isAdmin) {
-        hasAccess = true;
-      } else {
-        // Check if user has folder access (either view or edit)
-        const { data: folderAccess } = await (supabaseAdmin
-          .from("folder_access" as any) as any)
-          .select("id")
-          .eq("client_id", cred.client_id)
-          .eq("user_id", user.id)
-          .maybeSingle();
-
-        if (folderAccess) {
-          hasAccess = true;
-        }
-      }
+      hasAccess = await checkHasFolderAccess(user.id, cred.client_id, isAdmin);
     }
 
     if (!hasAccess) {

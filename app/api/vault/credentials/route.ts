@@ -27,6 +27,39 @@ async function checkIsSuperAdmin(userId: string): Promise<boolean> {
   return data?.some((r: any) => r.role === "super_admin" || r.role === "admin") ?? false;
 }
 
+// Helper to check folder edit access permission level
+async function checkHasFolderEditAccess(userId: string, clientId: string, isAdmin: boolean): Promise<boolean> {
+  const { data: folderAccess } = await (supabaseAdmin
+    .from("folder_access" as any) as any)
+    .select("permission_level")
+    .eq("client_id", clientId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (folderAccess?.permission_level === "edit") return true;
+
+  const { data: client } = await supabaseAdmin
+    .from("clients")
+    .select("created_by")
+    .eq("id", clientId)
+    .maybeSingle();
+
+  if (client?.created_by === userId) return true;
+
+  if (isAdmin) {
+    if (!client?.created_by) return true; // System folder
+
+    const { data: creatorRole } = await supabaseAdmin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", client.created_by);
+    const isCreatorAdmin = creatorRole?.some((r: any) => r.role === "super_admin" || r.role === "admin") ?? false;
+    if (isCreatorAdmin) return true;
+  }
+
+  return false;
+}
+
 export async function GET(req: NextRequest) {
   try {
     const user = await getAuthUser(req);
@@ -46,17 +79,45 @@ export async function GET(req: NextRequest) {
       .from("profiles")
       .select("id, full_name");
 
-    // Fetch user's allowed folders in folder_access (for non-admins)
-    let allowedFolderIds: string[] = [];
-    let folderAccess: any[] = [];
-    if (!isAdmin) {
-      const { data: fAccess } = await (supabaseAdmin
-        .from("folder_access" as any) as any)
-        .select("client_id, permission_level")
-        .eq("user_id", user.id);
-      folderAccess = fAccess || [];
-      allowedFolderIds = folderAccess.map((f: any) => f.client_id);
-    }
+    // Fetch all folders
+    const { data: clients } = await supabaseAdmin
+      .from("clients")
+      .select("id, created_by");
+
+    // Fetch folder_access for user
+    const { data: folderAccess } = await (supabaseAdmin
+      .from("folder_access" as any) as any)
+      .select("client_id, permission_level")
+      .eq("user_id", user.id);
+    const folderAccessMap = new Map((folderAccess || []).map((fa: any) => [fa.client_id, fa.permission_level]));
+
+    // Fetch all user roles to identify admins
+    const { data: userRoles } = await supabaseAdmin
+      .from("user_roles")
+      .select("user_id, role");
+    const adminUserIds = new Set(
+      (userRoles || [])
+        .filter((r: any) => r.role === "super_admin" || r.role === "admin")
+        .map((r: any) => r.user_id)
+    );
+
+    const isFolderCreatedByAdmin = (createdById: string | null) => {
+      if (!createdById) return true; // System folders are admin-owned
+      return adminUserIds.has(createdById);
+    };
+
+    // Filter visible folder IDs for this user
+    const visibleFolderIds = new Set<string>();
+    (clients || []).forEach((c: any) => {
+      const isCreator = c.created_by === user.id;
+      const hasExplicit = folderAccessMap.has(c.id);
+      const isSystemOrAdminCreated = !c.created_by || adminUserIds.has(c.created_by);
+      const isAdminAndSystem = isAdmin && isSystemOrAdminCreated;
+
+      if (isCreator || hasExplicit || isAdminAndSystem) {
+        visibleFolderIds.add(c.id);
+      }
+    });
 
     // Fetch credentials
     const { data: allCredentials, error: credErr } = await (supabaseAdmin
@@ -67,26 +128,20 @@ export async function GET(req: NextRequest) {
     if (credErr) throw credErr;
 
     // Filter credentials based on access control rules:
-    // 1. Personal credentials (client_id is null / Internal Settings):
-    //    - Only visible to the creator OR if directly shared in credential_access.
-    // 2. Folder credentials (client_id is NOT null):
-    //    - Super Admins / Admins can see all.
-    //    - Staff can see if they are the creator OR directly shared in credential_access OR have folder access.
     const filteredCredentials = (allCredentials || []).filter((c: any) => {
       const isCreator = c.created_by === user.id;
       const isSharedDirectly = (allAccess || []).some(
         (a: any) => a.credential_id === c.id && a.staff_id === user.id
       );
 
-      if (c.client_id === null) {
-        // Personal credential privacy
-        return isCreator || isSharedDirectly;
+      if (isCreator || isSharedDirectly) return true;
+
+      // If it belongs to a folder, user must have folder access
+      if (c.client_id !== null && visibleFolderIds.has(c.client_id)) {
+        return true;
       }
 
-      // Folder credential access
-      if (isAdmin) return true;
-      const hasFolderAccess = allowedFolderIds.includes(c.client_id);
-      return isCreator || isSharedDirectly || hasFolderAccess;
+      return false;
     });
 
     const credsWithAccess = filteredCredentials.map((c: any) => {
@@ -111,18 +166,23 @@ export async function GET(req: NextRequest) {
       let hasEditPermission = isCreator;
       if (!hasEditPermission) {
         if (c.client_id !== null) {
-          if (isAdmin) {
+          const hasExplicitFolderEdit = folderAccessMap.get(c.client_id) === "edit";
+          const isFolderCreator = (clients || []).find((f: any) => f.id === c.client_id)?.created_by === user.id;
+          const isAdminOfAdminFolder = isAdmin && isFolderCreatedByAdmin((clients || []).find((f: any) => f.id === c.client_id)?.created_by);
+
+          if (hasExplicitFolderEdit || isFolderCreator || isAdminOfAdminFolder) {
             hasEditPermission = true;
-          } else {
-            const folderAccessRow = folderAccess.find((f: any) => f.client_id === c.client_id);
-            if (folderAccessRow?.permission_level === "edit") {
-              hasEditPermission = true;
-            }
           }
         }
         if (!hasEditPermission && userAccess?.permission_level === "edit") {
           hasEditPermission = true;
         }
+      }
+
+      // But wait! Staff CANNOT edit/delete credentials created by admins!
+      const isCredCreatedByAdmin = !c.created_by || adminUserIds.has(c.created_by);
+      if (isCredCreatedByAdmin && !isAdmin) {
+        hasEditPermission = false;
       }
 
       const permission = hasEditPermission ? "edit" : "view";
@@ -167,21 +227,10 @@ export async function POST(req: NextRequest) {
     }
 
     // Verify permission to add:
-    // If client_id is provided, must be Admin/Super Admin OR have edit permission on that folder
+    // If client_id is provided, must be Creator OR explicitly shared with edit access OR admin for admin-owned folder
     const isAdmin = await checkIsSuperAdmin(user.id);
     if (client_id) {
-      let hasFolderEditAccess = isAdmin;
-      if (!hasFolderEditAccess) {
-        const { data: fAccess } = await (supabaseAdmin
-          .from("folder_access" as any) as any)
-          .select("permission_level")
-          .eq("client_id", client_id)
-          .eq("user_id", user.id)
-          .maybeSingle();
-        if (fAccess?.permission_level === "edit") {
-          hasFolderEditAccess = true;
-        }
-      }
+      const hasFolderEditAccess = await checkHasFolderEditAccess(user.id, client_id, isAdmin);
       if (!hasFolderEditAccess) {
         return NextResponse.json({ error: "Forbidden. You do not have edit access to this folder." }, { status: 403 });
       }
@@ -261,14 +310,26 @@ export async function PUT(req: NextRequest) {
     }
 
     const isAdmin = await checkIsSuperAdmin(user.id);
+    
+    // Fetch all user roles to identify admins
+    const { data: userRoles } = await supabaseAdmin
+      .from("user_roles")
+      .select("user_id, role");
+    const adminUserIds = new Set(
+      (userRoles || [])
+        .filter((r: any) => r.role === "super_admin" || r.role === "admin")
+        .map((r: any) => r.user_id)
+    );
+
+    const isCredCreatedByAdmin = !existingCred.created_by || adminUserIds.has(existingCred.created_by);
+
+    // Staff members cannot edit admin-created credentials
+    if (isCredCreatedByAdmin && !isAdmin) {
+      return NextResponse.json({ error: "Forbidden. Staff members cannot edit admin-created credentials." }, { status: 403 });
+    }
+
     const isCreator = existingCred.created_by === user.id;
     let canEdit = isCreator;
-
-    if (!canEdit) {
-      if (existingCred.client_id !== null && isAdmin) {
-        canEdit = true;
-      }
-    }
 
     if (!canEdit) {
       // Check credential_access
@@ -284,16 +345,8 @@ export async function PUT(req: NextRequest) {
     }
 
     if (!canEdit && existingCred.client_id !== null) {
-      // Check folder_access
-      const { data: fAccess } = await (supabaseAdmin
-        .from("folder_access" as any) as any)
-        .select("permission_level")
-        .eq("client_id", existingCred.client_id)
-        .eq("user_id", user.id)
-        .maybeSingle();
-      if (fAccess?.permission_level === "edit") {
-        canEdit = true;
-      }
+      // Check folder edit access
+      canEdit = await checkHasFolderEditAccess(user.id, existingCred.client_id, isAdmin);
     }
 
     if (!canEdit) {
@@ -303,18 +356,7 @@ export async function PUT(req: NextRequest) {
     // If folder destination is changed, verify edit access to the destination folder too
     if (client_id !== undefined && client_id !== existingCred.client_id) {
       if (client_id !== null) {
-        let hasNewFolderEdit = isAdmin;
-        if (!hasNewFolderEdit) {
-          const { data: newFAccess } = await (supabaseAdmin
-            .from("folder_access" as any) as any)
-            .select("permission_level")
-            .eq("client_id", client_id)
-            .eq("user_id", user.id)
-            .maybeSingle();
-          if (newFAccess?.permission_level === "edit") {
-            hasNewFolderEdit = true;
-          }
-        }
+        const hasNewFolderEdit = await checkHasFolderEditAccess(user.id, client_id, isAdmin);
         if (!hasNewFolderEdit) {
           return NextResponse.json({ error: "Forbidden. You do not have edit access to the destination folder." }, { status: 403 });
         }
@@ -401,14 +443,26 @@ export async function DELETE(req: NextRequest) {
     }
 
     const isAdmin = await checkIsSuperAdmin(user.id);
+
+    // Fetch all user roles to identify admins
+    const { data: userRoles } = await supabaseAdmin
+      .from("user_roles")
+      .select("user_id, role");
+    const adminUserIds = new Set(
+      (userRoles || [])
+        .filter((r: any) => r.role === "super_admin" || r.role === "admin")
+        .map((r: any) => r.user_id)
+    );
+
+    const isCredCreatedByAdmin = !existingCred.created_by || adminUserIds.has(existingCred.created_by);
+
+    // Staff members cannot delete admin-created credentials
+    if (isCredCreatedByAdmin && !isAdmin) {
+      return NextResponse.json({ error: "Forbidden. Staff members cannot delete admin-created credentials." }, { status: 403 });
+    }
+
     const isCreator = existingCred.created_by === user.id;
     let canDelete = isCreator;
-
-    if (!canDelete) {
-      if (existingCred.client_id !== null && isAdmin) {
-        canDelete = true;
-      }
-    }
 
     if (!canDelete) {
       // Check credential_access edit
@@ -424,16 +478,8 @@ export async function DELETE(req: NextRequest) {
     }
 
     if (!canDelete && existingCred.client_id !== null) {
-      // Check folder_access edit
-      const { data: fAccess } = await (supabaseAdmin
-        .from("folder_access" as any) as any)
-        .select("permission_level")
-        .eq("client_id", existingCred.client_id)
-        .eq("user_id", user.id)
-        .maybeSingle();
-      if (fAccess?.permission_level === "edit") {
-        canDelete = true;
-      }
+      // Check folder edit access
+      canDelete = await checkHasFolderEditAccess(user.id, existingCred.client_id, isAdmin);
     }
 
     if (!canDelete) {
