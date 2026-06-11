@@ -103,7 +103,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<"all" | string>("all");
-  
+
   // Folder navigation state: null = Folders Grid view, "internal" = Internal credentials, client_id = client folder
   const [activeFolder, setActiveFolder] = useState<null | "internal" | string>(null);
 
@@ -489,7 +489,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
     setFormPasswordVisible(false);
     setNotes("");
     setCustomFields([]);
-    
+
     // Clear sharing
     const initialSharing: Record<string, { selected: boolean; level: "view" | "edit" }> = {};
     activeStaff.forEach(s => {
@@ -503,7 +503,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
   const openEditSheet = (cred: CredentialRow) => {
     setEditingCred(cred);
     setTitle(cred.title);
-    
+
     const isDefault = DEFAULT_CATEGORIES.some(dc => dc.value === cred.category) || customCategories.includes(cred.category);
     if (isDefault) {
       setCategory(cred.category);
@@ -512,11 +512,11 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
       setCategory("create_new");
       setNewCategoryName(cred.category);
     }
-    
+
     setClientId(cred.client_id || "");
     setUrl(cred.url || "");
     setUsername(cred.username || "");
-    setPassword(""); 
+    setPassword("");
     setFormPasswordVisible(false);
     setNotes(cred.notes || "");
     setCustomFields(cred.custom_fields || []);
@@ -708,7 +708,20 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
           )}
         </div>
 
-        <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+          <Button
+            onClick={openAddSheet}
+            className="flex items-center justify-center gap-2 w-full sm:w-auto cursor-pointer"
+          >
+            <Plus className="h-4 w-4" /> Add Credential
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setCreateFolderOpen(true)}
+            className="flex items-center justify-center gap-1.5 w-full sm:w-auto cursor-pointer border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:!bg-emerald-500/20 hover:!text-emerald-700 dark:hover:!text-emerald-300 hover:border-emerald-500/30 transition-colors"
+          >
+            <Folder className="h-4 w-4 text-emerald-500" /> Create Folder
+          </Button>
           {isAdmin && (
             <Button
               variant="outline"
@@ -716,21 +729,11 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                 setShowLogsSheet(true);
                 void loadAuditLogs();
               }}
-              className="flex items-center gap-2 cursor-pointer"
+              className="flex items-center justify-center gap-2 w-full sm:w-auto cursor-pointer"
             >
               <History className="h-4 w-4" /> Audit Logs
             </Button>
           )}
-          <Button
-            variant="outline"
-            onClick={() => setCreateFolderOpen(true)}
-            className="flex items-center gap-1.5 cursor-pointer border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:!bg-emerald-500/20 hover:!text-emerald-700 dark:hover:!text-emerald-300 hover:border-emerald-500/30 transition-colors"
-          >
-            <Folder className="h-4 w-4 text-emerald-500" /> Create Folder
-          </Button>
-          <Button onClick={openAddSheet} className="flex items-center gap-1.5 ml-auto sm:ml-0 cursor-pointer">
-            <Plus className="h-4 w-4" /> Add Credential
-          </Button>
         </div>
       </div>
 
@@ -1601,8 +1604,8 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                               variant="ghost"
                               className="h-6 w-6 hover:bg-muted cursor-pointer shrink-0"
                               onClick={async () => {
-                                  await navigator.clipboard.writeText(cf.value);
-                                  toast.success(`${cf.label} copied!`);
+                                await navigator.clipboard.writeText(cf.value);
+                                toast.success(`${cf.label} copied!`);
                               }}
                             >
                               <Copy className="h-3 w-3" />
