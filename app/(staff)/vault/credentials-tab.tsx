@@ -878,7 +878,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                       >
                         <Maximize2 className="h-3.5 w-3.5 mr-1" /> Quick View
                       </Button>
-                      {isAdmin && (
+                      {c.permission_level === "edit" && (
                         <>
                           <Button
                             size="sm"
@@ -938,7 +938,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                           <DropdownMenuItem onClick={() => handleOpenRenameFolder(c.id, c.company_name)} className="cursor-pointer">
                             <Edit className="h-4 w-4 mr-2" /> Rename Folder
                           </DropdownMenuItem>
-                          {isAdmin && (
+                          {hasEditPermission && (
                             <DropdownMenuItem onClick={() => handleDeleteFolder(c.id, c.company_name)} className="text-destructive cursor-pointer hover:bg-destructive/10">
                               <Trash2 className="h-4 w-4 mr-2" /> Delete Folder
                             </DropdownMenuItem>
@@ -1170,7 +1170,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                         >
                           <Maximize2 className="h-3.5 w-3.5 mr-1" /> Quick View
                         </Button>
-                        {isAdmin && (
+                        {c.permission_level === "edit" && (
                           <>
                             <Button
                               size="sm"
