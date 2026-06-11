@@ -189,6 +189,18 @@
     scrollbar-color: color-mix(in oklab, var(--foreground) 15%, transparent) transparent;
   }
 
+  button,
+  a,
+  select,
+  input[type="checkbox"],
+  input[type="radio"],
+  [role="button"],
+  [role="tab"],
+  [role="menuitem"],
+  .cursor-pointer {
+    cursor: pointer !important;
+  }
+
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
