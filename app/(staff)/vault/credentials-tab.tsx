@@ -63,6 +63,7 @@ interface Profile {
 interface AuditLog {
   id: string;
   credential_title?: string;
+  folder_name?: string;
   staff_name?: string;
   action: "view" | "copy";
   created_at: string;
@@ -370,27 +371,15 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
   async function loadAuditLogs() {
     setLoadingLogs(true);
     try {
-      const [{ data: logs }, { data: allCreds }, { data: allProfs }] = await Promise.all([
-        (supabase.from("credential_audit_logs" as any) as any).select("*").order("created_at", { ascending: false }).limit(100),
-        (supabase.from("credentials" as any) as any).select("id, title"),
-        supabase.from("profiles").select("id, full_name")
-      ]);
-
-      const mappedLogs: AuditLog[] = (logs || []).map((l: any) => {
-        const cred = (allCreds || []).find((c: any) => c.id === l.credential_id);
-        const prof = (allProfs || []).find((p: any) => p.id === l.user_id);
-        return {
-          id: l.id,
-          credential_title: cred?.title || "Deleted Credential",
-          staff_name: prof?.full_name || "Unknown Profile",
-          action: l.action,
-          created_at: l.created_at
-        };
-      });
-
-      setAuditLogs(mappedLogs);
-    } catch (err) {
-      toast.error("Failed to load audit logs");
+      const res = await fetchWithAuth("/api/vault/audit-logs");
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to load audit logs");
+      }
+      const data = await res.json();
+      setAuditLogs(data);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to load audit logs");
     } finally {
       setLoadingLogs(false);
     }
@@ -1838,6 +1827,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                   <TableHeader>
                     <TableRow>
                       <TableHead>Staff Member</TableHead>
+                      <TableHead>Folder</TableHead>
                       <TableHead>Credential</TableHead>
                       <TableHead>Action</TableHead>
                       <TableHead className="text-right">Timestamp</TableHead>
@@ -1847,7 +1837,12 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                     {auditLogs.map(log => (
                       <TableRow key={log.id} className="text-xs">
                         <TableCell className="font-medium">{log.staff_name}</TableCell>
-                        <TableCell className="max-w-[120px] truncate">{log.credential_title}</TableCell>
+                        <TableCell className="max-w-[120px] truncate">
+                          <Badge variant="secondary" className="px-1.5 py-0 font-normal">
+                            {log.folder_name}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="max-w-[150px] truncate font-mono text-foreground/80">{log.credential_title}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className={log.action === "copy" ? "bg-amber-500/10 text-amber-500 border-amber-500/20" : "bg-blue-500/10 text-blue-500 border-blue-500/20"}>
                             {log.action === "copy" ? "Copied" : "Viewed"}
