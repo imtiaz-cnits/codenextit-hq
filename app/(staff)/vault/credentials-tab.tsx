@@ -315,12 +315,14 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
     if (!newFolderName.trim()) return toast.error("Folder name is required");
     setCreatingFolder(true);
     try {
-      const { error } = await supabase
-        .from("clients")
-        .insert({
-          company_name: newFolderName.trim()
-        });
-      if (error) throw error;
+      const res = await fetchWithAuth("/api/vault/folders", {
+        method: "POST",
+        body: JSON.stringify({ company_name: newFolderName.trim() }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to create folder");
+      }
       toast.success("Folder created successfully");
       setNewFolderName("");
       setCreateFolderOpen(false);
@@ -719,20 +721,16 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
               <History className="h-4 w-4" /> Audit Logs
             </Button>
           )}
-          {isAdmin && (
-            <Button
-              variant="outline"
-              onClick={() => setCreateFolderOpen(true)}
-              className="flex items-center gap-1.5 cursor-pointer border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:!bg-emerald-500/20 hover:!text-emerald-700 dark:hover:!text-emerald-300 hover:border-emerald-500/30 transition-colors"
-            >
-              <Folder className="h-4 w-4 text-emerald-500" /> Create Folder
-            </Button>
-          )}
-          {isAdmin && (
-            <Button onClick={openAddSheet} className="flex items-center gap-1.5 ml-auto sm:ml-0 cursor-pointer">
-              <Plus className="h-4 w-4" /> Add Credential
-            </Button>
-          )}
+          <Button
+            variant="outline"
+            onClick={() => setCreateFolderOpen(true)}
+            className="flex items-center gap-1.5 cursor-pointer border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:!bg-emerald-500/20 hover:!text-emerald-700 dark:hover:!text-emerald-300 hover:border-emerald-500/30 transition-colors"
+          >
+            <Folder className="h-4 w-4 text-emerald-500" /> Create Folder
+          </Button>
+          <Button onClick={openAddSheet} className="flex items-center gap-1.5 ml-auto sm:ml-0 cursor-pointer">
+            <Plus className="h-4 w-4" /> Add Credential
+          </Button>
         </div>
       </div>
 
@@ -1258,11 +1256,13 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                       <SelectValue placeholder="Select a folder" />
                     </SelectTrigger>
                     <SelectContent>
-                      {clients.map(c => (
-                        <SelectItem key={c.id} value={c.id} className="cursor-pointer">
-                          {c.company_name}
-                        </SelectItem>
-                      ))}
+                      {clients
+                        .filter(c => isAdmin || c.permission_level === "edit")
+                        .map(c => (
+                          <SelectItem key={c.id} value={c.id} className="cursor-pointer">
+                            {c.company_name}
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                 </div>

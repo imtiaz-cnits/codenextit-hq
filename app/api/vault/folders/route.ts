@@ -26,6 +26,15 @@ async function checkIsSuperAdmin(userId: string): Promise<boolean> {
   return data?.some((r: any) => r.role === "super_admin" || r.role === "admin") ?? false;
 }
 
+// Helper to check if a user is a staff member (any role other than client)
+async function checkIsStaff(userId: string): Promise<boolean> {
+  const { data } = await supabaseAdmin
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", userId);
+  return data?.some((r: any) => r.role !== "client") ?? false;
+}
+
 export async function GET(req: NextRequest) {
   try {
     const user = await getAuthUser(req);
@@ -99,9 +108,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const isAdmin = await checkIsSuperAdmin(user.id);
-    if (!isAdmin) {
-      return NextResponse.json({ error: "Forbidden. Only admins can create folders." }, { status: 403 });
+    const isStaff = await checkIsStaff(user.id);
+    if (!isStaff) {
+      return NextResponse.json({ error: "Forbidden. Only staff members can create folders." }, { status: 403 });
     }
 
     const { company_name } = await req.json();
@@ -193,8 +202,22 @@ export async function DELETE(req: NextRequest) {
     }
 
     const isAdmin = await checkIsSuperAdmin(user.id);
-    if (!isAdmin) {
-      return NextResponse.json({ error: "Forbidden. Only admins can delete folders." }, { status: 403 });
+    let canDelete = isAdmin;
+
+    if (!canDelete) {
+      const { data: fAccess } = await (supabaseAdmin
+        .from("folder_access" as any) as any)
+        .select("permission_level")
+        .eq("client_id", id)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (fAccess?.permission_level === "edit") {
+        canDelete = true;
+      }
+    }
+
+    if (!canDelete) {
+      return NextResponse.json({ error: "Forbidden. You do not have edit access to delete this folder." }, { status: 403 });
     }
 
     const { error } = await supabaseAdmin
