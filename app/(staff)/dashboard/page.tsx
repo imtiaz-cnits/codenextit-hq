@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { useMock } from "../../../lib/mock-store";
 import { useAuth } from "../../../lib/auth-context";
 import { supabase } from "../../../integrations/supabase/client";
@@ -17,6 +19,9 @@ import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianG
 import { cn } from "../../../lib/utils";
 import { DashboardSkeleton } from "../../../components/loading-skeletons";
 import { BdClockWidget } from "../../../components/dashboard/bd-clock-widget";
+import { DailyAyatWidget, DailyHadithWidget } from "../../../components/dashboard/daily-ayat-widget";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../../../components/ui/dialog";
+
 
 const burndownData = [
   { day: "Mon", planned: 100, actual: 100 },
@@ -35,6 +40,10 @@ export default function Dashboard() {
     toggleClock, loading
   } = useMock();
   const { hasRole, profile, user } = useAuth();
+  const router = useRouter();
+
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
+  const [isWeeklyPopupOpen, setIsWeeklyPopupOpen] = useState(false);
 
   // Holidays from Supabase (multi-day ranges represented as one row per day)
   const [holidays, setHolidays] = useState<{ id?: string; date: string; name: string }[]>([]);
@@ -44,29 +53,98 @@ export default function Dashboard() {
       if (data) setHolidays(data as any);
     })();
   }, []);
+
+  // Fetch client domains for combined renewals stats
+  const [domains, setDomains] = useState<any[]>([]);
+  useEffect(() => {
+    void (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) return;
+        const res = await fetch("/api/domains", {
+          headers: {
+            "Authorization": `Bearer ${session.access_token}`
+          }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setDomains(data || []);
+        }
+      } catch (err) {
+        console.error("Error loading domains for dashboard renewals:", err);
+      }
+    })();
+  }, [user]);
   
   if (loading) return <DashboardSkeleton />;
   
   const isSuperAdmin = hasRole("super_admin");
   const isClient = hasRole("client");
   const t = toLocalDateString();
+
+  const activeEmployees = useMemo(() => {
+    return employees.filter(e => e.status !== "disabled");
+  }, [employees]);
+
+  const targetEmployee = selectedEmployeeId && isSuperAdmin
+    ? (employees.find(e => e.id === selectedEmployeeId) || currentEmployee)
+    : currentEmployee;
   
   // Super Admin Stats
   const revenueBDT = invoices.filter((i) => i.currency === "BDT" && i.status === "paid").reduce((s, i) => s + i.paid, 0);
   const revenueUSD = invoices.filter((i) => i.currency === "USD" && i.status === "paid").reduce((s, i) => s + i.paid, 0);
   
-  const upcomingRenewals = infrastructure.filter(a => {
-    if (!a.expires_at) return false;
-    const days = (new Date(a.expires_at).getTime() - new Date().getTime()) / (1000 * 3600 * 24);
-    return days > 0 && days < 30;
-  });
+  const getDaysRemaining = (dateStr: string) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const target = new Date(dateStr);
+    target.setHours(0, 0, 0, 0);
+    return Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  };
+
+  const upcomingRenewals = useMemo(() => {
+    // 1. Infrastructure assets expiring within 30 days
+    const infraItems = infrastructure
+      .filter(a => {
+        if (!a.expires_at) return false;
+        const days = getDaysRemaining(a.expires_at);
+        return days > 0 && days <= 30;
+      })
+      .map(a => ({
+        id: a.id,
+        name: a.name,
+        type: a.asset_type,
+        date: a.expires_at!,
+        daysLeft: getDaysRemaining(a.expires_at!)
+      }));
+
+    // 2. Client domains expiring within 30 days
+    const domainItems = domains
+      .filter(d => {
+        const days = getDaysRemaining(d.renewal_date);
+        return days <= 30; // Expired or expiring within 30 days
+      })
+      .map(d => ({
+        id: d.id,
+        name: d.domain_name,
+        type: "domain",
+        date: d.renewal_date,
+        daysLeft: getDaysRemaining(d.renewal_date)
+      }));
+
+    return [...infraItems, ...domainItems];
+  }, [infrastructure, domains]);
+
+  const criticalRenewals15Count = useMemo(() => {
+    return upcomingRenewals.filter(r => r.daysLeft <= 15).length;
+  }, [upcomingRenewals]);
 
   // Client Stats
   const clientProjects = projects.filter(p => p.client_id === profile?.client_id);
   const clientInvoices = invoices.filter(i => i.client_id === profile?.client_id);
 
   // Staff Stats
-  const todayAttendance = attendance.find(a => a.employee_id === currentEmployee?.id && a.date === t);
+  const todayAttendance = attendance.find(a => a.employee_id === targetEmployee?.id && a.date === t);
   const myPendingTasks = tasks.filter(tk => tk.assignee_id === currentEmployee?.id && tk.status !== 'done');
   const myActiveProjects = projects.filter(p => p.team_members?.includes(currentEmployee?.id || ""));
 
@@ -74,7 +152,7 @@ export default function Dashboard() {
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth();
   const myApprovedLeaves = leaves.filter(l => 
-    l.employee_id === currentEmployee?.id && 
+    l.employee_id === targetEmployee?.id && 
     l.status === 'approved' &&
     new Date(l.from_date).getFullYear() === currentYear
   );
@@ -170,7 +248,7 @@ export default function Dashboard() {
   const weeklyTargetMin = 6 * 8 * 60;
 
   // Today's worked minutes for current user
-  const todayWorkedMin = currentEmployee
+  const todayWorkedMin = targetEmployee
     ? calcWorkedMinutes(todayAttendance?.clock_in ?? null, todayAttendance?.clock_out ?? null)
     : 0;
 
@@ -183,7 +261,7 @@ export default function Dashboard() {
   // This week's worked minutes (Saturday → today, BD timezone — week starts Saturday)
   // Plus credit hours for approved leaves within the week
   const { weeklyWorkedMin, weeklyLeaveCreditMin, weeklyDaysClocked, weeklyLeaveDays } = (() => {
-    if (!currentEmployee) return { weeklyWorkedMin: 0, weeklyLeaveCreditMin: 0, weeklyDaysClocked: 0, weeklyLeaveDays: 0 };
+    if (!targetEmployee) return { weeklyWorkedMin: 0, weeklyLeaveCreditMin: 0, weeklyDaysClocked: 0, weeklyLeaveDays: 0 };
     const todayBD = new Date(t);
     const dayOfWeek = todayBD.getDay();
     const daysSinceSat = (dayOfWeek + 1) % 7;
@@ -191,7 +269,7 @@ export default function Dashboard() {
     sat.setDate(todayBD.getDate() - daysSinceSat);
     const satStr = `${sat.getFullYear()}-${String(sat.getMonth() + 1).padStart(2, "0")}-${String(sat.getDate()).padStart(2, "0")}`;
     const myWeekAtt = attendance.filter(a =>
-      a.employee_id === currentEmployee.id &&
+      a.employee_id === targetEmployee.id &&
       a.date >= satStr &&
       a.date <= t
     );
@@ -226,6 +304,84 @@ export default function Dashboard() {
     return { weeklyWorkedMin: workedMin, weeklyLeaveCreditMin: leaveCreditMin, weeklyDaysClocked: myWeekAtt.length, weeklyLeaveDays: leaveDays };
   })();
 
+  const weeklyHoursBreakdown = useMemo(() => {
+    if (!targetEmployee) return [];
+    
+    const todayBD = new Date(t);
+    const dayOfWeek = todayBD.getDay();
+    const daysSinceSat = (dayOfWeek + 1) % 7; 
+    
+    const sat = new Date(todayBD);
+    sat.setDate(todayBD.getDate() - daysSinceSat);
+    
+    const breakdown = [];
+    for (let i = 0; i < 6; i++) {
+      const curDate = new Date(sat);
+      curDate.setDate(sat.getDate() + i);
+      const curDateStr = `${curDate.getFullYear()}-${String(curDate.getMonth() + 1).padStart(2, "0")}-${String(curDate.getDate()).padStart(2, "0")}`;
+      
+      const dayName = curDate.toLocaleDateString("bn-BD", { weekday: "long" });
+      const dayNameEn = curDate.toLocaleDateString("en-US", { weekday: "long" });
+      
+      const att = attendance.find(a => a.employee_id === targetEmployee.id && a.date === curDateStr);
+      const leave = myApprovedLeaves.find(l => curDateStr >= l.from_date && curDateStr <= l.to_date);
+      const holiday = holidays.find(h => h.date === curDateStr);
+      
+      let status = "Absent";
+      let statusColor = "text-rose-500 bg-rose-500/10 dark:bg-rose-500/5";
+      let hoursDisplay = "0h 0m";
+      let clockInTime = "—";
+      let clockOutTime = "—";
+      
+      if (holiday) {
+        status = `Holiday (${holiday.name})`;
+        statusColor = "text-blue-500 bg-blue-500/10 dark:bg-blue-500/5";
+        hoursDisplay = "8h 0m (Credited)";
+      } else if (leave) {
+        const isHalf = (leave as any).is_half_day;
+        status = isHalf ? "Half Day Leave" : "Approved Leave";
+        statusColor = "text-amber-500 bg-amber-500/10 dark:bg-amber-500/5";
+        hoursDisplay = isHalf ? "4h 0m (Credited)" : "8h 0m (Credited)";
+      } else if (att) {
+        clockInTime = att.clock_in ? new Date(att.clock_in).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : "—";
+        clockOutTime = att.clock_out ? new Date(att.clock_out).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : "—";
+        
+        if (att.clock_in && !att.clock_out) {
+          status = "Active Now";
+          statusColor = "text-emerald-500 bg-emerald-500/10 dark:bg-emerald-500/5 font-bold animate-pulse";
+        } else {
+          status = "Present";
+          statusColor = "text-emerald-600 bg-emerald-500/10 dark:bg-emerald-500/5";
+        }
+        
+        const minutes = calcWorkedMinutes(att.clock_in ?? null, att.clock_out ?? null);
+        hoursDisplay = formatHrMin(minutes);
+      } else {
+        if (curDateStr > t) {
+          status = "Scheduled";
+          statusColor = "text-slate-400 bg-slate-100 dark:bg-slate-800";
+          hoursDisplay = "—";
+        } else {
+          status = "Absent";
+          statusColor = "text-rose-500 bg-rose-500/10 dark:bg-rose-500/5";
+        }
+      }
+      
+      breakdown.push({
+        date: curDateStr,
+        dayName,
+        dayNameEn,
+        clockInTime,
+        clockOutTime,
+        status,
+        statusColor,
+        hoursDisplay
+      });
+    }
+    
+    return breakdown;
+  }, [targetEmployee, t, attendance, myApprovedLeaves, holidays]);
+
   // Daily total = worked + leave credit (capped at target)
   const todayTotalMin = todayWorkedMin + todayLeaveCreditMin;
   const weeklyTotalMin = weeklyWorkedMin + weeklyLeaveCreditMin;
@@ -252,7 +408,7 @@ export default function Dashboard() {
 
       {/* BD Time & Date Widget */}
       <BdClockWidget
-        userName={profile?.full_name?.split(" ")[0] || "User"}
+        userName={profile?.full_name || "User"}
         ongoingHoliday={ongoingHoliday}
         upcomingHoliday={upcomingHoliday}
         daysUntilHoliday={daysUntilHoliday}
@@ -264,7 +420,24 @@ export default function Dashboard() {
             <KpiCard label="Monthly Revenue (BDT)" value={formatCurrency(revenueBDT, "BDT")} delta="+12.4%" icon={TrendingUp} accent="success" />
             <KpiCard label="Monthly Revenue (USD)" value={formatCurrency(revenueUSD, "USD")} delta="+8.1%" icon={TrendingUp} accent="primary" />
             <KpiCard label="Active Clients" value={clients.length.toString()} delta="Total registered" icon={Users} accent="info" />
-            <KpiCard label="Server Renewals < 30d" value={upcomingRenewals.length.toString()} delta={`${upcomingRenewals.filter(r => (new Date(r.expires_at!).getTime() - new Date().getTime()) / 86400000 < 7).length} critical`} icon={Server} accent="warning" />
+            <KpiCard 
+              label="Renewals < 30d" 
+              value={upcomingRenewals.length.toString()} 
+              delta={
+                upcomingRenewals.length > 0
+                  ? (criticalRenewals15Count > 0 
+                      ? `${criticalRenewals15Count} critical (<15d)` 
+                      : `${upcomingRenewals.length} upcoming`)
+                  : "No upcoming renewals"
+              } 
+              icon={Server} 
+              accent={
+                upcomingRenewals.length > 0
+                  ? (criticalRenewals15Count > 0 ? "danger" : "warning")
+                  : "muted"
+              }
+              onClick={() => router.push("/domains")}
+            />
           </>
         )}
         
@@ -322,42 +495,38 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Sprint Burn-down</CardTitle>
-                <CardDescription>Tasks remaining vs planned for this week</CardDescription>
-              </div>
-              <Badge variant="secondary"><Activity className="h-3 w-3 mr-1" /> On track</Badge>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={280}>
-              <AreaChart data={burndownData}>
-                <defs>
-                  <linearGradient id="planned" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="oklch(0.55 0.22 285)" stopOpacity={0.3} />
-                    <stop offset="100%" stopColor="oklch(0.55 0.22 285)" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="actual" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="oklch(0.7 0.16 155)" stopOpacity={0.3} />
-                    <stop offset="100%" stopColor="oklch(0.7 0.16 155)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                <XAxis dataKey="day" className="text-xs" stroke="currentColor" />
-                <YAxis className="text-xs" stroke="currentColor" />
-                <Tooltip contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 8 }} />
-                <Area type="monotone" dataKey="planned" stroke="oklch(0.55 0.22 285)" fill="url(#planned)" strokeWidth={2} />
-                <Area type="monotone" dataKey="actual" stroke="oklch(0.7 0.16 155)" fill="url(#actual)" strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+        <div className="lg:col-span-2 space-y-4">
+          <DailyAyatWidget />
+          <DailyHadithWidget />
+        </div>
 
-        {!isClient && currentEmployee ? (
+        {!isClient && (currentEmployee || isSuperAdmin) ? (
           <div className="space-y-4">
+            {isSuperAdmin && (
+              <Card className="shadow-card border border-primary/20 bg-primary/[0.02] dark:bg-primary/[0.01]">
+                <CardContent className="p-4 space-y-2">
+                  <p className="text-xs font-semibold text-primary uppercase tracking-wider">Inspect Staff Hours</p>
+                  <Select 
+                    value={selectedEmployeeId || (currentEmployee?.id || "me")} 
+                    onValueChange={v => setSelectedEmployeeId(v === (currentEmployee?.id || "me") ? "" : v)}
+                  >
+                    <SelectTrigger className="w-full bg-background border border-border/40 rounded-xl cursor-pointer h-10 text-xs shadow-none">
+                      <SelectValue placeholder="Select staff member..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={currentEmployee?.id || "me"} className="text-xs cursor-pointer">Me ({profile?.full_name || 'Admin'})</SelectItem>
+                      {activeEmployees
+                        .filter(e => e.id !== currentEmployee?.id)
+                        .map(e => (
+                          <SelectItem key={e.id} value={e.id} className="text-xs cursor-pointer">
+                            {e.full_name} ({e.designation || e.department || 'Staff'})
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </CardContent>
+              </Card>
+            )}
             <HoursCard
               label="Today's Hours"
               workedMin={todayWorkedMin}
@@ -386,6 +555,7 @@ export default function Dashboard() {
               progress={weeklyProgress}
               officeRange="Sat–Thu · 48h target"
               subtitle={`${weeklyDaysClocked} day${weeklyDaysClocked !== 1 ? "s" : ""} clocked${weeklyLeaveDays > 0 ? ` · ${weeklyLeaveDays} on leave` : ""} · ${formatHrMin(weeklyWorkedMin)} worked`}
+              onClick={() => setIsWeeklyPopupOpen(true)}
             />
           </div>
         ) : (
@@ -437,23 +607,94 @@ export default function Dashboard() {
           </Card>
         )}
       </div>
+      <Dialog open={isWeeklyPopupOpen} onOpenChange={setIsWeeklyPopupOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold flex items-center gap-2">
+              <Clock className="h-5 w-5 text-primary" />
+              Weekly Hours Log (Saturday - Thursday)
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Daily work hours breakdown for {targetEmployee?.full_name} this week.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="mt-4 overflow-hidden rounded-xl border border-border/80">
+            <table className="w-full text-sm text-left border-collapse">
+              <thead>
+                <tr className="bg-muted/65 border-b border-border/80 text-xs font-bold text-muted-foreground">
+                  <th className="p-3">Day & Date</th>
+                  <th className="p-3">Clock In</th>
+                  <th className="p-3">Clock Out</th>
+                  <th className="p-3 text-center">Status</th>
+                  <th className="p-3 text-right">Total Hours</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/60">
+                {weeklyHoursBreakdown.map((row) => (
+                  <tr key={row.date} className="hover:bg-muted/20 transition-colors text-xs">
+                    <td className="p-3 font-semibold">
+                      <div>{row.dayNameEn}</div>
+                      <div className="text-[10px] text-muted-foreground font-mono">{formatDate(row.date)}</div>
+                    </td>
+                    <td className="p-3 font-mono">{row.clockInTime}</td>
+                    <td className="p-3 font-mono">{row.clockOutTime}</td>
+                    <td className="p-3 text-center">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${row.statusColor}`}>
+                        {row.status}
+                      </span>
+                    </td>
+                    <td className="p-3 text-right font-mono font-semibold">{row.hoursDisplay}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mt-4 p-3 bg-primary/[0.03] dark:bg-primary/[0.01] border border-primary/10 rounded-xl flex items-center justify-between text-xs">
+            <div>
+              <span className="text-muted-foreground">Total Worked:</span>{" "}
+              <strong className="text-primary font-mono text-sm">{formatHrMin(weeklyWorkedMin)}</strong>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Leave Credit:</span>{" "}
+              <strong className="text-amber-600 font-mono text-sm">{formatHrMin(weeklyLeaveCreditMin)}</strong>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Grand Total:</span>{" "}
+              <strong className="text-foreground font-mono text-sm">{formatHrMin(weeklyWorkedMin + weeklyLeaveCreditMin)}</strong>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function KpiCard({ label, value, delta, icon: Icon, accent }: {
+function KpiCard({ label, value, delta, icon: Icon, accent, onClick }: {
   label: string; value: string; delta: string;
   icon: any;
-  accent: "primary" | "success" | "warning" | "info";
+  accent: "primary" | "success" | "warning" | "info" | "danger" | "muted";
+  onClick?: () => void;
 }) {
   const accentClass = {
     primary: "bg-primary/10 text-primary",
     success: "bg-success/10 text-success",
     warning: "bg-warning/15 text-warning-foreground",
+    danger: "bg-rose-500/10 text-rose-600 border-rose-500/20",
     info: "bg-info/10 text-info",
+    muted: "bg-slate-500/10 text-slate-500/70 border-slate-500/10",
   }[accent];
   return (
-    <Card className="shadow-card">
+    <Card 
+      className={cn(
+        "shadow-card transition-all duration-300",
+        onClick && "cursor-pointer hover:shadow-md hover:-translate-y-0.5 hover:border-muted-foreground/20",
+        accent === "danger" && "border-rose-500/40 bg-rose-500/10 dark:bg-rose-500/5 shadow-md shadow-rose-500/10",
+        accent === "warning" && "border-amber-500/30 bg-amber-500/[0.02] dark:bg-amber-500/[0.01] shadow-sm shadow-amber-500/5"
+      )}
+      onClick={onClick}
+    >
       <CardContent className="p-5">
         <div className="flex items-start justify-between">
           <div className="space-y-1">
@@ -470,7 +711,7 @@ function KpiCard({ label, value, delta, icon: Icon, accent }: {
   );
 }
 
-function HoursCard({ label, workedMin, leaveCreditMin = 0, targetMin, progress, subtitle, isActive, officeRange, isOnLeave, isHalfDayLeave }: {
+function HoursCard({ label, workedMin, leaveCreditMin = 0, targetMin, progress, subtitle, isActive, officeRange, isOnLeave, isHalfDayLeave, onClick }: {
   label: string;
   workedMin: number;
   leaveCreditMin?: number;
@@ -481,6 +722,7 @@ function HoursCard({ label, workedMin, leaveCreditMin = 0, targetMin, progress, 
   officeRange?: string;
   isOnLeave?: boolean;
   isHalfDayLeave?: boolean;
+  onClick?: () => void;
 }) {
   const totalMin = workedMin + leaveCreditMin;
   const h = Math.floor(totalMin / 60);
@@ -499,7 +741,13 @@ function HoursCard({ label, workedMin, leaveCreditMin = 0, targetMin, progress, 
       : { bg: "bg-amber-500/10 dark:bg-amber-400/10", text: "text-amber-600 dark:text-amber-400", border: "border-amber-500/20", bar: "from-amber-500 to-amber-400" };
 
   return (
-    <Card className="shadow-card overflow-hidden">
+    <Card 
+      className={cn(
+        "shadow-card overflow-hidden transition-all duration-300",
+        onClick && "cursor-pointer hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20"
+      )}
+      onClick={onClick}
+    >
       <CardContent className="p-5 space-y-3">
         <div className="flex items-start justify-between">
           <div className="min-w-0 flex-1">

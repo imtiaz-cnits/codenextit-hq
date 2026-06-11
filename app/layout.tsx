@@ -67,6 +67,9 @@ export default function RootLayout({
       className={`${primaryFont.variable} ${secondaryFont.variable} ${monoFont.variable} ${bengaliFont.variable} antialiased`}
     >
       <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=Anek+Bangla:wght@400;600;700&family=Baloo+Da+2:wght@400;600;700&family=Cinzel:wght@400;600;700&family=Dancing+Script:wght@400;600;700&family=Fira+Code:wght@400;500;600&family=Hind+Siliguri:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Josefin+Sans:wght@400;600;700&family=Lato:wght@300;400;700&family=Lora:ital,wght@0,400;0,700;1,400&family=Merriweather:ital,wght@0,400;0,700;1,400&family=Montserrat:wght@400;600;700&family=Noto+Sans+Bengali:wght@400;500;600;700&family=Noto+Serif+Bengali:wght@400;600;700&family=Nunito:wght@400;600;700&family=Open+Sans:wght@400;600;700&family=Oswald:wght@400;500;700&family=Outfit:wght@400;600;700;800&family=Pacifico&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Poppins:wght@400;600;700&family=Roboto:wght@400;500;700&family=Source+Code+Pro:wght@400;500;600&family=Ubuntu:wght@400;500;700&family=Amiri:ital,wght@0,400;0,700;1,400;1,700&family=Noto+Naskh+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
         <Script
           id="theme-detection"
           strategy="beforeInteractive"

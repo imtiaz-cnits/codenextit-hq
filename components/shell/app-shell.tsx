@@ -61,6 +61,13 @@ export const STAFF_GROUPS: { label: string; items: NavItem[] }[] = [
     ],
   },
   {
+    label: "Vault & Notes",
+    items: [
+      { to: "/vault", label: "Vault", icon: FolderLock, module: "vault" },
+      { to: "/notes", label: "Notes", icon: FileText, module: "vault" },
+    ],
+  },
+  {
     label: "People",
     items: [
       { to: "/team", label: "Team", icon: UserCircle, module: "team" },
@@ -90,7 +97,7 @@ export const STAFF_GROUPS: { label: string; items: NavItem[] }[] = [
   {
     label: "Workspace",
     items: [
-      { to: "/vault", label: "Vault", icon: FolderLock, module: "vault" },
+      { to: "/domains", label: "Domain Tracker", icon: Globe, module: "vault" },
       { to: "/settings", label: "Settings", icon: Settings, module: "settings" },
     ],
   },

@@ -325,7 +325,7 @@ export function BdClockWidget({ userName, ongoingHoliday, upcomingHoliday, daysU
               {ongoingHoliday ? (
                 <>
                   <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider leading-none">Currently on Holiday</p>
-                  <p className="text-sm font-bold truncate leading-none">
+                  <p className="text-sm font-bold truncate leading-none font-bengali">
                     {ongoingHoliday.baseName}
                     {ongoingHoliday.days.length > 1 && (
                       <span className="text-muted-foreground font-mono ml-1.5 text-xs">
@@ -337,7 +337,7 @@ export function BdClockWidget({ userName, ongoingHoliday, upcomingHoliday, daysU
               ) : upcomingHoliday && daysUntilHoliday !== null && daysUntilHoliday !== undefined && daysUntilHoliday <= 30 ? (
                 <>
                   <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider leading-none">Next Holiday</p>
-                  <p className="text-sm font-bold truncate leading-none">
+                  <p className="text-sm font-bold truncate leading-none font-bengali">
                     {upcomingHoliday.baseName} <span className="text-muted-foreground font-mono ml-1 text-xs">in {daysUntilHoliday}d</span>
                   </p>
                 </>
