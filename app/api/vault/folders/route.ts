@@ -84,7 +84,7 @@ export async function GET(req: NextRequest) {
       .from("folder_access" as any) as any)
       .select("client_id, permission_level")
       .eq("user_id", user.id);
-    const folderAccessMap = new Map((folderAccess || []).map((fa: any) => [fa.client_id, fa.permission_level]));
+    const folderAccessMap = new Map<string, string>((folderAccess || []).map((fa: any) => [fa.client_id as string, fa.permission_level as string]));
 
     // Fetch credentials user created
     const { data: createdCreds } = await (supabaseAdmin

@@ -166,9 +166,10 @@ export async function GET(req: NextRequest) {
       let hasEditPermission = isCreator;
       if (!hasEditPermission) {
         if (c.client_id !== null) {
+          const folder = (clients || []).find((f: any) => f.id === c.client_id);
           const hasExplicitFolderEdit = folderAccessMap.get(c.client_id) === "edit";
-          const isFolderCreator = (clients || []).find((f: any) => f.id === c.client_id)?.created_by === user.id;
-          const isAdminOfAdminFolder = isAdmin && isFolderCreatedByAdmin((clients || []).find((f: any) => f.id === c.client_id)?.created_by);
+          const isFolderCreator = folder?.created_by === user.id;
+          const isAdminOfAdminFolder = isAdmin && isFolderCreatedByAdmin(folder ? folder.created_by : null);
 
           if (hasExplicitFolderEdit || isFolderCreator || isAdminOfAdminFolder) {
             hasEditPermission = true;
