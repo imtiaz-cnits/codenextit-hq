@@ -34,8 +34,8 @@ const burndownData = [
 ];
 
 export default function Dashboard() {
-  const { 
-    invoices, projects, tasks, employees, attendance, 
+  const {
+    invoices, projects, tasks, employees, attendance,
     leaves, clients, infrastructure, currentEmployee,
     toggleClock, loading
   } = useMock();
@@ -75,9 +75,9 @@ export default function Dashboard() {
       }
     })();
   }, [user]);
-  
+
   if (loading) return <DashboardSkeleton />;
-  
+
   const isSuperAdmin = hasRole("super_admin");
   const isClient = hasRole("client");
   const t = toLocalDateString();
@@ -89,11 +89,11 @@ export default function Dashboard() {
   const targetEmployee = selectedEmployeeId && isSuperAdmin
     ? (employees.find(e => e.id === selectedEmployeeId) || currentEmployee)
     : currentEmployee;
-  
+
   // Super Admin Stats
   const revenueBDT = invoices.filter((i) => i.currency === "BDT" && i.status === "paid").reduce((s, i) => s + i.paid, 0);
   const revenueUSD = invoices.filter((i) => i.currency === "USD" && i.status === "paid").reduce((s, i) => s + i.paid, 0);
-  
+
   const getDaysRemaining = (dateStr: string) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -151,8 +151,8 @@ export default function Dashboard() {
   // Leave Stats (20 days per year, 2 days per month logic)
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth();
-  const myApprovedLeaves = leaves.filter(l => 
-    l.employee_id === targetEmployee?.id && 
+  const myApprovedLeaves = leaves.filter(l =>
+    l.employee_id === targetEmployee?.id &&
     l.status === 'approved' &&
     new Date(l.from_date).getFullYear() === currentYear
   );
@@ -306,33 +306,34 @@ export default function Dashboard() {
 
   const weeklyHoursBreakdown = useMemo(() => {
     if (!targetEmployee) return [];
-    
+
     const todayBD = new Date(t);
     const dayOfWeek = todayBD.getDay();
-    const daysSinceSat = (dayOfWeek + 1) % 7; 
-    
+    const daysSinceSat = (dayOfWeek + 1) % 7;
+
     const sat = new Date(todayBD);
     sat.setDate(todayBD.getDate() - daysSinceSat);
-    
+
     const breakdown = [];
     for (let i = 0; i < 6; i++) {
       const curDate = new Date(sat);
       curDate.setDate(sat.getDate() + i);
       const curDateStr = `${curDate.getFullYear()}-${String(curDate.getMonth() + 1).padStart(2, "0")}-${String(curDate.getDate()).padStart(2, "0")}`;
-      
+
       const dayName = curDate.toLocaleDateString("bn-BD", { weekday: "long" });
       const dayNameEn = curDate.toLocaleDateString("en-US", { weekday: "long" });
-      
+
       const att = attendance.find(a => a.employee_id === targetEmployee.id && a.date === curDateStr);
       const leave = myApprovedLeaves.find(l => curDateStr >= l.from_date && curDateStr <= l.to_date);
       const holiday = holidays.find(h => h.date === curDateStr);
-      
+
       let status = "Absent";
       let statusColor = "text-rose-500 bg-rose-500/10 dark:bg-rose-500/5";
       let hoursDisplay = "0h 0m";
       let clockInTime = "—";
       let clockOutTime = "—";
-      
+      let isLate = false;
+
       if (holiday) {
         status = `Holiday (${holiday.name})`;
         statusColor = "text-blue-500 bg-blue-500/10 dark:bg-blue-500/5";
@@ -345,7 +346,35 @@ export default function Dashboard() {
       } else if (att) {
         clockInTime = att.clock_in ? new Date(att.clock_in).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : "—";
         clockOutTime = att.clock_out ? new Date(att.clock_out).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : "—";
-        
+
+        if (att.clock_in && targetEmployee) {
+          try {
+            const isMgmtOrAdmin = targetEmployee.department === "Management" || targetEmployee.designation === "Super Admin";
+            if (!isMgmtOrAdmin) {
+              const officeStart = targetEmployee.office_start || "11:00";
+              const [startH, startM] = officeStart.split(":").map(Number);
+              const inDate = new Date(att.clock_in);
+              const dhakaStr = inDate.toLocaleTimeString("en-US", {
+                timeZone: "Asia/Dhaka",
+                hour12: false,
+                hour: "2-digit",
+                minute: "2-digit"
+              });
+              const [clockInH, clockInM] = dhakaStr.split(":").map(Number);
+
+              const startTimeInMinutes = startH * 60 + startM;
+              const clockInTimeInMinutes = clockInH * 60 + clockInM;
+              const allowedGrace = 15;
+
+              if (clockInTimeInMinutes > (startTimeInMinutes + allowedGrace)) {
+                isLate = true;
+              }
+            }
+          } catch (e) {
+            console.error("Error parsing late clock in time:", e);
+          }
+        }
+
         if (att.clock_in && !att.clock_out) {
           status = "Active Now";
           statusColor = "text-emerald-500 bg-emerald-500/10 dark:bg-emerald-500/5 font-bold animate-pulse";
@@ -353,7 +382,7 @@ export default function Dashboard() {
           status = "Present";
           statusColor = "text-emerald-600 bg-emerald-500/10 dark:bg-emerald-500/5";
         }
-        
+
         const minutes = calcWorkedMinutes(att.clock_in ?? null, att.clock_out ?? null);
         hoursDisplay = formatHrMin(minutes);
       } else {
@@ -366,7 +395,7 @@ export default function Dashboard() {
           statusColor = "text-rose-500 bg-rose-500/10 dark:bg-rose-500/5";
         }
       }
-      
+
       breakdown.push({
         date: curDateStr,
         dayName,
@@ -375,10 +404,11 @@ export default function Dashboard() {
         clockOutTime,
         status,
         statusColor,
-        hoursDisplay
+        hoursDisplay,
+        isLate
       });
     }
-    
+
     return breakdown;
   }, [targetEmployee, t, attendance, myApprovedLeaves, holidays]);
 
@@ -420,17 +450,17 @@ export default function Dashboard() {
             <KpiCard label="Monthly Revenue (BDT)" value={formatCurrency(revenueBDT, "BDT")} delta="+12.4%" icon={TrendingUp} accent="success" />
             <KpiCard label="Monthly Revenue (USD)" value={formatCurrency(revenueUSD, "USD")} delta="+8.1%" icon={TrendingUp} accent="primary" />
             <KpiCard label="Active Clients" value={clients.length.toString()} delta="Total registered" icon={Users} accent="info" />
-            <KpiCard 
-              label="Renewals < 30d" 
-              value={upcomingRenewals.length.toString()} 
+            <KpiCard
+              label="Renewals < 30d"
+              value={upcomingRenewals.length.toString()}
               delta={
                 upcomingRenewals.length > 0
-                  ? (criticalRenewals15Count > 0 
-                      ? `${criticalRenewals15Count} critical (<15d)` 
-                      : `${upcomingRenewals.length} upcoming`)
+                  ? (criticalRenewals15Count > 0
+                    ? `${criticalRenewals15Count} critical (<15d)`
+                    : `${upcomingRenewals.length} upcoming`)
                   : "No upcoming renewals"
-              } 
-              icon={Server} 
+              }
+              icon={Server}
               accent={
                 upcomingRenewals.length > 0
                   ? (criticalRenewals15Count > 0 ? "danger" : "warning")
@@ -440,7 +470,7 @@ export default function Dashboard() {
             />
           </>
         )}
-        
+
         {isClient ? (
           <>
             <KpiCard label="My Active Projects" value={clientProjects.length.toString()} delta="All on track" icon={Briefcase} accent="primary" />
@@ -450,8 +480,8 @@ export default function Dashboard() {
           </>
         ) : (
           <>
-            <KpiCard 
-              label="Today's Attendance" 
+            <KpiCard
+              label="Today's Attendance"
               value={
                 isTodayHoliday
                   ? "Holiday"
@@ -468,13 +498,13 @@ export default function Dashboard() {
                     ? "Friday weekly off"
                     : isOnLeaveToday
                       ? "Approved Leave"
-                      : (todayAttendance 
-                          ? (todayAttendance.clock_out 
-                              ? `Clocked out at ${new Date(todayAttendance.clock_out).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`
-                              : `Clocked in at ${new Date(todayAttendance.clock_in!).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`)
-                          : (isBeforeOfficeStart ? "Office starts at 11:00 AM" : "Not yet clocked in"))
+                      : (todayAttendance
+                        ? (todayAttendance.clock_out
+                          ? `Clocked out at ${new Date(todayAttendance.clock_out).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`
+                          : `Clocked in at ${new Date(todayAttendance.clock_in!).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`)
+                        : (isBeforeOfficeStart ? "Office starts at 11:00 AM" : "Not yet clocked in"))
               }
-              icon={isTodayHoliday || isWeeklyOff ? Coffee : Clock} 
+              icon={isTodayHoliday || isWeeklyOff ? Coffee : Clock}
               accent={
                 isTodayHoliday || isWeeklyOff
                   ? "info"
@@ -506,8 +536,8 @@ export default function Dashboard() {
               <Card className="shadow-card border border-primary/20 bg-primary/[0.02] dark:bg-primary/[0.01]">
                 <CardContent className="p-4 space-y-2">
                   <p className="text-xs font-semibold text-primary uppercase tracking-wider">Inspect Staff Hours</p>
-                  <Select 
-                    value={selectedEmployeeId || (currentEmployee?.id || "me")} 
+                  <Select
+                    value={selectedEmployeeId || (currentEmployee?.id || "me")}
                     onValueChange={v => setSelectedEmployeeId(v === (currentEmployee?.id || "me") ? "" : v)}
                   >
                     <SelectTrigger className="w-full bg-background border border-border/40 rounded-xl cursor-pointer h-10 text-xs shadow-none">
@@ -540,11 +570,11 @@ export default function Dashboard() {
               subtitle={
                 todayAttendance?.clock_in
                   ? (todayAttendance.clock_out
-                      ? `${new Date(todayAttendance.clock_in).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} → ${new Date(todayAttendance.clock_out).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
-                      : `Started ${new Date(todayAttendance.clock_in).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} · still clocked in`)
+                    ? `${new Date(todayAttendance.clock_in).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} → ${new Date(todayAttendance.clock_out).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
+                    : `Started ${new Date(todayAttendance.clock_in).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} · still clocked in`)
                   : (isOnLeaveToday
-                      ? ((isOnLeaveToday as any).is_half_day ? "½ day approved leave (4h credited)" : "Full day approved leave (8h credited)")
-                      : "Not clocked in yet")
+                    ? ((isOnLeaveToday as any).is_half_day ? "½ day approved leave (4h credited)" : "Full day approved leave (8h credited)")
+                    : "Not clocked in yet")
               }
             />
             <HoursCard
@@ -608,7 +638,7 @@ export default function Dashboard() {
         )}
       </div>
       <Dialog open={isWeeklyPopupOpen} onOpenChange={setIsWeeklyPopupOpen}>
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold flex items-center gap-2">
               <Clock className="h-5 w-5 text-primary" />
@@ -637,7 +667,16 @@ export default function Dashboard() {
                       <div>{row.dayNameEn}</div>
                       <div className="text-[10px] text-muted-foreground font-mono">{formatDate(row.date)}</div>
                     </td>
-                    <td className="p-3 font-mono">{row.clockInTime}</td>
+                    <td className="p-3 font-mono">
+                      <div className="flex items-center gap-1.5">
+                        <span>{row.clockInTime}</span>
+                        {row.isLate && (
+                          <span className="text-[9px] font-bold text-rose-500 bg-rose-500/10 dark:bg-rose-500/5 px-1.5 py-0.5 rounded-md">
+                            LATE
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="p-3 font-mono">{row.clockOutTime}</td>
                     <td className="p-3 text-center">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${row.statusColor}`}>
@@ -651,17 +690,57 @@ export default function Dashboard() {
             </table>
           </div>
 
-          <div className="mt-4 p-3 bg-primary/[0.03] dark:bg-primary/[0.01] border border-primary/10 rounded-xl flex items-center justify-between text-xs">
+          {/* Progress bar */}
+          {(() => {
+            const isComplete = weeklyProgress >= 100;
+            const barClass = isComplete
+              ? "from-emerald-500 to-emerald-400"
+              : weeklyProgress >= 50
+                ? "from-primary/70 to-primary"
+                : "from-amber-500 to-amber-400";
+            const textClass = isComplete
+              ? "text-emerald-600 dark:text-emerald-400"
+              : weeklyProgress >= 50
+                ? "text-primary"
+                : "text-amber-600 dark:text-amber-400";
+            const bgBorderClass = isComplete
+              ? "bg-emerald-500/10 dark:bg-emerald-400/10 border-emerald-500/20"
+              : weeklyProgress >= 50
+                ? "bg-primary/10 border-primary/20"
+                : "bg-amber-500/10 dark:bg-amber-400/10 border-amber-500/20";
+            return (
+              <div className="mt-1 space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground font-semibold">Weekly Target Progress</span>
+                  <span className={`font-mono font-bold ${textClass}`}>
+                    {weeklyProgress >= 100 ? "100%" : `${Math.min(99.9, Number(weeklyProgress.toFixed(1)))}%`}
+                  </span>
+                </div>
+                <div className={`h-2.5 rounded-full overflow-hidden ${bgBorderClass} border`}>
+                  <div
+                    className={`h-full bg-gradient-to-r ${barClass} transition-all duration-500 rounded-full`}
+                    style={{ width: `${weeklyProgress}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })()}
+
+          <div className="mt-0 p-3 bg-primary/[0.03] dark:bg-primary/[0.01] border border-primary/10 rounded-xl grid grid-cols-4 gap-2 text-center text-xs">
             <div>
-              <span className="text-muted-foreground">Total Worked:</span>{" "}
+              <span className="text-muted-foreground block text-[10px] uppercase font-bold tracking-wider mb-0.5">Total Worked</span>
               <strong className="text-primary font-mono text-sm">{formatHrMin(weeklyWorkedMin)}</strong>
             </div>
-            <div>
-              <span className="text-muted-foreground">Leave Credit:</span>{" "}
+            <div className="border-l border-primary/10">
+              <span className="text-muted-foreground block text-[10px] uppercase font-bold tracking-wider mb-0.5">Leave Credit</span>
               <strong className="text-amber-600 font-mono text-sm">{formatHrMin(weeklyLeaveCreditMin)}</strong>
             </div>
-            <div>
-              <span className="text-muted-foreground">Grand Total:</span>{" "}
+            <div className="border-l border-primary/10">
+              <span className="text-muted-foreground block text-[10px] uppercase font-bold tracking-wider mb-0.5">Weekly Target</span>
+              <strong className="text-slate-600 dark:text-slate-400 font-mono text-sm">{formatHrMin(weeklyTargetMin)}</strong>
+            </div>
+            <div className="border-l border-primary/10">
+              <span className="text-muted-foreground block text-[10px] uppercase font-bold tracking-wider mb-0.5">Grand Total</span>
               <strong className="text-foreground font-mono text-sm">{formatHrMin(weeklyWorkedMin + weeklyLeaveCreditMin)}</strong>
             </div>
           </div>
@@ -686,7 +765,7 @@ function KpiCard({ label, value, delta, icon: Icon, accent, onClick }: {
     muted: "bg-slate-500/10 text-slate-500/70 border-slate-500/10",
   }[accent];
   return (
-    <Card 
+    <Card
       className={cn(
         "shadow-card transition-all duration-300",
         onClick && "cursor-pointer hover:shadow-md hover:-translate-y-0.5 hover:border-muted-foreground/20",
@@ -741,7 +820,7 @@ function HoursCard({ label, workedMin, leaveCreditMin = 0, targetMin, progress, 
       : { bg: "bg-amber-500/10 dark:bg-amber-400/10", text: "text-amber-600 dark:text-amber-400", border: "border-amber-500/20", bar: "from-amber-500 to-amber-400" };
 
   return (
-    <Card 
+    <Card
       className={cn(
         "shadow-card overflow-hidden transition-all duration-300",
         onClick && "cursor-pointer hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20"
@@ -811,7 +890,9 @@ function HoursCard({ label, workedMin, leaveCreditMin = 0, targetMin, progress, 
           </div>
           <div className="flex items-center justify-between text-[10px] text-muted-foreground">
             <span className="italic truncate flex-1 mr-2">{subtitle}</span>
-            <span className={`font-mono font-bold ${tone.text}`}>{progress.toFixed(0)}%</span>
+            <span className={`font-mono font-bold ${tone.text}`}>
+              {progress >= 100 ? "100%" : `${Math.min(99.9, Number(progress.toFixed(1)))}%`}
+            </span>
           </div>
         </div>
       </CardContent>

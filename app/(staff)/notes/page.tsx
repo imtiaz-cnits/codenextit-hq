@@ -19,7 +19,7 @@ import {
   ExternalLink, Loader2, RefreshCw, Search, Folder, DollarSign, Bell, ArrowLeft, ChevronLeft, Save, 
   Share2, Users, Bold, Italic, Underline, List, ListOrdered, AlignLeft, AlignCenter, 
   AlignRight, Heading1, Heading2, Heading3, Palette, Eraser, Check, Cloud, CloudOff, Lock,
-  ChevronRight, HardDrive, Type, FolderPlus, Paintbrush, Table2
+  ChevronRight, HardDrive, Type, FolderPlus, Paintbrush, Table2, Baseline
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDate } from "../../../lib/format";
@@ -149,6 +149,11 @@ export default function NotesPage() {
   const [hoveredRow, setHoveredRow] = useState(0);
   const [hoveredCol, setHoveredCol] = useState(0);
   const [tableInsertOpen, setTableInsertOpen] = useState(false);
+  const [hoveredRowMobile, setHoveredRowMobile] = useState(0);
+  const [hoveredColMobile, setHoveredColMobile] = useState(0);
+  const [tableInsertOpenMobile, setTableInsertOpenMobile] = useState(false);
+  const [isFormatPanelOpen, setIsFormatPanelOpen] = useState(false);
+  const [activeFormatTab, setActiveFormatTab] = useState<"text" | "paragraph">("text");
   const activeCellRef = useRef<HTMLTableCellElement | null>(null);
 
   const saveSelection = () => {
@@ -1435,152 +1440,288 @@ export default function NotesPage() {
             </div>
           )}
         </>
-      ) : (
+) : (
         // GOOGLE DOCS A4 EDITOR CANVAS VIEW
         <div className="flex flex-col bg-slate-50 dark:bg-slate-950 rounded-3xl border border-border/40 shadow-sm h-[calc(100vh-100px)] md:h-[calc(100vh-125px)] lg:h-[calc(100vh-150px)] overflow-hidden">
           {/* Header and Toolbar Wrapper */}
-          <div className="bg-card border-b border-border/40 shadow-sm rounded-t-3xl shrink-0">
-            {/* Header row redesigned to look beautiful like Google Docs header */}
-            <div className="flex flex-col gap-4 border-b border-border/50 bg-card p-4 shrink-0 sm:flex-row sm:items-center sm:justify-between rounded-t-3xl">
-            <div className="flex items-center gap-3 flex-1 min-w-0">
-              {/* Back button */}
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleBackToDashboard}
-                className="h-9 w-9 rounded-full border border-border bg-background hover:bg-muted shrink-0 cursor-pointer"
-                title="Back to Notes"
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-              
-              <div className="flex flex-col gap-0.5 flex-1 min-w-0">
-                <div className="flex items-center gap-2 md:gap-3 w-full">
-                  {currentNote.permission_level === "edit" ? (
-                    <input
-                      type="text"
-                      value={editorTitle}
-                      onChange={e => {
-                        setEditorTitle(e.target.value);
-                        triggerImmediateSave(e.target.value, editorClientId, editorFolderId);
-                      }}
-                      className="text-lg md:text-xl font-bold bg-transparent border-none focus:outline-none focus:ring-0 p-0 text-foreground flex-1 min-w-[200px] truncate"
-                      placeholder="Untitled Document"
-                    />
+          <div className="bg-card shadow-sm rounded-t-3xl shrink-0">
+            {/* Desktop Header Row (Hidden on mobile) */}
+            <div className="hidden sm:flex flex-row items-center justify-between border-b border-border/50 bg-card p-3 shrink-0 rounded-t-3xl gap-4">
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                {/* Back button */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleBackToDashboard}
+                  className="h-9 w-9 rounded-full border border-border bg-background hover:bg-muted shrink-0 cursor-pointer"
+                  title="Back to Notes"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </Button>
+                
+                <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                  <div className="flex items-center gap-2 md:gap-3 w-full">
+                    {currentNote.permission_level === "edit" ? (
+                      <input
+                        type="text"
+                        value={editorTitle}
+                        onChange={e => {
+                          setEditorTitle(e.target.value);
+                          triggerImmediateSave(e.target.value, editorClientId, editorFolderId);
+                        }}
+                        className="text-lg md:text-xl font-bold bg-transparent border-none focus:outline-none focus:ring-0 p-0 text-foreground flex-1 min-w-[200px] truncate"
+                        placeholder="Untitled Document"
+                      />
+                    ) : (
+                      <h2 className="text-lg md:text-xl font-bold p-0 text-foreground truncate flex-1 min-w-0">{editorTitle}</h2>
+                    )}
+                  </div>
+
+                  {/* Folder Selector dropdown row */}
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground select-none">
+                    <div className="flex items-center gap-1 shrink-0">
+                      <HardDrive className="h-3.5 w-3.5 text-primary/70 shrink-0" />
+                      <span className="whitespace-nowrap">Client Folder:</span>
+                      {currentNote.permission_level === "edit" ? (
+                        <Select
+                          value={editorClientId || "none"}
+                          onValueChange={v => {
+                            const nextVal = v === "none" ? "" : v;
+                            setEditorClientId(nextVal);
+                            setEditorFolderId("");
+                            triggerImmediateSave(editorTitle, nextVal, "");
+                          }}
+                        >
+                          <SelectTrigger className="h-5 text-[11px] border-none shadow-none bg-muted/40 hover:bg-muted/70 rounded px-1.5 py-0.5 cursor-pointer font-semibold text-foreground max-w-[400px]">
+                            <SelectValue placeholder="Internal / Personal" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none" className="text-xs cursor-pointer">Internal / Personal</SelectItem>
+                            {clients.map(f => (
+                              <SelectItem key={f.id} value={f.id} className="text-xs cursor-pointer">
+                                {f.company_name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="font-semibold text-foreground">
+                          {currentNote.client_name || "Internal / Personal"}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Sub folder selection */}
+                    <div className="flex items-center gap-1 border-l border-border pl-3 shrink-0">
+                      <Folder className="h-3.5 w-3.5 text-primary/70 shrink-0" />
+                      <span className="whitespace-nowrap">Folder:</span>
+                      {currentNote.permission_level === "edit" ? (
+                        <Select
+                          value={editorFolderId || "none"}
+                          onValueChange={v => {
+                            const nextVal = v === "none" ? "" : v;
+                            setEditorFolderId(nextVal);
+                            triggerImmediateSave(editorTitle, editorClientId, nextVal);
+                          }}
+                        >
+                          <SelectTrigger className="h-5 text-[11px] border-none shadow-none bg-muted/40 hover:bg-muted/70 rounded px-1.5 py-0.5 cursor-pointer font-semibold text-foreground max-w-[350px]">
+                            <SelectValue placeholder="Root Folder" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none" className="text-xs cursor-pointer">Root Folder</SelectItem>
+                            {editorFoldersOptions.map(f => (
+                              <SelectItem key={f.id} value={f.id} className="text-xs cursor-pointer">
+                                {f.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="font-semibold text-foreground">
+                          {editorFolderId ? folders.find(fd => fd.id === editorFolderId)?.name : "Root"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {/* Premium Cloud status badge */}
+                <div className={`flex items-center gap-1.5 px-3 py-1 rounded-xl border text-xs font-semibold select-none shrink-0 h-9 transition-colors duration-200 ${
+                  saveStatus === "unsaved"
+                    ? "bg-amber-500/5 dark:bg-amber-500/10 border-amber-500/10 text-amber-600 dark:text-amber-500"
+                    : "bg-emerald-500/5 dark:bg-emerald-500/10 border-emerald-500/10 text-emerald-600 dark:text-emerald-500"
+                }`}>
+                  {saveStatus === "saving" ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
+                      <span>Saving...</span>
+                    </>
+                  ) : saveStatus === "saved" ? (
+                    <>
+                      <Cloud className="h-4 w-4 shrink-0" />
+                      <span>Saved to Cloud</span>
+                    </>
                   ) : (
-                    <h2 className="text-lg md:text-xl font-bold p-0 text-foreground truncate flex-1 min-w-0">{editorTitle}</h2>
+                    <>
+                      <CloudOff className="h-4 w-4 shrink-0 text-amber-500" />
+                      <span className="font-semibold">Unsaved</span>
+                    </>
                   )}
                 </div>
 
-                {/* Folder Selector dropdown row */}
-                <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground select-none">
-                  <div className="flex items-center gap-1 shrink-0">
-                    <HardDrive className="h-3.5 w-3.5 text-primary/70 shrink-0" />
-                    <span className="whitespace-nowrap">Client Folder:</span>
-                    {currentNote.permission_level === "edit" ? (
-                      <Select
-                        value={editorClientId || "none"}
-                        onValueChange={v => {
-                          const nextVal = v === "none" ? "" : v;
-                          setEditorClientId(nextVal);
-                          // Reset folder selection if client folder changed
-                          setEditorFolderId("");
-                          triggerImmediateSave(editorTitle, nextVal, "");
-                        }}
-                      >
-                        <SelectTrigger className="h-5 text-[11px] border-none shadow-none bg-muted/40 hover:bg-muted/70 rounded px-1.5 py-0.5 cursor-pointer font-semibold text-foreground max-w-[400px]">
-                          <SelectValue placeholder="Internal / Personal" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none" className="text-xs cursor-pointer">Internal / Personal</SelectItem>
-                          {clients.map(f => (
-                            <SelectItem key={f.id} value={f.id} className="text-xs cursor-pointer">
-                              {f.company_name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <span className="font-semibold text-foreground">
-                        {currentNote.client_name || "Internal / Personal"}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Sub folder selection */}
-                  <div className="flex items-center gap-1 border-l border-border pl-3 shrink-0">
-                    <Folder className="h-3.5 w-3.5 text-primary/70 shrink-0" />
-                    <span className="whitespace-nowrap">Folder:</span>
-                    {currentNote.permission_level === "edit" ? (
-                      <Select
-                        value={editorFolderId || "none"}
-                        onValueChange={v => {
-                          const nextVal = v === "none" ? "" : v;
-                          setEditorFolderId(nextVal);
-                          triggerImmediateSave(editorTitle, editorClientId, nextVal);
-                        }}
-                      >
-                        <SelectTrigger className="h-5 text-[11px] border-none shadow-none bg-muted/40 hover:bg-muted/70 rounded px-1.5 py-0.5 cursor-pointer font-semibold text-foreground max-w-[350px]">
-                          <SelectValue placeholder="Root Folder" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none" className="text-xs cursor-pointer">Root Folder</SelectItem>
-                          {editorFoldersOptions.map(f => (
-                            <SelectItem key={f.id} value={f.id} className="text-xs cursor-pointer">
-                              {f.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <span className="font-semibold text-foreground">
-                        {editorFolderId ? folders.find(fd => fd.id === editorFolderId)?.name : "Root"}
-                      </span>
-                    )}
-                  </div>
-                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleOpenSharing}
+                  className="h-9 rounded-xl border-border/60 hover:bg-muted/40 text-xs gap-1.5 cursor-pointer"
+                >
+                  <Share2 className="h-4 w-4" /> Share Access
+                </Button>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              {/* Premium Cloud status badge */}
-              <div className={`flex items-center gap-1.5 px-3 py-1 rounded-xl border text-xs font-semibold select-none shrink-0 h-9 transition-colors duration-200 ${
-                saveStatus === "unsaved"
-                  ? "bg-amber-500/5 dark:bg-amber-500/10 border-amber-500/10 text-amber-600 dark:text-amber-500"
-                  : "bg-emerald-500/5 dark:bg-emerald-500/10 border-emerald-500/10 text-emerald-600 dark:text-emerald-500"
-              }`}>
-                {saveStatus === "saving" ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
-                    <span>Saving...</span>
-                  </>
-                ) : saveStatus === "saved" ? (
-                  <>
-                    <Cloud className="h-4 w-4 shrink-0" />
-                    <span>Saved to Cloud</span>
-                  </>
+            {/* Mobile Header Row (Super compact layout, matches Google Docs mobile app) */}
+            <div className="flex sm:hidden flex-row items-center justify-between border-b border-border/50 bg-card p-2 shrink-0 rounded-t-3xl gap-2 w-full">
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                {/* Back button */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleBackToDashboard}
+                  className="h-8 w-8 rounded-full border border-border bg-background hover:bg-muted shrink-0 cursor-pointer"
+                  title="Back to Notes"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </Button>
+                
+                {/* Title Input */}
+                {currentNote.permission_level === "edit" ? (
+                  <input
+                    type="text"
+                    value={editorTitle}
+                    onChange={e => {
+                      setEditorTitle(e.target.value);
+                      triggerImmediateSave(e.target.value, editorClientId, editorFolderId);
+                    }}
+                    className="text-sm font-bold bg-transparent border-none focus:outline-none focus:ring-0 p-0 text-foreground flex-1 min-w-0 truncate"
+                    placeholder="Untitled Document"
+                  />
                 ) : (
-                  <>
-                    <CloudOff className="h-4 w-4 shrink-0 text-amber-500" />
-                    <span className="font-semibold">Unsaved</span>
-                  </>
+                  <h2 className="text-sm font-bold p-0 text-foreground truncate flex-1 min-w-0">{editorTitle}</h2>
                 )}
               </div>
 
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleOpenSharing}
-                className="h-9 rounded-xl border-border/60 hover:bg-muted/40 text-xs gap-1.5 cursor-pointer"
-              >
-                <Share2 className="h-4 w-4" /> Share Access
-              </Button>
-            </div>
-          </div>
+              {/* Action Controls */}
+              <div className="flex items-center gap-1.5 shrink-0 select-none">
+                {/* Cloud status icon */}
+                <div 
+                  className={cn(
+                    "flex h-8 w-8 items-center justify-center rounded-xl border transition-colors duration-200 shrink-0",
+                    saveStatus === "unsaved"
+                      ? "bg-amber-500/5 border-amber-500/10 text-amber-600 dark:text-amber-500"
+                      : "bg-emerald-500/5 border-emerald-500/10 text-emerald-600 dark:text-emerald-500"
+                  )}
+                  title={saveStatus === "saving" ? "Saving..." : saveStatus === "saved" ? "Saved to Cloud" : "Unsaved"}
+                >
+                  {saveStatus === "saving" ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                  ) : saveStatus === "saved" ? (
+                    <Cloud className="h-4 w-4" />
+                  ) : (
+                    <CloudOff className="h-4 w-4 text-amber-500" />
+                  )}
+                </div>
 
-          {/* Formatting Toolbar */}
+                {/* Move folder trigger */}
+                {currentNote.permission_level === "edit" && (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 rounded-xl border border-border bg-background hover:bg-muted cursor-pointer shrink-0"
+                        title="Move Document"
+                      >
+                        <Folder className="h-4 w-4 text-primary" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[280px] p-4 bg-card border border-border/60 rounded-2xl shadow-xl z-30" align="end">
+                      <h4 className="font-semibold text-sm mb-3 flex items-center gap-1.5">
+                        <Folder className="h-4 w-4 text-primary" /> Move Document
+                      </h4>
+                      <div className="space-y-4">
+                        {/* Client Folder Selector */}
+                        <div className="space-y-1.5">
+                          <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Client Folder</span>
+                          <Select
+                            value={editorClientId || "none"}
+                            onValueChange={v => {
+                              const nextVal = v === "none" ? "" : v;
+                              setEditorClientId(nextVal);
+                              setEditorFolderId("");
+                              triggerImmediateSave(editorTitle, nextVal, "");
+                            }}
+                          >
+                            <SelectTrigger className="h-9 text-xs border border-border/60 bg-muted/20 hover:bg-muted/40 rounded-xl px-2.5 font-semibold text-foreground w-full">
+                              <SelectValue placeholder="Internal / Personal" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none" className="text-xs cursor-pointer">Internal / Personal</SelectItem>
+                              {clients.map(f => (
+                                <SelectItem key={f.id} value={f.id} className="text-xs cursor-pointer">
+                                  {f.company_name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Sub-folder Selector */}
+                        <div className="space-y-1.5">
+                          <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Subfolder</span>
+                          <Select
+                            value={editorFolderId || "none"}
+                            onValueChange={v => {
+                              const nextVal = v === "none" ? "" : v;
+                              setEditorFolderId(nextVal);
+                              triggerImmediateSave(editorTitle, editorClientId, nextVal);
+                            }}
+                          >
+                            <SelectTrigger className="h-9 text-xs border border-border/60 bg-muted/20 hover:bg-muted/40 rounded-xl px-2.5 font-semibold text-foreground w-full">
+                              <SelectValue placeholder="Root Folder" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none" className="text-xs cursor-pointer">Root Folder</SelectItem>
+                              {editorFoldersOptions.map(f => (
+                                <SelectItem key={f.id} value={f.id} className="text-xs cursor-pointer">
+                                  {f.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                )}
+
+                {/* Share Access Trigger */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleOpenSharing}
+                  className="h-8 w-8 rounded-xl border border-border bg-background hover:bg-muted cursor-pointer shrink-0"
+                  title="Share Access"
+                >
+                  <Share2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            {/* Formatting Toolbar */}
           {currentNote.permission_level === "edit" ? (
-            <div className="flex flex-wrap items-center gap-1 bg-card/95 p-2 shrink-0 transition-all">
+            <div className="hidden md:flex flex-wrap items-center gap-1 bg-card/95 p-2 shrink-0 transition-all border-b border-border/40">
               {/* Format Painter */}
               <Button
                 size="icon"
@@ -1968,14 +2109,14 @@ export default function NotesPage() {
               </Button>
             </div>
           ) : (
-            <div className="flex items-center gap-2 bg-muted/90 p-2 shrink-0 text-xs text-muted-foreground px-4 py-2 font-medium">
+            <div className="flex items-center gap-2 bg-muted/90 p-2 shrink-0 text-xs text-muted-foreground px-4 py-2 font-medium border-b border-border/40">
               <Lock className="h-3.5 w-3.5 text-muted-foreground" /> Read-Only Mode. You do not have permissions to edit this document.
             </div>
           )}
           </div>
 
           {/* Pageless Workspace Canvas */}
-          <div className="flex-1 bg-background overflow-auto flex justify-center min-h-[500px] rounded-b-3xl">
+          <div className="flex-1 bg-background overflow-auto flex justify-center min-h-[500px] rounded-none md:rounded-b-3xl">
             <div 
               ref={editorRef}
               contentEditable={currentNote.permission_level === "edit"}
@@ -1986,6 +2127,620 @@ export default function NotesPage() {
               style={{ outline: 'none' }}
             />
           </div>
+
+          {/* Mobile Formatting Toolbar (Bottom sticky on mobile) */}
+          {currentNote.permission_level === "edit" ? (
+            <>
+              <style>{`
+                .no-scrollbar::-webkit-scrollbar {
+                  display: none;
+                }
+              `}</style>
+              <div 
+                className="md:hidden flex items-center gap-1.5 bg-card/95 backdrop-blur-md border-t border-border/40 p-2 overflow-x-auto whitespace-nowrap shrink-0 no-scrollbar rounded-b-3xl"
+                style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+              >
+                {/* Paint format */}
+                <Button
+                  size="icon"
+                  variant={isFormatPainterActive ? "secondary" : "ghost"}
+                  className={cn(
+                    "h-9 w-9 shrink-0 hover:bg-muted cursor-pointer rounded-lg transition-colors",
+                    isFormatPainterActive && "bg-primary/15 text-primary hover:bg-primary/20 border border-primary/20"
+                  )}
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    handleFormatPainterClick();
+                  }}
+                  title="Paint format"
+                >
+                  <Paintbrush className="h-4.5 w-4.5" />
+                </Button>
+
+                <div className="h-5 w-[1px] bg-border shrink-0 mx-0.5" />
+
+                {/* Bold */}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-9 w-9 shrink-0 hover:bg-muted cursor-pointer rounded-lg"
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    handleApplyStyle("bold");
+                  }}
+                  title="Bold (Ctrl+B)"
+                >
+                  <Bold className="h-4.5 w-4.5" />
+                </Button>
+                
+                {/* Italic */}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-9 w-9 shrink-0 hover:bg-muted cursor-pointer rounded-lg"
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    handleApplyStyle("italic");
+                  }}
+                  title="Italic (Ctrl+I)"
+                >
+                  <Italic className="h-4.5 w-4.5" />
+                </Button>
+
+                {/* Underline */}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-9 w-9 shrink-0 hover:bg-muted cursor-pointer rounded-lg"
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    handleApplyStyle("underline");
+                  }}
+                  title="Underline (Ctrl+U)"
+                >
+                  <Underline className="h-4.5 w-4.5" />
+                </Button>
+
+                <div className="h-5 w-[1px] bg-border shrink-0 mx-0.5" />
+
+                {/* Bullet list */}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-9 w-9 shrink-0 hover:bg-muted cursor-pointer rounded-lg"
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    handleApplyStyle("insertUnorderedList");
+                  }}
+                  title="Bullet List"
+                >
+                  <List className="h-4.5 w-4.5" />
+                </Button>
+
+                {/* Numbered list */}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-9 w-9 shrink-0 hover:bg-muted cursor-pointer rounded-lg"
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    handleApplyStyle("insertOrderedList");
+                  }}
+                  title="Numbered List"
+                >
+                  <ListOrdered className="h-4.5 w-4.5" />
+                </Button>
+
+                <div className="h-5 w-[1px] bg-border shrink-0 mx-0.5" />
+
+                {/* Align Left */}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-9 w-9 shrink-0 hover:bg-muted cursor-pointer rounded-lg"
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    handleApplyStyle("justifyLeft");
+                  }}
+                  title="Align Left"
+                >
+                  <AlignLeft className="h-4.5 w-4.5" />
+                </Button>
+
+                {/* Align Center */}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-9 w-9 shrink-0 hover:bg-muted cursor-pointer rounded-lg"
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    handleApplyStyle("justifyCenter");
+                  }}
+                  title="Align Center"
+                >
+                  <AlignCenter className="h-4.5 w-4.5" />
+                </Button>
+
+                {/* Align Right */}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-9 w-9 shrink-0 hover:bg-muted cursor-pointer rounded-lg"
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    handleApplyStyle("justifyRight");
+                  }}
+                  title="Align Right"
+                >
+                  <AlignRight className="h-4.5 w-4.5" />
+                </Button>
+
+                <div className="h-5 w-[1px] bg-border shrink-0 mx-0.5" />
+
+                {/* Eraser */}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-9 w-9 shrink-0 hover:bg-muted text-destructive cursor-pointer rounded-lg"
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    handleApplyStyle("removeFormat");
+                  }}
+                  title="Clear Formatting"
+                >
+                  <Eraser className="h-4.5 w-4.5" />
+                </Button>
+
+                {/* Format options trigger */}
+                <Button
+                  size="icon"
+                  variant={isFormatPanelOpen ? "secondary" : "ghost"}
+                  className={cn(
+                    "h-9 w-9 shrink-0 hover:bg-muted cursor-pointer rounded-lg ml-auto transition-colors",
+                    isFormatPanelOpen && "bg-primary/15 text-primary hover:bg-primary/20 border border-primary/20"
+                  )}
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    setIsFormatPanelOpen(!isFormatPanelOpen);
+                  }}
+                  title="Format options"
+                >
+                  <Baseline className="h-4.5 w-4.5" />
+                </Button>
+              </div>
+
+              {/* Mobile Bottom Format Panel Drawer */}
+              {isFormatPanelOpen && (
+                <>
+                  {/* Backdrop */}
+                  <div 
+                    className="md:hidden fixed inset-0 z-40 bg-background/40 backdrop-blur-xs transition-opacity duration-300"
+                    onClick={() => setIsFormatPanelOpen(false)}
+                  />
+                  
+                  {/* Slide up Drawer */}
+                  <div className="md:hidden fixed inset-x-0 bottom-0 z-50 flex flex-col bg-card/98 backdrop-blur-md border-t border-border/60 rounded-t-3xl shadow-2xl max-h-[80vh] overflow-hidden transition-transform duration-300 transform translate-y-0 pb-safe">
+                    {/* Drag Handle & Header */}
+                    <div className="flex flex-col items-center shrink-0 border-b border-border/40 pb-2">
+                      <div className="w-12 h-1.5 rounded-full bg-muted-foreground/20 my-3 cursor-pointer" onClick={() => setIsFormatPanelOpen(false)} />
+                      <div className="flex items-center justify-between w-full px-5 pb-1">
+                        <span className="text-base font-bold text-foreground">Format</span>
+                        <button 
+                          onClick={() => setIsFormatPanelOpen(false)}
+                          className="p-1 hover:bg-muted rounded-full cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          <Check className="h-5 w-5 text-primary" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Tabs */}
+                    <div className="flex border-b border-border/40 bg-muted/10 shrink-0 select-none">
+                      <button 
+                        onClick={() => setActiveFormatTab("text")}
+                        className={cn(
+                          "flex-1 py-3 text-center text-sm font-bold border-b-2 transition-colors duration-200 cursor-pointer",
+                          activeFormatTab === "text" 
+                            ? "border-primary text-primary" 
+                            : "border-transparent text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        Text
+                      </button>
+                      <button 
+                        onClick={() => setActiveFormatTab("paragraph")}
+                        className={cn(
+                          "flex-1 py-3 text-center text-sm font-bold border-b-2 transition-colors duration-200 cursor-pointer",
+                          activeFormatTab === "paragraph" 
+                            ? "border-primary text-primary" 
+                            : "border-transparent text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        Paragraph
+                      </button>
+                    </div>
+
+                    {/* Drawer Content Area */}
+                    <div className="flex-1 overflow-y-auto p-5 space-y-6">
+                      {activeFormatTab === "text" ? (
+                        /* TEXT TAB CONTENT */
+                        <div className="space-y-6">
+                          {/* Font selector */}
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Font Family</label>
+                            <Select
+                              value={selectedFont}
+                              onValueChange={v => {
+                                setSelectedFont(v);
+                                handleApplyStyle("fontName", v);
+                              }}
+                              onOpenChange={open => {
+                                if (open) {
+                                  saveSelection();
+                                } else {
+                                  setTimeout(() => {
+                                    restoreSelection();
+                                    if (editorRef.current && document.activeElement !== editorRef.current) {
+                                      editorRef.current.focus();
+                                    }
+                                  }, 50);
+                                }
+                              }}
+                            >
+                              <SelectTrigger className="w-full h-11 text-sm border border-border/60 cursor-pointer rounded-xl bg-background [&>span]:flex [&>span]:items-center [&>span]:gap-2 px-3.5">
+                                <Type className="h-4 w-4 text-primary shrink-0" />
+                                <span className="truncate">{selectedFont}</span>
+                              </SelectTrigger>
+                              <SelectContent className="max-h-[300px]">
+                                <SelectItem value="Inter" className="text-sm font-sans cursor-pointer">Inter</SelectItem>
+                                <SelectItem value="Roboto" className="text-sm font-sans cursor-pointer">Roboto</SelectItem>
+                                <SelectItem value="Outfit" className="text-sm font-sans cursor-pointer">Outfit</SelectItem>
+                                <SelectItem value="Poppins" className="text-sm font-sans cursor-pointer">Poppins</SelectItem>
+                                <SelectItem value="Montserrat" className="text-sm font-sans cursor-pointer">Montserrat</SelectItem>
+                                <SelectItem value="Open Sans" className="text-sm font-sans cursor-pointer">Open Sans</SelectItem>
+                                <SelectItem value="Lato" className="text-sm font-sans cursor-pointer">Lato</SelectItem>
+                                <SelectItem value="Josefin Sans" className="text-sm font-sans cursor-pointer">Josefin Sans</SelectItem>
+                                <SelectItem value="Ubuntu" className="text-sm font-sans cursor-pointer">Ubuntu</SelectItem>
+                                <SelectItem value="Nunito" className="text-sm font-sans cursor-pointer">Nunito</SelectItem>
+                                <SelectItem value="Oswald" className="text-sm font-sans cursor-pointer" style={{ fontFamily: 'Oswald, sans-serif' }}>Oswald</SelectItem>
+                                <SelectItem value="Playfair Display" className="text-sm serif cursor-pointer" style={{ fontFamily: 'Playfair Display, serif' }}>Playfair Display</SelectItem>
+                                <SelectItem value="Lora" className="text-sm serif cursor-pointer" style={{ fontFamily: 'Lora, serif' }}>Lora</SelectItem>
+                                <SelectItem value="Merriweather" className="text-sm serif cursor-pointer" style={{ fontFamily: 'Merriweather, serif' }}>Merriweather</SelectItem>
+                                <SelectItem value="Cinzel" className="text-sm serif cursor-pointer" style={{ fontFamily: 'Cinzel, serif' }}>Cinzel</SelectItem>
+                                <SelectItem value="Fira Code" className="text-sm monospace cursor-pointer" style={{ fontFamily: 'Fira Code, monospace' }}>Fira Code</SelectItem>
+                                <SelectItem value="Source Code Pro" className="text-sm monospace cursor-pointer" style={{ fontFamily: 'Source Code Pro, monospace' }}>Source Code Pro</SelectItem>
+                                <SelectItem value="Pacifico" className="text-sm cursor-pointer" style={{ fontFamily: 'Pacifico, cursive' }}>Pacifico</SelectItem>
+                                <SelectItem value="Dancing Script" className="text-sm cursor-pointer" style={{ fontFamily: 'Dancing Script, cursive' }}>Dancing Script</SelectItem>
+                                <SelectItem value="Hind Siliguri" className="text-sm cursor-pointer" style={{ fontFamily: 'Hind Siliguri, sans-serif' }}>Hind Siliguri</SelectItem>
+                                <SelectItem value="Baloo Da 2" className="text-sm cursor-pointer" style={{ fontFamily: 'Baloo Da 2, cursive' }}>Baloo Da 2</SelectItem>
+                                <SelectItem value="Anek Bangla" className="text-sm cursor-pointer" style={{ fontFamily: 'Anek Bangla, sans-serif' }}>Anek Bangla</SelectItem>
+                                <SelectItem value="Noto Sans Bengali" className="text-sm cursor-pointer" style={{ fontFamily: 'Noto Sans Bengali, sans-serif' }}>Noto Sans Bengali</SelectItem>
+                                <SelectItem value="Noto Serif Bengali" className="text-sm cursor-pointer" style={{ fontFamily: 'Noto Serif Bengali, serif' }}>Noto Serif Bengali</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Text Format (Headings/Paragraph) */}
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Text Format</label>
+                            <Select
+                              onValueChange={v => {
+                                handleApplyStyle("formatBlock", v);
+                              }}
+                              onOpenChange={open => {
+                                if (open) {
+                                  saveSelection();
+                                } else {
+                                  setTimeout(() => {
+                                    restoreSelection();
+                                    if (editorRef.current && document.activeElement !== editorRef.current) {
+                                      editorRef.current.focus();
+                                    }
+                                  }, 50);
+                                }
+                              }}
+                            >
+                              <SelectTrigger className="w-full h-11 text-sm border border-border/60 cursor-pointer rounded-xl bg-background px-3.5">
+                                <SelectValue placeholder="Paragraph / Heading" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="p" className="text-sm cursor-pointer">Paragraph</SelectItem>
+                                <SelectItem value="h1" className="text-sm font-bold cursor-pointer">Heading 1</SelectItem>
+                                <SelectItem value="h2" className="text-sm font-bold cursor-pointer">Heading 2</SelectItem>
+                                <SelectItem value="h3" className="text-sm font-bold cursor-pointer">Heading 3</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Text Color (Solid circular buttons) */}
+                          <div className="space-y-2.5">
+                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block">Text Color</label>
+                            <div className="flex flex-wrap items-center gap-3">
+                              {[
+                                { value: "#000000", label: "Default" },
+                                { value: "#2563eb", label: "Blue" },
+                                { value: "#dc2626", label: "Red" },
+                                { value: "#16a34a", label: "Green" },
+                                { value: "#eab308", label: "Yellow" },
+                                { value: "#7c3aed", label: "Violet" }
+                              ].map((colorObj) => {
+                                const isCurrent = selectedColor === colorObj.value;
+                                return (
+                                  <button
+                                    key={colorObj.value}
+                                    onClick={() => {
+                                      setSelectedColor(colorObj.value);
+                                      handleApplyStyle("foreColor", colorObj.value);
+                                    }}
+                                    className={cn(
+                                      "h-10 w-10 rounded-full border shadow-sm transition-transform active:scale-95 cursor-pointer relative flex items-center justify-center",
+                                      isCurrent ? "scale-110 border-primary border-2 shadow" : "border-border/60"
+                                    )}
+                                    style={{ backgroundColor: colorObj.value === "#000000" ? "#fff" : colorObj.value }}
+                                    title={colorObj.label}
+                                  >
+                                    {isCurrent && (
+                                      <Check 
+                                        className={cn(
+                                          "h-5 w-5",
+                                          colorObj.value === "#000000" || colorObj.value === "#eab308" ? "text-slate-900" : "text-white"
+                                        )} 
+                                      />
+                                    )}
+                                    {colorObj.value === "#000000" && !isCurrent && (
+                                      <span className="text-[10px] text-slate-800 font-bold">Default</span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Quick Character Styling */}
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Quick Styling</label>
+                            <div className="grid grid-cols-4 gap-2">
+                              <Button
+                                size="lg"
+                                variant="outline"
+                                className="rounded-xl cursor-pointer hover:bg-muted text-foreground flex items-center justify-center h-12"
+                                onMouseDown={e => {
+                                  e.preventDefault();
+                                  handleApplyStyle("bold");
+                                }}
+                              >
+                                <Bold className="h-5 w-5" />
+                              </Button>
+                              <Button
+                                size="lg"
+                                variant="outline"
+                                className="rounded-xl cursor-pointer hover:bg-muted text-foreground flex items-center justify-center h-12"
+                                onMouseDown={e => {
+                                  e.preventDefault();
+                                  handleApplyStyle("italic");
+                                }}
+                              >
+                                <Italic className="h-5 w-5" />
+                              </Button>
+                              <Button
+                                size="lg"
+                                variant="outline"
+                                className="rounded-xl cursor-pointer hover:bg-muted text-foreground flex items-center justify-center h-12"
+                                onMouseDown={e => {
+                                  e.preventDefault();
+                                  handleApplyStyle("underline");
+                                }}
+                              >
+                                <Underline className="h-5 w-5" />
+                              </Button>
+                              <Button
+                                size="lg"
+                                variant="outline"
+                                className="rounded-xl cursor-pointer hover:bg-muted text-destructive flex items-center justify-center h-12"
+                                onMouseDown={e => {
+                                  e.preventDefault();
+                                  handleApplyStyle("removeFormat");
+                                }}
+                                title="Clear formatting"
+                              >
+                                <Eraser className="h-5 w-5" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        /* PARAGRAPH TAB CONTENT */
+                        <div className="space-y-6">
+                          {/* Alignments */}
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Alignment</label>
+                            <div className="grid grid-cols-3 gap-2">
+                              <Button
+                                size="lg"
+                                variant="outline"
+                                className="rounded-xl cursor-pointer hover:bg-muted text-foreground flex items-center justify-center h-12"
+                                onMouseDown={e => {
+                                  e.preventDefault();
+                                  handleApplyStyle("justifyLeft");
+                                }}
+                              >
+                                <AlignLeft className="h-5 w-5" />
+                              </Button>
+                              <Button
+                                size="lg"
+                                variant="outline"
+                                className="rounded-xl cursor-pointer hover:bg-muted text-foreground flex items-center justify-center h-12"
+                                onMouseDown={e => {
+                                  e.preventDefault();
+                                  handleApplyStyle("justifyCenter");
+                                }}
+                              >
+                                <AlignCenter className="h-5 w-5" />
+                              </Button>
+                              <Button
+                                size="lg"
+                                variant="outline"
+                                className="rounded-xl cursor-pointer hover:bg-muted text-foreground flex items-center justify-center h-12"
+                                onMouseDown={e => {
+                                  e.preventDefault();
+                                  handleApplyStyle("justifyRight");
+                                }}
+                              >
+                                <AlignRight className="h-5 w-5" />
+                              </Button>
+                            </div>
+                          </div>
+
+                          {/* Lists */}
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Lists</label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <Button
+                                size="lg"
+                                variant="outline"
+                                className="rounded-xl cursor-pointer hover:bg-muted text-foreground flex items-center justify-center h-12 gap-2 text-sm"
+                                onMouseDown={e => {
+                                  e.preventDefault();
+                                  handleApplyStyle("insertUnorderedList");
+                                }}
+                              >
+                                <List className="h-5 w-5 text-primary" /> Bullet List
+                              </Button>
+                              <Button
+                                size="lg"
+                                variant="outline"
+                                className="rounded-xl cursor-pointer hover:bg-muted text-foreground flex items-center justify-center h-12 gap-2 text-sm"
+                                onMouseDown={e => {
+                                  e.preventDefault();
+                                  handleApplyStyle("insertOrderedList");
+                                }}
+                              >
+                                <ListOrdered className="h-5 w-5 text-primary" /> Numbered List
+                              </Button>
+                            </div>
+                          </div>
+
+                          {/* Table Insertion (Quick mobile grid selection 5x5) */}
+                          <div className="space-y-3">
+                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block">
+                              {hoveredRowMobile > 0 && hoveredColMobile > 0 ? `Insert ${hoveredRowMobile} × ${hoveredColMobile} Table` : "Quick Insert Table"}
+                            </label>
+                            <div className="bg-muted/30 border border-border/50 rounded-2xl p-4 flex flex-col items-center justify-center">
+                              <div 
+                                className="grid grid-cols-5 gap-2.5"
+                                onMouseLeave={() => {
+                                  setHoveredRowMobile(0);
+                                  setHoveredColMobile(0);
+                                }}
+                              >
+                                {Array.from({ length: 25 }).map((_, index) => {
+                                  const r = Math.floor(index / 5) + 1;
+                                  const c = (index % 5) + 1;
+                                  const isHighlighted = r <= hoveredRowMobile && c <= hoveredColMobile;
+                                  return (
+                                    <div
+                                      key={index}
+                                      className={cn(
+                                        "h-7 w-7 rounded-lg border border-border/70 cursor-pointer transition-all duration-100 flex items-center justify-center",
+                                        isHighlighted 
+                                          ? "bg-primary border-primary shadow-sm" 
+                                          : "bg-background hover:bg-muted/80"
+                                      )}
+                                      onMouseEnter={() => {
+                                        setHoveredRowMobile(r);
+                                        setHoveredColMobile(c);
+                                      }}
+                                      onMouseDown={e => {
+                                        e.preventDefault();
+                                      }}
+                                      onClick={() => {
+                                        insertTable(r, c);
+                                        setIsFormatPanelOpen(false);
+                                        setHoveredRowMobile(0);
+                                        setHoveredColMobile(0);
+                                      }}
+                                    />
+                                  );
+                                })}
+                              </div>
+                              <span className="text-[10px] text-muted-foreground mt-3 font-semibold select-none">
+                                Drag or tap a cell above to insert table
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Table Actions (if inside a table) */}
+                          {isInsideTable && (
+                            <div className="space-y-3">
+                              <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block">Table Actions</label>
+                              <div className="grid grid-cols-2 gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={insertRowAbove}
+                                  className="text-xs cursor-pointer rounded-xl h-10"
+                                >
+                                  Insert Row Above
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={insertRowBelow}
+                                  className="text-xs cursor-pointer rounded-xl h-10"
+                                >
+                                  Insert Row Below
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={insertColumnLeft}
+                                  className="text-xs cursor-pointer rounded-xl h-10"
+                                >
+                                  Insert Col Left
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={insertColumnRight}
+                                  className="text-xs cursor-pointer rounded-xl h-10"
+                                >
+                                  Insert Col Right
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={deleteRow}
+                                  className="text-xs cursor-pointer rounded-xl h-10 bg-destructive/10 text-destructive border-transparent hover:bg-destructive/20"
+                                >
+                                  Delete Row
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={deleteColumn}
+                                  className="text-xs cursor-pointer rounded-xl h-10 bg-destructive/10 text-destructive border-transparent hover:bg-destructive/20"
+                                >
+                                  Delete Col
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={deleteTable}
+                                  className="col-span-2 text-xs font-bold cursor-pointer rounded-xl h-10 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                >
+                                  Delete Table
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </>
+          ) : null}
         </div>
       )}
 
