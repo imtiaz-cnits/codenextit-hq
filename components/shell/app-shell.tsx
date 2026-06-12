@@ -51,6 +51,7 @@ export const STAFF_GROUPS: { label: string; items: NavItem[] }[] = [
     items: [
       { to: "/leads", label: "Leads Pipeline", icon: TrendingUp, module: "leads" },
       { to: "/clients", label: "Clients", icon: Users, module: "clients" },
+      { to: "/crm/agreements", label: "Agreements", icon: FileSpreadsheet, module: "clients" },
     ],
   },
   {
@@ -87,11 +88,8 @@ export const STAFF_GROUPS: { label: string; items: NavItem[] }[] = [
     items: [
       { to: "/finance/quotes", label: "Quotations", icon: FileText, module: "finance" },
       { to: "/finance/invoices", label: "Invoices", icon: Receipt, module: "finance" },
-      { to: "/accounts/income", label: "Income", icon: ArrowDownCircle, module: "accounts" },
-      { to: "/accounts/expense", label: "Expense", icon: ArrowUpCircle, module: "accounts" },
-      { to: "/accounts/investment", label: "Investment", icon: PiggyBank, module: "accounts" },
-      { to: "/accounts/due", label: "Due", icon: AlertCircle, module: "accounts" },
-      { to: "/accounts/salary", label: "Salary Sheet", icon: Banknote, module: "accounts" },
+      { to: "/finance/transactions", label: "Transactions Ledger", icon: Wallet, module: "finance" },
+      { to: "/finance/reports", label: "Financial Reports", icon: TrendingUp, module: "finance" },
     ],
   },
   {

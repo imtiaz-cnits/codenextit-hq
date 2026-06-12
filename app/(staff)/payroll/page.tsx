@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { supabase } from "../../../integrations/supabase/client";
 import { useAuth } from "../../../lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
@@ -17,11 +17,25 @@ import { formatCurrency, initials, avatarColor } from "../../../lib/format";
 import { toast } from "sonner";
 import { TableSkeleton } from "../../../components/loading-skeletons";
 
-interface PayrollRow {
-  id: string; employee_id: string; month: string;
-  base: number; bonus: number; deduction: number; net: number | null;
-  status: string; paid_at: string | null;
+interface Allowances {
+  transport: number;
+  medical: number;
+  mobile: number;
+  other: number;
 }
+
+interface SalarySheetRow {
+  id: string;
+  employee_id: string;
+  month: string;
+  base_salary: number;
+  allowances: Allowances;
+  deductions: number;
+  net_payable: number;
+  status: "draft" | "approved" | "paid";
+  paid_at: string | null;
+}
+
 interface Employee { 
   id: string; 
   profile_id: string; 
@@ -33,19 +47,21 @@ interface Employee {
 
 export default function PayrollPage() {
   const { user, hasRole } = useAuth();
-  const isSuperAdmin = hasRole("super_admin");
+  const isSuperAdmin = hasRole("super_admin") || hasRole("project_manager");
   
-  const [payrolls, setPayrolls] = useState<PayrollRow[]>([]);
+  const [payrolls, setPayrolls] = useState<SalarySheetRow[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void load();
+  }, []);
 
   async function load() {
     setLoading(true);
     
-    let payQuery = supabase.from("payroll").select("*").order("created_at", { ascending: false });
+    let payQuery = supabase.from("salary_sheets" as any).select("*").order("created_at", { ascending: false });
     let empQuery = supabase.from("employees").select("id, profile_id, base_salary, status, profiles(full_name, avatar_url)");
     
     if (!isSuperAdmin && user?.id) {
@@ -55,7 +71,6 @@ export default function PayrollPage() {
         payQuery = payQuery.eq("employee_id", selfEmp.id);
         empQuery = empQuery.eq("id", selfEmp.id);
       } else {
-        // No employee record found for this user
         setPayrolls([]);
         setEmployees([]);
         setLoading(false);
@@ -80,40 +95,52 @@ export default function PayrollPage() {
       .filter((e) => e.status !== "disabled");
 
     setEmployees(formattedEmp);
-    setPayrolls((pay ?? []) as unknown as PayrollRow[]);
+    setPayrolls((pay ?? []) as unknown as SalarySheetRow[]);
     setLoading(false);
   }
 
   const filtered = payrolls.filter((p) => p.month === month);
-  const totalPaid = filtered.filter((p) => p.status === "paid").reduce((s, p) => s + (p.net || 0), 0);
-  const totalDraft = filtered.filter((p) => p.status === "draft").reduce((s, p) => s + (p.net || 0), 0);
+  const totalPaid = filtered.filter((p) => p.status === "paid").reduce((s, p) => s + (p.net_payable || 0), 0);
+  const totalDraft = filtered.filter((p) => p.status !== "paid").reduce((s, p) => s + (p.net_payable || 0), 0);
 
   async function generateForMonth() {
     const existing = new Set(payrolls.filter((p) => p.month === month).map((p) => p.employee_id));
     const toGen = employees.filter((e) => !existing.has(e.id));
     if (toGen.length === 0) return toast.info("All employees already in this month's run");
 
-    const batch = toGen.map((e) => ({
-      employee_id: e.id,
-      month,
-      base: e.base_salary,
-      bonus: 0,
-      deduction: 0,
-      status: "draft" as const,
-    }));
+    const batch = toGen.map((e) => {
+      const baseSalary = e.base_salary || 0;
+      const allowances: Allowances = { transport: 0, medical: 0, mobile: 0, other: 0 };
+      return {
+        employee_id: e.id,
+        month,
+        base_salary: baseSalary,
+        allowances,
+        deductions: 0,
+        net_payable: baseSalary,
+        status: "draft" as const,
+      };
+    });
 
-    const { error } = await supabase.from("payroll").insert(batch);
+    const { error } = await supabase.from("salary_sheets" as any).insert(batch);
     if (error) return toast.error(error.message);
 
-    toast.success(`Generated ${toGen.length} draft payslips`);
+    toast.success(`Generated ${toGen.length} draft salary sheets`);
     void load();
   }
 
-  async function setStatus(id: string, status: "paid" | "draft") {
+  async function setStatus(id: string, status: "paid" | "approved" | "draft") {
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    
     const { error } = await supabase
-      .from("payroll")
-      .update({ status, paid_at: status === "paid" ? new Date().toISOString() : null })
+      .from("salary_sheets" as any)
+      .update({ 
+        status, 
+        paid_at: status === "paid" ? new Date().toISOString() : null,
+        recorded_by: currentUser?.id || null
+      })
       .eq("id", id);
+
     if (error) return toast.error(error.message);
     void load();
   }
@@ -124,8 +151,12 @@ export default function PayrollPage() {
     <div className="space-y-6">
       <div className="flex items-end justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Payroll</h1>
-          <p className="text-muted-foreground mt-1">{isSuperAdmin ? "Generate payslips and mark them paid." : "View your monthly salary slips and status."}</p>
+          <h1 className="text-3xl font-bold tracking-tight">Staff Payroll</h1>
+          <p className="text-muted-foreground mt-1">
+            {isSuperAdmin 
+              ? "Generate monthly salary sheets, add allowances/deductions, and process payouts." 
+              : "View your monthly salary slips and payment status."}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="w-[170px]" />
@@ -138,65 +169,84 @@ export default function PayrollPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <Card><CardContent className="p-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Card className="bg-card/45 border-border/50"><CardContent className="p-5">
           <CardDescription className="text-xs uppercase tracking-wider">Paid this month</CardDescription>
           <div className="flex items-end justify-between mt-1">
             <p className="text-3xl font-bold">{formatCurrency(totalPaid, "BDT")}</p>
-            <Badge className="bg-success text-success-foreground">{filtered.filter((p) => p.status === "paid").length} payslips</Badge>
+            <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20">{filtered.filter((p) => p.status === "paid").length} payouts</Badge>
           </div>
         </CardContent></Card>
-        <Card><CardContent className="p-5">
-          <CardDescription className="text-xs uppercase tracking-wider">Pending (draft)</CardDescription>
+        <Card className="bg-card/45 border-border/50"><CardContent className="p-5">
+          <CardDescription className="text-xs uppercase tracking-wider">Pending (draft / approved)</CardDescription>
           <div className="flex items-end justify-between mt-1">
             <p className="text-3xl font-bold">{formatCurrency(totalDraft, "BDT")}</p>
-            <Badge variant="secondary">{filtered.filter((p) => p.status === "draft").length} drafts</Badge>
+            <Badge variant="secondary" className="bg-muted/50 border">{filtered.filter((p) => p.status !== "paid").length} sheets</Badge>
           </div>
         </CardContent></Card>
       </div>
 
-      <Card>
-        <CardHeader><CardTitle className="text-base">Payslips · {month}</CardTitle></CardHeader>
-        <CardContent>
+      <Card className="bg-card/45 border-border/50">
+        <CardHeader><CardTitle className="text-base">Salary Sheets · {month}</CardTitle></CardHeader>
+        <CardContent className="p-0 overflow-x-auto">
           <Table>
             <TableHeader><TableRow>
-              {isSuperAdmin && <TableHead>Employee</TableHead>}
-              <TableHead>Base</TableHead><TableHead>Bonus</TableHead>
-              <TableHead>Deduction</TableHead><TableHead>Net</TableHead>
-              <TableHead>Status</TableHead><TableHead className="text-right">Action</TableHead>
+              {isSuperAdmin && <TableHead className="pl-6">Employee</TableHead>}
+              <TableHead>Base Salary</TableHead>
+              <TableHead>Allowances</TableHead>
+              <TableHead>Deductions</TableHead>
+              <TableHead>Net Payable</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right pr-6">Action</TableHead>
             </TableRow></TableHeader>
             <TableBody>
               {filtered.length === 0 && <TableRow><TableCell colSpan={isSuperAdmin ? 7 : 6} className="text-center text-sm text-muted-foreground py-8">No payslips for {month}.</TableCell></TableRow>}
               {filtered.map((p) => {
                 const e = employees.find((x) => x.id === p.employee_id);
-                const net = (p.base || 0) + (p.bonus || 0) - (p.deduction || 0);
+                const transport = Number(p.allowances?.transport || 0);
+                const medical = Number(p.allowances?.medical || 0);
+                const mobile = Number(p.allowances?.mobile || 0);
+                const other = Number(p.allowances?.other || 0);
+                const totalAllowances = transport + medical + mobile + other;
+
                 return (
-                  <TableRow key={p.id}>
+                  <TableRow key={p.id} className="hover:bg-muted/10">
                     {isSuperAdmin && (
-                      <TableCell>
+                      <TableCell className="pl-6">
                         {e ? (
                           <div className="flex items-center gap-2">
-                            <Avatar className="h-7 w-7">
+                            <Avatar className="h-8 w-8 shrink-0">
                               {e.avatar_url && <AvatarImage src={e.avatar_url} className="object-cover" />}
                               <AvatarFallback className={avatarColor(e.full_name)}>{initials(e.full_name)}</AvatarFallback>
                             </Avatar>
-                            <span className="font-medium text-sm">{e.full_name}</span>
+                            <span className="font-semibold text-sm">{e.full_name}</span>
                           </div>
                         ) : "—"}
                       </TableCell>
                     )}
-                    <TableCell className="font-mono text-xs">{formatCurrency(p.base, "BDT")}</TableCell>
-                    <TableCell className="font-mono text-xs text-success">+{formatCurrency(p.bonus, "BDT")}</TableCell>
-                    <TableCell className="font-mono text-xs text-destructive">-{formatCurrency(p.deduction, "BDT")}</TableCell>
-                    <TableCell className="font-mono text-sm font-semibold">{formatCurrency(net, "BDT")}</TableCell>
-                    <TableCell><Badge variant={p.status === "paid" ? "default" : "secondary"} className="capitalize">{p.status}</Badge></TableCell>
-                    <TableCell className="text-right">
-                      {isSuperAdmin && p.status === "draft" ? (
-                        <Button size="sm" onClick={() => { void setStatus(p.id, "paid"); toast.success("Marked as paid"); }}>
-                          <DollarSign className="h-3.5 w-3.5 mr-1" /> Mark paid
+                    <TableCell className="font-mono text-xs">{formatCurrency(p.base_salary, "BDT")}</TableCell>
+                    <TableCell className="font-mono text-xs text-emerald-500">
+                      +{formatCurrency(totalAllowances, "BDT")}
+                      {totalAllowances > 0 && (
+                        <span className="text-[9px] text-muted-foreground block">
+                          Trans: {transport} | Med: {medical}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-rose-500">-{formatCurrency(p.deductions, "BDT")}</TableCell>
+                    <TableCell className="font-mono text-sm font-bold">{formatCurrency(p.net_payable, "BDT")}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={`capitalize ${p.status === "paid" ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : p.status === "approved" ? "bg-blue-500/10 text-blue-500 border-blue-500/20" : "bg-slate-500/10 text-slate-500 border-slate-500/20"}`}>
+                        {p.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right pr-6">
+                      {isSuperAdmin && p.status !== "paid" ? (
+                        <Button size="sm" onClick={() => { void setStatus(p.id, "paid"); toast.success("Payout registered and expense ledger entry generated!"); }} className="cursor-pointer">
+                          <DollarSign className="h-3.5 w-3.5 mr-1" /> Mark Paid
                         </Button>
                       ) : (
-                        <Button size="sm" variant="ghost" onClick={() => toast.info("Payslip download — Phase 3 (PDF generation)")}>
+                        <Button size="sm" variant="ghost" onClick={() => toast.info("PDF Payslip slip download — Phase 3")} className="cursor-pointer">
                           <Download className="h-3.5 w-3.5 mr-1" /> Slip
                         </Button>
                       )}
@@ -214,56 +264,129 @@ export default function PayrollPage() {
 
 function NewPayslipSheet({ month, employees, onDone }: { month: string; employees: Employee[]; onDone: () => void }) {
   const [open, setOpen] = useState(false);
-  const [f, setF] = useState({
-    employee_id: "", base: "0", bonus: "0", deduction: "0",
-  });
+  const [employeeId, setEmployeeId] = useState("");
+  const [baseSalary, setBaseSalary] = useState("0");
+  const [transport, setTransport] = useState("0");
+  const [medical, setMedical] = useState("0");
+  const [mobile, setMobile] = useState("0");
+  const [other, setOther] = useState("0");
+  const [deductions, setDeductions] = useState("0");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (employees.length > 0 && !f.employee_id) {
-      setF(prev => ({ ...prev, employee_id: employees[0].id, base: String(employees[0].base_salary) }));
+    if (employees.length > 0 && !employeeId) {
+      setEmployeeId(employees[0].id);
+      setBaseSalary(String(employees[0].base_salary));
     }
   }, [employees]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!employeeId) return toast.error("Please select an employee");
+
     setBusy(true);
-    const { error } = await supabase.from("payroll").insert({
-      employee_id: f.employee_id,
+
+    const base = parseFloat(baseSalary) || 0;
+    const transVal = parseFloat(transport) || 0;
+    const medVal = parseFloat(medical) || 0;
+    const mobVal = parseFloat(mobile) || 0;
+    const othVal = parseFloat(other) || 0;
+    const deduct = parseFloat(deductions) || 0;
+
+    const allowances: Allowances = {
+      transport: transVal,
+      medical: medVal,
+      mobile: mobVal,
+      other: othVal
+    };
+
+    const netPayable = base + transVal + medVal + mobVal + othVal - deduct;
+
+    const { error } = await supabase.from("salary_sheets" as any).insert({
+      employee_id: employeeId,
       month,
       status: "draft",
-      base: Number(f.base) || 0,
-      bonus: Number(f.bonus) || 0,
-      deduction: Number(f.deduction) || 0,
+      base_salary: base,
+      allowances,
+      deductions: deduct,
+      net_payable: netPayable,
     });
+
     setBusy(false);
     if (error) return toast.error(error.message);
-    toast.success("Payslip added");
+    
+    toast.success("Payslip added successfully");
     setOpen(false);
+    
+    // Reset states
+    setTransport("0");
+    setMedical("0");
+    setMobile("0");
+    setOther("0");
+    setDeductions("0");
+    
     onDone();
   }
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild><Button><Plus className="h-4 w-4 mr-1.5" /> Add payslip</Button></SheetTrigger>
-      <SheetContent>
-        <SheetHeader><SheetTitle>Add payslip · {month}</SheetTitle><SheetDescription>Manual entry for one employee.</SheetDescription></SheetHeader>
+      <SheetTrigger asChild>
+        <Button className="cursor-pointer">
+          <Plus className="h-4 w-4 mr-1.5" /> Add Payslip
+        </Button>
+      </SheetTrigger>
+      <SheetContent className="overflow-y-auto sm:max-w-md">
+        <SheetHeader>
+          <SheetTitle>Add Payslip · {month}</SheetTitle>
+          <SheetDescription>Create manual salary sheet for an employee.</SheetDescription>
+        </SheetHeader>
         <form onSubmit={submit} className="space-y-4 mt-6">
           <Fld label="Employee">
-            <Select value={f.employee_id} onValueChange={(v) => {
+            <Select value={employeeId} onValueChange={(v) => {
               const e = employees.find((x) => x.id === v);
-              setF({ ...f, employee_id: v, base: String(e?.base_salary ?? 0) });
+              setEmployeeId(v);
+              setBaseSalary(String(e?.base_salary ?? 0));
             }}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>{employees.map((e) => <SelectItem key={e.id} value={e.id}>{e.full_name}</SelectItem>)}</SelectContent>
             </Select>
           </Fld>
-          <Fld label="Base"><Input type="number" value={f.base} onChange={(e) => setF({ ...f, base: e.target.value })} /></Fld>
+          
+          <Fld label="Base Salary (BDT)">
+            <Input type="number" value={baseSalary} onChange={(e) => setBaseSalary(e.target.value)} />
+          </Fld>
+          
+          <h4 className="text-xs font-bold text-primary border-t pt-3 uppercase tracking-wider">Allowances</h4>
+          
           <div className="grid grid-cols-2 gap-3">
-            <Fld label="Bonus"><Input type="number" value={f.bonus} onChange={(e) => setF({ ...f, bonus: e.target.value })} /></Fld>
-            <Fld label="Deduction"><Input type="number" value={f.deduction} onChange={(e) => setF({ ...f, deduction: e.target.value })} /></Fld>
+            <Fld label="Transport (BDT)">
+              <Input type="number" value={transport} onChange={(e) => setTransport(e.target.value)} />
+            </Fld>
+            <Fld label="Medical (BDT)">
+              <Input type="number" value={medical} onChange={(e) => setMedical(e.target.value)} />
+            </Fld>
           </div>
-          <SheetFooter><Button type="submit" disabled={busy}>{busy ? "Saving..." : "Save payslip"}</Button></SheetFooter>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Fld label="Mobile (BDT)">
+              <Input type="number" value={mobile} onChange={(e) => setMobile(e.target.value)} />
+            </Fld>
+            <Fld label="Other Allowance (BDT)">
+              <Input type="number" value={other} onChange={(e) => setOther(e.target.value)} />
+            </Fld>
+          </div>
+
+          <h4 className="text-xs font-bold text-destructive border-t pt-3 uppercase tracking-wider">Deductions</h4>
+          
+          <Fld label="Deductions (BDT)">
+            <Input type="number" value={deductions} onChange={(e) => setDeductions(e.target.value)} placeholder="Loan repayments, advance salary etc." />
+          </Fld>
+
+          <SheetFooter className="border-t pt-4">
+            <Button type="submit" className="w-full cursor-pointer" disabled={busy}>
+              {busy ? "Saving..." : "Save payslip"}
+            </Button>
+          </SheetFooter>
         </form>
       </SheetContent>
     </Sheet>
@@ -271,5 +394,5 @@ function NewPayslipSheet({ month, employees, onDone }: { month: string; employee
 }
 
 function Fld({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div className="space-y-1.5"><Label className="text-xs">{label}</Label>{children}</div>;
+  return <div className="space-y-1.5"><Label className="text-xs font-semibold">{label}</Label>{children}</div>;
 }

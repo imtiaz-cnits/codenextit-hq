@@ -252,4 +252,8 @@
     background-clip: text;
     color: transparent;
   }
+  .font-bengali {
+    font-family: 'Noto Sans Bengali', var(--font-bengali), sans-serif !important;
+  }
 }
+

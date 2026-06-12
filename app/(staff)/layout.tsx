@@ -3,19 +3,30 @@
 import { useAuth } from "../../lib/auth-context";
 import { AppShell } from "../../components/shell/app-shell";
 import { Preloader } from "../../components/ui/preloader";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 export default function StaffLayout({ children }: { children: React.ReactNode }) {
   const { loading, isAuthenticated, isStaff, isClient } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   const [minLoading, setMinLoading] = useState(true);
 
   useEffect(() => {
-    const timer = setTimeout(() => setMinLoading(false), 2000);
-    return () => clearTimeout(timer);
-  }, []);
+    const isDashboard = pathname === "/dashboard" || pathname === "/";
+    const hasSeen = sessionStorage.getItem("cnit_has_seen_preloader");
+
+    if (isDashboard && !hasSeen) {
+      const timer = setTimeout(() => {
+        setMinLoading(false);
+        sessionStorage.setItem("cnit_has_seen_preloader", "true");
+      }, 2000);
+      return () => clearTimeout(timer);
+    } else {
+      setMinLoading(false);
+    }
+  }, [pathname]);
 
   useEffect(() => {
     if (!loading && !minLoading) {

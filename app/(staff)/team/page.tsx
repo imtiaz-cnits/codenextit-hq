@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useMock, type Employee } from "../../../lib/mock-store";
 import { useAuth } from "../../../lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
@@ -12,11 +12,11 @@ import { Avatar, AvatarFallback, AvatarImage } from "../../../components/ui/avat
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "../../../components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../../../components/ui/dialog";
-import { 
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger 
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
 } from "../../../components/ui/dropdown-menu";
-import { 
-  Plus, Phone, Mail, Heart, Search, MoreVertical, Edit, Trash2, Eye, 
+import {
+  Plus, Phone, Mail, Heart, Search, MoreVertical, Edit, Trash2, Eye,
   ShieldAlert, Briefcase, Calendar, Banknote, Shield, Upload, Camera, X, Clock
 } from "lucide-react";
 import { FlatDatePicker } from "../../../components/ui/flat-date-picker";
@@ -26,14 +26,23 @@ import { toast } from "sonner";
 import { supabase } from "../../../integrations/supabase/client";
 import { CardGridSkeleton } from "../../../components/loading-skeletons";
 
-const DEPARTMENTS = ["All", "Engineering", "Design", "SEO", "Management"];
-
 export default function TeamPage() {
   const { employees, addEmployee, updateEmployee, removeEmployee, setRole, removeUser, loading } = useMock();
   const { hasRole } = useAuth();
   const [q, setQ] = useState("");
   const [dept, setDept] = useState("All");
-  
+
+  const allDepts = useMemo(() => {
+    const defaults = ["All", "Engineering", "Design", "SEO", "Management"];
+    const set = new Set(defaults);
+    employees.forEach(e => {
+      if (e.department) {
+        set.add(e.department);
+      }
+    });
+    return Array.from(set);
+  }, [employees]);
+
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
   const [editingEmp, setEditingEmp] = useState<Employee | null>(null);
   const [managingRole, setManagingRole] = useState<Employee | null>(null);
@@ -55,9 +64,9 @@ export default function TeamPage() {
           <h1 className="text-3xl font-bold tracking-tight">Team Directory</h1>
           <p className="text-muted-foreground mt-1">{employees.length} people across {new Set(employees.map((e) => e.department)).size} departments.</p>
         </div>
-        <EmployeeSheet 
-          mode="create" 
-          onSubmit={(data) => addEmployee(data)} 
+        <EmployeeSheet
+          mode="create"
+          onSubmit={(data) => addEmployee(data)}
         />
       </div>
 
@@ -68,7 +77,7 @@ export default function TeamPage() {
         </div>
         <Select value={dept} onValueChange={setDept}>
           <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
-          <SelectContent>{DEPARTMENTS.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
+          <SelectContent>{allDepts.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
         </Select>
       </div>
 
@@ -77,9 +86,9 @@ export default function TeamPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filtered.map((e) => (
-            <Card 
-              key={e.id} 
-              className="group relative hover:shadow-elegant transition-all cursor-pointer border-transparent hover:border-primary/20"
+            <Card
+              key={e.id}
+              className="group relative hover:shadow-elegant transition-all cursor-pointer border border-border/60 hover:border-primary/20"
               onClick={() => setSelectedEmp(e)}
             >
               <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
@@ -96,7 +105,7 @@ export default function TeamPage() {
                     <DropdownMenuItem onClick={(ev) => { ev.stopPropagation(); setEditingEmp(e); }}>
                       <Edit className="h-4 w-4 mr-2" /> Edit Employee
                     </DropdownMenuItem>
-                    <DropdownMenuItem 
+                    <DropdownMenuItem
                       className="text-destructive focus:text-destructive"
                       onClick={(ev) => { ev.stopPropagation(); removeEmployee(e.id); }}
                     >
@@ -104,18 +113,18 @@ export default function TeamPage() {
                     </DropdownMenuItem>
                     {hasRole("super_admin") && (
                       <>
-                        <DropdownMenuItem 
+                        <DropdownMenuItem
                           className={cn(e.status === "disabled" ? "text-green-600" : "text-orange-600")}
-                          onClick={(ev) => { 
-                            ev.stopPropagation(); 
+                          onClick={(ev) => {
+                            ev.stopPropagation();
                             updateEmployee(e.id, { status: e.status === "disabled" ? "active" : "disabled" });
                           }}
                         >
-                          <ShieldAlert className="h-4 w-4 mr-2" /> 
+                          <ShieldAlert className="h-4 w-4 mr-2" />
                           {e.status === "disabled" ? "Enable Account" : "Disable Account"}
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={async (ev) => { 
-                          ev.stopPropagation(); 
+                        <DropdownMenuItem onClick={async (ev) => {
+                          ev.stopPropagation();
                           // Find user ID by email
                           const { data } = await supabase.from("profiles").select("id").eq("email", e.email).maybeSingle();
                           if (data) {
@@ -191,7 +200,7 @@ export default function TeamPage() {
                   </div>
                 </div>
               </DialogHeader>
-              
+
               <div className="grid grid-cols-2 gap-6 py-4">
                 <InfoItem icon={Mail} label="Email Address" value={selectedEmp.email} />
                 <InfoItem icon={Phone} label="Phone Number" value={selectedEmp.phone} />
@@ -231,8 +240,8 @@ export default function TeamPage() {
               return (
                 <div key={role} className="flex items-center justify-between p-3 border rounded-lg">
                   <span className="capitalize font-medium">{role.replace("_", " ")}</span>
-                  <Button 
-                    size="sm" 
+                  <Button
+                    size="sm"
                     variant={has ? "destructive" : "default"}
                     onClick={async () => {
                       if (!userId) return;
@@ -247,8 +256,8 @@ export default function TeamPage() {
             })}
 
             <div className="pt-4 border-t mt-4">
-              <Button 
-                variant="destructive" 
+              <Button
+                variant="destructive"
                 className="w-full gap-2"
                 onClick={async () => {
                   if (!userId || !managingRole) return;
@@ -270,7 +279,7 @@ export default function TeamPage() {
 
       {/* Edit Sheet */}
       {editingEmp && (
-        <EmployeeSheet 
+        <EmployeeSheet
           key={editingEmp.id}
           mode="edit"
           initialData={editingEmp}
@@ -295,13 +304,13 @@ function InfoItem({ icon: Icon, label, value }: { icon: any; label: string; valu
   );
 }
 
-function EmployeeSheet({ 
-  mode, 
-  initialData, 
+function EmployeeSheet({
+  mode,
+  initialData,
   onSubmit,
   open: externalOpen,
   onOpenChange: externalOnOpenChange
-}: { 
+}: {
   mode: "create" | "edit";
   initialData?: Employee;
   onSubmit: (e: Omit<Employee, "id">) => void;
@@ -311,6 +320,23 @@ function EmployeeSheet({
   const [internalOpen, setInternalOpen] = useState(false);
   const open = externalOpen ?? internalOpen;
   const setOpen = externalOnOpenChange ?? setInternalOpen;
+
+  const { employees } = useMock();
+  const allDepts = useMemo(() => {
+    const defaults = ["Engineering", "Design", "SEO", "Management"];
+    const set = new Set(defaults);
+    employees.forEach(e => {
+      if (e.department && e.department !== "All") {
+        set.add(e.department);
+      }
+    });
+    if (initialData?.department) {
+      set.add(initialData.department);
+    }
+    return Array.from(set);
+  }, [employees, initialData]);
+
+  const [newDeptName, setNewDeptName] = useState("");
 
   const [f, setF] = useState({
     employee_code: initialData?.employee_code ?? "",
@@ -345,7 +371,6 @@ function EmployeeSheet({
         .upload(filePath, file);
 
       if (error) {
-        // If bucket is missing, use local preview and warn user
         if (error.message.toLowerCase().includes("bucket not found")) {
           const reader = new FileReader();
           reader.onloadend = () => {
@@ -367,7 +392,6 @@ function EmployeeSheet({
       setF({ ...f, avatar_url: publicUrl });
       toast.success("Image uploaded successfully");
     } catch (err: any) {
-      // Only log if it's not the expected bucket-not-found error
       if (!err.message?.toLowerCase().includes("bucket not found")) {
         console.error("Storage Error:", err);
         toast.error("Upload failed: " + err.message);
@@ -379,18 +403,24 @@ function EmployeeSheet({
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    onSubmit({ ...f, base_salary: Number(f.base_salary) || 0 });
+    const finalDepartment = f.department === "create_new" ? newDeptName.trim() : f.department;
+    if (!finalDepartment) {
+      toast.error("Department is required");
+      return;
+    }
+    onSubmit({ ...f, department: finalDepartment, base_salary: Number(f.base_salary) || 0 });
     setOpen(false);
     if (mode === "create") {
-      setF({ 
+      setF({
         employee_code: "",
-        full_name: "", email: "", designation: "", department: "Engineering", 
-        phone: "", blood_group: "", emergency_contact: "", 
+        full_name: "", email: "", designation: "", department: "Engineering",
+        phone: "", blood_group: "", emergency_contact: "",
         joined_at: new Date().toISOString().slice(0, 10), base_salary: "0",
         avatar_url: "",
         office_start: "09:00",
         office_end: "18:00"
       });
+      setNewDeptName("");
     }
   }
 
@@ -405,8 +435,8 @@ function EmployeeSheet({
         <SheetHeader>
           <SheetTitle>{mode === "create" ? "Add employee" : "Edit employee"}</SheetTitle>
           <SheetDescription>
-            {mode === "create" 
-              ? "Add a new team member to the directory." 
+            {mode === "create"
+              ? "Add a new team member to the directory."
               : `Update information for ${initialData?.full_name}.`}
           </SheetDescription>
         </SheetHeader>
@@ -419,25 +449,25 @@ function EmployeeSheet({
                   <Camera className="h-8 w-8" />
                 </AvatarFallback>
               </Avatar>
-              <label 
+              <label
                 className="absolute inset-0 flex items-center justify-center bg-black/40 text-white rounded-full opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity"
                 htmlFor="avatar-upload"
               >
                 {uploading ? "..." : <Upload className="h-6 w-6" />}
               </label>
-              <input 
+              <input
                 id="avatar-upload"
-                type="file" 
-                accept="image/*" 
-                className="hidden" 
+                type="file"
+                accept="image/*"
+                className="hidden"
                 onChange={handleUpload}
                 disabled={uploading}
               />
               {f.avatar_url && (
-                <Button 
+                <Button
                   type="button"
-                  variant="destructive" 
-                  size="icon" 
+                  variant="destructive"
+                  size="icon"
                   className="absolute -top-1 -right-1 h-6 w-6 rounded-full"
                   onClick={() => setF({ ...f, avatar_url: "" })}
                 >
@@ -472,13 +502,28 @@ function EmployeeSheet({
               <Select value={f.department} onValueChange={(v) => setF({ ...f, department: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {DEPARTMENTS.filter((d) => d !== "All").map((d) => (
+                  {allDepts.map((d) => (
                     <SelectItem key={d} value={d}>{d}</SelectItem>
                   ))}
+                  <SelectItem value="create_new" className="font-semibold text-primary cursor-pointer border-t border-border mt-1">
+                    + Create New Department...
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </Fld>
           </div>
+          {f.department === "create_new" && (
+            <div className="space-y-1.5 bg-primary/5 p-3 rounded-xl border border-primary/10">
+              <Label htmlFor="newDept" className="text-xs font-semibold text-primary">New Department Name *</Label>
+              <Input
+                id="newDept"
+                value={newDeptName}
+                onChange={e => setNewDeptName(e.target.value)}
+                placeholder="e.g. Marketing, HR, QA"
+                required
+              />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <Fld label="Blood Group">
               <Input value={f.blood_group} onChange={(e) => setF({ ...f, blood_group: e.target.value })} />

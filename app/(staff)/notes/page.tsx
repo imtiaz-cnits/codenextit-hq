@@ -14,12 +14,12 @@ import { Checkbox } from "../../../components/ui/checkbox";
 import { ScrollArea } from "../../../components/ui/scroll-area";
 import { Popover, PopoverContent, PopoverTrigger } from "../../../components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "../../../components/ui/dropdown-menu";
-import { 
-  FileText, Globe, Calendar, AlertTriangle, AlertCircle, ShieldCheck, Edit, Trash2, Plus, 
-  ExternalLink, Loader2, RefreshCw, Search, Folder, DollarSign, Bell, ArrowLeft, ChevronLeft, Save, 
-  Share2, Users, Bold, Italic, Underline, List, ListOrdered, AlignLeft, AlignCenter, 
+import {
+  FileText, Globe, Calendar, AlertTriangle, AlertCircle, ShieldCheck, Edit, Trash2, Plus,
+  ExternalLink, Loader2, RefreshCw, Search, Folder, DollarSign, Bell, ArrowLeft, ChevronLeft, Save,
+  Share2, Users, Bold, Italic, Underline, List, ListOrdered, AlignLeft, AlignCenter,
   AlignRight, Heading1, Heading2, Heading3, Palette, Eraser, Check, Cloud, CloudOff, Lock,
-  ChevronRight, HardDrive, Type, FolderPlus, Paintbrush, Table2, Baseline
+  ChevronRight, HardDrive, Type, FolderPlus, Paintbrush, Table2, Baseline, MoreVertical, SlidersHorizontal
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDate } from "../../../lib/format";
@@ -69,7 +69,7 @@ interface NoteFolder {
 }
 
 const SUPPORTED_FONTS = [
-  "Inter", "Roboto", "Outfit", "Poppins", "Montserrat", "Open Sans", 
+  "Inter", "Roboto", "Outfit", "Poppins", "Montserrat", "Open Sans",
   "Lato", "Josefin Sans", "Ubuntu", "Nunito", "Oswald",
   "Playfair Display", "Lora", "Merriweather", "Cinzel",
   "Fira Code", "Source Code Pro", "Pacifico", "Dancing Script",
@@ -108,6 +108,10 @@ export default function NotesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [clientFilter, setClientFilter] = useState<"all" | "internal" | string>("all");
   const [scopeFilter, setScopeFilter] = useState<"all" | "mine" | "shared">("all");
+  const [isFoldersExpanded, setIsFoldersExpanded] = useState(false);
+  const [visibleNotesCount, setVisibleNotesCount] = useState(21);
+  const [showFiltersMobile, setShowFiltersMobile] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   // Create document modal state
   const [createOpen, setCreateOpen] = useState(false);
@@ -135,6 +139,7 @@ export default function NotesPage() {
   const [editorFolderId, setEditorFolderId] = useState<string>("");
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">("saved");
   const [selectedFont, setSelectedFont] = useState("Inter");
+  const [selectedFontSize, setSelectedFontSize] = useState("16");
   const [selectedColor, setSelectedColor] = useState("#000000");
   const savedSelectionRef = useRef<Range | null>(null);
   const [isFormatPainterActive, setIsFormatPainterActive] = useState(false);
@@ -194,6 +199,21 @@ export default function NotesPage() {
     void loadActiveStaff();
   }, []);
 
+  useEffect(() => {
+    setIsFoldersExpanded(false);
+    setVisibleNotesCount(21);
+  }, [searchQuery, activeFolderId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   // Preserves text selection selection change listener to handle external dropdown clicks smoothly
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -203,7 +223,7 @@ export default function NotesPage() {
       if (!sel || sel.rangeCount === 0 || !editorRef.current) return;
 
       const range = sel.getRangeAt(0);
-      
+
       // Ensure the selection is actually inside the editorRef container
       if (editorRef.current.contains(range.commonAncestorContainer)) {
         savedSelectionRef.current = range.cloneRange();
@@ -303,7 +323,7 @@ export default function NotesPage() {
     try {
       const targetClientId = createClientId === "none" ? null : createClientId;
       const targetFolderId = createFolderId === "none" ? null : createFolderId;
-      
+
       const res = await fetchWithAuth("/api/notes", {
         method: "POST",
         body: JSON.stringify({
@@ -319,7 +339,7 @@ export default function NotesPage() {
       }
       const result = await res.json();
       toast.success("Document created successfully");
-      
+
       setCreateTitle("");
       setCreateClientId("");
       setCreateFolderId("");
@@ -455,7 +475,7 @@ export default function NotesPage() {
     setSelectedFont("Inter");
     setSelectedColor("#000000");
     savedSelectionRef.current = null;
-    
+
     setTimeout(() => {
       if (editorRef.current) {
         editorRef.current.innerHTML = note.content || "<p><br></p>";
@@ -467,7 +487,7 @@ export default function NotesPage() {
     if (autoSaveTimeoutRef.current) {
       clearTimeout(autoSaveTimeoutRef.current);
     }
-    
+
     if (saveStatus === "unsaved" && currentNote) {
       setSaveStatus("saving");
       await saveDocumentData(
@@ -545,7 +565,7 @@ export default function NotesPage() {
         try {
           const styles = copiedStylesRef.current;
           document.execCommand("styleWithCSS", false, "true");
-          
+
           if (styles.bold !== document.queryCommandState("bold")) {
             document.execCommand("bold");
           }
@@ -576,7 +596,7 @@ export default function NotesPage() {
       try {
         const node = sel.anchorNode;
         let currentElement = node?.nodeType === Node.ELEMENT_NODE ? (node as Element) : node?.parentElement;
-        
+
         let foundTable = false;
         let activeCell: HTMLTableCellElement | null = null;
         while (currentElement && editorRef.current && editorRef.current.contains(currentElement)) {
@@ -589,7 +609,7 @@ export default function NotesPage() {
           }
           currentElement = currentElement.parentElement;
         }
-        
+
         setIsInsideTable(foundTable);
         activeCellRef.current = activeCell;
       } catch (err) {
@@ -602,7 +622,7 @@ export default function NotesPage() {
         const element = node?.nodeType === Node.ELEMENT_NODE ? (node as Element) : node?.parentElement;
         if (element) {
           const computedStyle = window.getComputedStyle(element);
-          
+
           // Detect Font Family
           const computedFont = computedStyle.fontFamily;
           const fontNames = computedFont.split(',').map(f => f.replace(/['"]/g, "").trim());
@@ -611,6 +631,27 @@ export default function NotesPage() {
             setSelectedFont(matchedFont);
           } else {
             setSelectedFont("Inter");
+          }
+
+          // Detect Font Size
+          const computedFontSize = computedStyle.fontSize;
+          const matchedSize = ["12px", "14px", "16px", "18px", "24px", "32px", "48px"].find(sz => sz === computedFontSize);
+          if (matchedSize) {
+            setSelectedFontSize(matchedSize.replace("px", ""));
+          } else {
+            const fontNode = element.closest("font");
+            if (fontNode) {
+              const sizeAttr = fontNode.getAttribute("size");
+              if (sizeAttr === "1") setSelectedFontSize("12");
+              else if (sizeAttr === "2") setSelectedFontSize("14");
+              else if (sizeAttr === "3") setSelectedFontSize("16");
+              else if (sizeAttr === "4") setSelectedFontSize("18");
+              else if (sizeAttr === "5") setSelectedFontSize("24");
+              else if (sizeAttr === "6") setSelectedFontSize("32");
+              else if (sizeAttr === "7") setSelectedFontSize("48");
+            } else {
+              setSelectedFontSize("16");
+            }
           }
 
           // Detect Color
@@ -668,10 +709,10 @@ export default function NotesPage() {
 
   const insertTable = (rowsCount: number, colsCount: number) => {
     if (typeof window === "undefined" || !editorRef.current) return;
-    
+
     const table = document.createElement("table");
     table.className = "w-full border-collapse border border-border my-4 table-fixed rounded-xl overflow-hidden text-sm";
-    
+
     const tbody = document.createElement("tbody");
     for (let r = 0; r < rowsCount; r++) {
       const row = document.createElement("tr");
@@ -684,20 +725,20 @@ export default function NotesPage() {
       tbody.appendChild(row);
     }
     table.appendChild(tbody);
-    
+
     restoreSelection();
-    
+
     const sel = window.getSelection();
     if (sel && sel.rangeCount > 0) {
       const range = sel.getRangeAt(0);
       if (editorRef.current.contains(range.commonAncestorContainer)) {
         range.deleteContents();
         range.insertNode(table);
-        
+
         const p = document.createElement("p");
         p.innerHTML = "<br>";
         table.after(p);
-        
+
         const firstCell = table.querySelector("td");
         if (firstCell) {
           const newRange = document.createRange();
@@ -707,7 +748,7 @@ export default function NotesPage() {
           sel.addRange(newRange);
           firstCell.focus();
         }
-        
+
         handleEditorInput();
         saveSelection();
       }
@@ -720,7 +761,7 @@ export default function NotesPage() {
     const row = cell.parentElement as HTMLTableRowElement;
     const tbody = row.parentElement as HTMLTableSectionElement;
     const newRow = document.createElement("tr");
-    
+
     const cellCount = row.cells.length;
     for (let i = 0; i < cellCount; i++) {
       const newCell = document.createElement("td");
@@ -728,7 +769,7 @@ export default function NotesPage() {
       newCell.innerHTML = "&nbsp;";
       newRow.appendChild(newCell);
     }
-    
+
     tbody.insertBefore(newRow, row);
     handleEditorInput();
   };
@@ -739,7 +780,7 @@ export default function NotesPage() {
     const row = cell.parentElement as HTMLTableRowElement;
     const tbody = row.parentElement as HTMLTableSectionElement;
     const newRow = document.createElement("tr");
-    
+
     const cellCount = row.cells.length;
     for (let i = 0; i < cellCount; i++) {
       const newCell = document.createElement("td");
@@ -747,7 +788,7 @@ export default function NotesPage() {
       newCell.innerHTML = "&nbsp;";
       newRow.appendChild(newCell);
     }
-    
+
     tbody.insertBefore(newRow, row.nextSibling);
     handleEditorInput();
   };
@@ -758,7 +799,7 @@ export default function NotesPage() {
     const cellIndex = cell.cellIndex;
     const row = cell.parentElement as HTMLTableRowElement;
     const table = row.closest("table") as HTMLTableElement;
-    
+
     const rows = table.rows;
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
@@ -776,7 +817,7 @@ export default function NotesPage() {
     const cellIndex = cell.cellIndex;
     const row = cell.parentElement as HTMLTableRowElement;
     const table = row.closest("table") as HTMLTableElement;
-    
+
     const rows = table.rows;
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
@@ -793,7 +834,7 @@ export default function NotesPage() {
     if (!cell) return;
     const row = cell.parentElement as HTMLTableRowElement;
     const table = row.closest("table") as HTMLTableElement;
-    
+
     if (table.rows.length <= 1) {
       table.remove();
       setIsInsideTable(false);
@@ -810,7 +851,7 @@ export default function NotesPage() {
     const cellIndex = cell.cellIndex;
     const row = cell.parentElement as HTMLTableRowElement;
     const table = row.closest("table") as HTMLTableElement;
-    
+
     if (row.cells.length <= 1) {
       table.remove();
       setIsInsideTable(false);
@@ -865,6 +906,24 @@ export default function NotesPage() {
         console.error(e);
       }
       document.execCommand(command, false, value);
+      if (editorRef.current) {
+        editorRef.current.focus();
+      }
+      handleEditorInput();
+      saveSelection();
+    }
+  };
+
+  const handleApplyFontSize = (sizeValue: string) => {
+    if (typeof window !== "undefined") {
+      restoreSelection();
+      try {
+        document.execCommand("styleWithCSS", false, "false");
+        document.execCommand("fontSize", false, sizeValue);
+        document.execCommand("styleWithCSS", false, "true");
+      } catch (e) {
+        console.error(e);
+      }
       if (editorRef.current) {
         editorRef.current.focus();
       }
@@ -1011,7 +1070,7 @@ export default function NotesPage() {
       }
 
       toast.success("Document sharing access updated successfully");
-      
+
       const updatedShares = shared_staff.map(s => {
         const p = activeStaff.find(prof => prof.id === s.staff_id);
         return {
@@ -1032,14 +1091,26 @@ export default function NotesPage() {
     }
   };
 
-  // Filter custom folders list for main dashboard view based on clientFilter selection
+  // Filter custom folders list for main dashboard view based on clientFilter selection and search query
   const filteredFolders = useMemo(() => {
     return folders.filter(f => {
+      if (searchQuery.trim()) {
+        const matchesQuery = f.name.toLowerCase().includes(searchQuery.toLowerCase());
+        const associatedClient = f.client_id ? clients.find(cl => cl.id === f.client_id) : null;
+        const matchesClientName = associatedClient ? associatedClient.company_name.toLowerCase().includes(searchQuery.toLowerCase()) : false;
+        if (!matchesQuery && !matchesClientName) return false;
+      }
       if (clientFilter === "all") return true;
       if (clientFilter === "internal") return f.client_id === null;
       return f.client_id === clientFilter;
     });
-  }, [folders, clientFilter]);
+  }, [folders, clientFilter, searchQuery, clients]);
+
+  // Slice folders to display a maximum of 3 rows (12 items on desktop, 6 items on mobile) by default
+  const visibleFolders = useMemo(() => {
+    const limit = isMobile ? 6 : 12;
+    return isFoldersExpanded ? filteredFolders : filteredFolders.slice(0, limit);
+  }, [filteredFolders, isFoldersExpanded, isMobile]);
 
   // Filter notes based on active custom folder, client filter, search query, and scope
   const filteredNotes = useMemo(() => {
@@ -1048,7 +1119,7 @@ export default function NotesPage() {
       if (searchQuery.trim() && !n.title.toLowerCase().includes(searchQuery.toLowerCase())) {
         return false;
       }
-      
+
       if (!searchQuery.trim()) {
         // 1. If currently inside a custom folder
         if (activeFolderId !== null) {
@@ -1056,15 +1127,15 @@ export default function NotesPage() {
         } else {
           // If in main dashboard view, only show folder-less (root) notes
           if (n.folder_id !== null) return false;
+        }
+      }
 
-          // Apply client filter
-          if (clientFilter !== "all") {
-            if (clientFilter === "internal") {
-              if (n.client_id !== null) return false;
-            } else {
-              if (n.client_id !== clientFilter) return false;
-            }
-          }
+      // Always apply client filter if selected and activeFolderId is null
+      if (activeFolderId === null && clientFilter !== "all") {
+        if (clientFilter === "internal") {
+          if (n.client_id !== null) return false;
+        } else {
+          if (n.client_id !== clientFilter) return false;
         }
       }
 
@@ -1086,7 +1157,7 @@ export default function NotesPage() {
     if (!activeFolderId) return "";
     const f = folders.find(folder => folder.id === activeFolderId);
     if (!f) return "Folder";
-    
+
     // Find client name if folder is associated
     if (f.client_id) {
       const c = clients.find(client => client.id === f.client_id);
@@ -1110,7 +1181,8 @@ export default function NotesPage() {
   return (
     <div className="space-y-6">
       {/* Editor CSS styles block: Custom typography styles */}
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style dangerouslySetInnerHTML={{
+        __html: `
         .editor-content { font-family: 'Inter', sans-serif; }
         .editor-content h1 { font-size: 2.25rem; font-weight: 800; margin-top: 1.5rem; margin-bottom: 0.75rem; line-height: 1.2; color: inherit; }
         .editor-content h2 { font-size: 1.75rem; font-weight: 700; margin-top: 1.25rem; margin-bottom: 0.5rem; color: inherit; }
@@ -1148,6 +1220,15 @@ export default function NotesPage() {
         .editor-content font[face="Anek Bangla"] { font-family: 'Anek Bangla', sans-serif !important; }
         .editor-content font[face="Noto Sans Bengali"] { font-family: 'Noto Sans Bengali', sans-serif !important; }
         .editor-content font[face="Noto Serif Bengali"] { font-family: 'Noto Serif Bengali', serif !important; }
+
+        /* Font-size mapping for editor size selections */
+        .editor-content font[size="1"] { font-size: 12px !important; }
+        .editor-content font[size="2"] { font-size: 14px !important; }
+        .editor-content font[size="3"] { font-size: 16px !important; }
+        .editor-content font[size="4"] { font-size: 18px !important; }
+        .editor-content font[size="5"] { font-size: 24px !important; }
+        .editor-content font[size="6"] { font-size: 32px !important; }
+        .editor-content font[size="7"] { font-size: 48px !important; }
 
         /* Dynamic Table Styling */
         .editor-content table { 
@@ -1198,7 +1279,7 @@ export default function NotesPage() {
             </div>
             <div className="flex items-center gap-2 select-none">
               {activeFolderId === null && !searchQuery.trim() && (
-                <Button 
+                <Button
                   onClick={() => setCreateFolderOpen(true)}
                   variant="outline"
                   className="rounded-xl gap-2 cursor-pointer shrink-0 border-border/60 hover:bg-muted/50"
@@ -1206,12 +1287,12 @@ export default function NotesPage() {
                   <FolderPlus className="h-4.5 w-4.5" /> New Folder
                 </Button>
               )}
-              <Button 
+              <Button
                 onClick={() => {
                   setCreateClientId(clientFilter !== "all" && clientFilter !== "internal" ? clientFilter : "none");
                   setCreateFolderId(activeFolderId || "none");
                   setCreateOpen(true);
-                }} 
+                }}
                 className="gradient-primary shadow-elegant rounded-xl gap-2 cursor-pointer shrink-0"
               >
                 <Plus className="h-5 w-5" /> New Document
@@ -1221,20 +1302,40 @@ export default function NotesPage() {
 
           {/* Search and Filters section */}
           <div className="flex flex-col gap-3 md:flex-row md:items-center bg-muted/40 dark:bg-muted/10 p-2 rounded-2xl">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search notes globally by title..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="pl-9 bg-background border border-border/40 shadow-none rounded-xl h-10 focus-visible:ring-1 focus-visible:ring-primary/20"
-              />
+            <div className="flex items-center gap-2 flex-1 w-full">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search notes globally by title..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="pl-9 bg-background border border-border/80 shadow-none rounded-xl h-10 focus-visible:ring-1 focus-visible:ring-primary/20 w-full"
+                />
+              </div>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setShowFiltersMobile(!showFiltersMobile)}
+                className={cn(
+                  "md:hidden h-10 w-10 shrink-0 rounded-xl cursor-pointer border border-border/80 bg-background hover:bg-muted/50",
+                  showFiltersMobile && "bg-primary/10 text-primary border-primary/30"
+                )}
+                title="Toggle Filters"
+              >
+                <SlidersHorizontal className="h-4.5 w-4.5" />
+              </Button>
             </div>
-            <div className="flex flex-wrap items-center gap-3">
+            <div
+              className={cn(
+                "flex-wrap items-center gap-3 w-full md:w-auto",
+                showFiltersMobile ? "flex" : "hidden",
+                "md:flex"
+              )}
+            >
               {/* Client Filter Dropdown */}
               {activeFolderId === null && (
                 <Select value={clientFilter} onValueChange={setClientFilter}>
-                  <SelectTrigger className="w-[180px] bg-background border border-border/40 rounded-xl cursor-pointer shadow-none h-10">
+                  <SelectTrigger className="w-full md:w-[240px] bg-background border border-border/80 rounded-xl cursor-pointer shadow-none h-10">
                     <SelectValue placeholder="All Clients" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1250,7 +1351,7 @@ export default function NotesPage() {
               )}
 
               <Select value={scopeFilter} onValueChange={v => setScopeFilter(v as any)}>
-                <SelectTrigger className="w-[160px] bg-background border border-border/40 rounded-xl cursor-pointer shadow-none h-10">
+                <SelectTrigger className="w-full md:w-[200px] bg-background border border-border/80 rounded-xl cursor-pointer shadow-none h-10">
                   <SelectValue placeholder="Scope" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1259,23 +1360,6 @@ export default function NotesPage() {
                   <SelectItem value="shared">Shared with me</SelectItem>
                 </SelectContent>
               </Select>
-
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => {
-                  setSearchQuery("");
-                  setClientFilter("all");
-                  setScopeFilter("all");
-                  void loadNotes();
-                  void loadNoteFolders();
-                  void loadClients();
-                }}
-                title="Refresh notes list"
-                className="cursor-pointer border border-border/40 bg-background hover:bg-muted rounded-xl h-10 w-10 shadow-none shrink-0"
-              >
-                <RefreshCw className="h-4 w-4" />
-              </Button>
             </div>
           </div>
 
@@ -1289,9 +1373,9 @@ export default function NotesPage() {
               <Badge variant="outline" className="font-semibold px-2.5 py-0.5 rounded-full text-indigo-500 border-indigo-200/50 bg-indigo-500/5">
                 {activeFolderName}
               </Badge>
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => setActiveFolderId(null)}
                 className="h-7 text-xs ml-auto rounded-lg text-primary hover:bg-primary/5 cursor-pointer font-medium"
               >
@@ -1304,38 +1388,41 @@ export default function NotesPage() {
           {loading ? (
             <CardGridSkeleton />
           ) : searchQuery.trim() ? (
-            // Search Mode: Flat list of notes
-            <div className="space-y-4">
-              <h2 className="text-sm font-semibold text-muted-foreground">Search Results ({filteredNotes.length})</h2>
-              {filteredNotes.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground text-sm italic">
-                  No notes match your global search query.
-                </div>
-              ) : (
-                <NotesGrid notesList={filteredNotes} handleOpenEditor={handleOpenEditor} handleDeleteDocument={handleDeleteDocument} isAdmin={isAdmin} activeStaff={activeStaff} profileId={profile?.id} />
-              )}
-            </div>
-          ) : activeFolderId === null ? (
-            // Dashboard Mode: Custom Folders + Folder-less Notes
+            // Search Mode: Matching Folders + Matching Documents
             <div className="space-y-8">
-              {/* Custom note folders grid */}
+              {/* Folders Section */}
               <div className="space-y-3">
-                <h2 className="text-sm font-bold text-muted-foreground/80 uppercase tracking-wider">Folders</h2>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-bold text-muted-foreground/80 uppercase tracking-wider">Folders ({filteredFolders.length})</h2>
+                  {filteredFolders.length > (isMobile ? 6 : 12) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setIsFoldersExpanded(!isFoldersExpanded)}
+                      className="h-7 text-xs font-semibold text-primary hover:bg-primary/5 rounded-lg cursor-pointer"
+                    >
+                      {isFoldersExpanded ? "Show Less" : "View All"}
+                    </Button>
+                  )}
+                </div>
                 {filteredFolders.length === 0 ? (
-                  <div className="text-xs text-muted-foreground italic py-3 bg-muted/10 rounded-xl px-4 border border-dashed border-border/40 flex items-center justify-between">
-                    <span>No custom folders created yet. click "New Folder" to set up your directory.</span>
+                  <div className="text-xs text-muted-foreground italic py-3 bg-muted/10 rounded-xl px-4 border border-dashed border-border/40">
+                    No folders match your search query.
                   </div>
                 ) : (
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    {filteredFolders.map(sf => {
+                    {visibleFolders.map(sf => {
                       const associatedClient = sf.client_id ? clients.find(cl => cl.id === sf.client_id) : null;
                       return (
-                        <Card 
+                        <Card
                           key={sf.id}
-                          className="group flex items-center justify-between p-3 rounded-xl border border-border/40 hover:border-primary/40 bg-card hover:bg-muted/10 transition-all duration-200 shadow-sm"
+                          className="group flex items-center justify-between p-3 rounded-xl border border-border/60 hover:border-primary/40 bg-card hover:bg-muted/10 transition-all duration-200 !shadow-none"
                         >
-                          <div 
-                            onClick={() => setActiveFolderId(sf.id)} 
+                          <div
+                            onClick={() => {
+                              setSearchQuery("");
+                              setActiveFolderId(sf.id);
+                            }}
                             className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
                           >
                             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:bg-primary/20 transition-colors">
@@ -1350,9 +1437,9 @@ export default function NotesPage() {
                               </span>
                             </div>
                           </div>
-                          
-                          {/* Folder action controls */}
-                          <div className="flex items-center gap-1 shrink-0">
+
+                          {/* Desktop controls */}
+                          <div className="hidden md:flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
                             <Button
                               size="icon"
                               variant="ghost"
@@ -1385,6 +1472,209 @@ export default function NotesPage() {
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           </div>
+
+                          {/* Mobile controls */}
+                          <div className="md:hidden flex items-center shrink-0">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-8 w-8 rounded-lg hover:bg-muted cursor-pointer text-muted-foreground/80 hover:text-foreground"
+                                  title="Actions"
+                                >
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-[140px] rounded-xl p-1 shadow-lg bg-card border border-border/60 z-30">
+                                <DropdownMenuItem
+                                  onClick={() => handleOpenFolderSharing(sf)}
+                                  className="text-xs cursor-pointer rounded-lg focus:bg-muted/80 flex items-center gap-2"
+                                >
+                                  <Share2 className="h-3.5 w-3.5" /> Share Folder
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setRenameFolderId(sf.id);
+                                    setRenameFolderName(sf.name);
+                                    setRenameFolderOpen(true);
+                                  }}
+                                  className="text-xs cursor-pointer rounded-lg focus:bg-muted/80 flex items-center gap-2"
+                                >
+                                  <Edit className="h-3.5 w-3.5" /> Rename Folder
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator className="my-1 border-t border-border/40" />
+                                <DropdownMenuItem
+                                  onClick={() => handleDeleteFolder(sf.id, sf.name)}
+                                  className="text-xs text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer rounded-lg flex items-center gap-2 font-semibold"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" /> Delete Folder
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Documents Section */}
+              <div className="space-y-3">
+                <h2 className="text-sm font-bold text-muted-foreground/80 uppercase tracking-wider">Documents ({filteredNotes.length})</h2>
+                {filteredNotes.length === 0 ? (
+                  <Card className="border border-border/80 bg-muted/5 rounded-3xl py-12 flex flex-col items-center justify-center text-center">
+                    <div className="h-10 w-10 rounded-xl bg-muted flex items-center justify-center mb-3 text-muted-foreground/60">
+                      <FileText className="h-5 w-5" />
+                    </div>
+                    <h3 className="font-semibold text-sm">No matching documents found</h3>
+                    <p className="text-muted-foreground text-xs mt-1">
+                      No documents match your search query.
+                    </p>
+                  </Card>
+                ) : (
+                  <>
+                    <NotesGrid notesList={filteredNotes.slice(0, visibleNotesCount)} handleOpenEditor={handleOpenEditor} handleDeleteDocument={handleDeleteDocument} isAdmin={isAdmin} activeStaff={activeStaff} profileId={profile?.id} foldersList={folders} />
+                    {filteredNotes.length > visibleNotesCount && (
+                      <div className="flex justify-center pt-4">
+                        <Button
+                          onClick={() => setVisibleNotesCount(prev => prev + 21)}
+                          variant="outline"
+                          className="rounded-xl border-border/60 hover:bg-muted/50 font-semibold gap-1.5 px-6 cursor-pointer"
+                        >
+                          <RefreshCw className="h-4 w-4 text-muted-foreground animate-spin-hover" /> Load More Documents
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          ) : activeFolderId === null ? (
+            // Dashboard Mode: Custom Folders + Folder-less Notes
+            <div className="space-y-8">
+              {/* Custom note folders grid */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-bold text-muted-foreground/80 uppercase tracking-wider">Folders</h2>
+                  {filteredFolders.length > (isMobile ? 6 : 12) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setIsFoldersExpanded(!isFoldersExpanded)}
+                      className="h-7 text-xs font-semibold text-primary hover:bg-primary/5 rounded-lg cursor-pointer"
+                    >
+                      {isFoldersExpanded ? "Show Less" : `View All (${filteredFolders.length})`}
+                    </Button>
+                  )}
+                </div>
+                {filteredFolders.length === 0 ? (
+                  <div className="text-xs text-muted-foreground italic py-3 bg-muted/10 rounded-xl px-4 border border-dashed border-border/40 flex items-center justify-between">
+                    <span>No custom folders created yet. click "New Folder" to set up your directory.</span>
+                  </div>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    {visibleFolders.map(sf => {
+                      const associatedClient = sf.client_id ? clients.find(cl => cl.id === sf.client_id) : null;
+                      return (
+                        <Card
+                          key={sf.id}
+                          className="group flex items-center justify-between p-3 rounded-xl border border-border/60 hover:border-primary/40 bg-card hover:bg-muted/10 transition-all duration-200 !shadow-none"
+                        >
+                          <div
+                            onClick={() => setActiveFolderId(sf.id)}
+                            className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
+                          >
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:bg-primary/20 transition-colors">
+                              <Folder className="h-4.5 w-4.5" />
+                            </div>
+                            <div className="flex flex-col min-w-0">
+                              <span className="font-semibold text-sm truncate group-hover:text-primary transition-colors">
+                                {sf.name}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground font-medium truncate">
+                                {associatedClient ? associatedClient.company_name : "Personal / Internal"} • {getSubFolderNoteCount(sf.id)} notes
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Folder action controls */}
+                          {/* Desktop controls */}
+                          <div className="hidden md:flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 rounded-lg hover:bg-muted cursor-pointer text-muted-foreground/80 hover:text-foreground"
+                              onClick={() => handleOpenFolderSharing(sf)}
+                              title="Share Folder"
+                            >
+                              <Share2 className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 rounded-lg hover:bg-muted cursor-pointer"
+                              onClick={() => {
+                                setRenameFolderId(sf.id);
+                                setRenameFolderName(sf.name);
+                                setRenameFolderOpen(true);
+                              }}
+                              title="Rename Folder"
+                            >
+                              <Edit className="h-3.5 w-3.5 text-muted-foreground/80 hover:text-foreground" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 rounded-lg text-destructive hover:bg-destructive/10 hover:text-destructive cursor-pointer"
+                              onClick={() => handleDeleteFolder(sf.id, sf.name)}
+                              title="Delete Folder"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+
+                          {/* Mobile controls (Compact dropdown) */}
+                          <div className="md:hidden flex items-center shrink-0">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-8 w-8 rounded-lg hover:bg-muted cursor-pointer text-muted-foreground/80 hover:text-foreground"
+                                  title="Actions"
+                                >
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-[140px] rounded-xl p-1 shadow-lg bg-card border border-border/60 z-30">
+                                <DropdownMenuItem
+                                  onClick={() => handleOpenFolderSharing(sf)}
+                                  className="text-xs cursor-pointer rounded-lg focus:bg-muted/80 flex items-center gap-2"
+                                >
+                                  <Share2 className="h-3.5 w-3.5" /> Share Folder
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setRenameFolderId(sf.id);
+                                    setRenameFolderName(sf.name);
+                                    setRenameFolderOpen(true);
+                                  }}
+                                  className="text-xs cursor-pointer rounded-lg focus:bg-muted/80 flex items-center gap-2"
+                                >
+                                  <Edit className="h-3.5 w-3.5" /> Rename Folder
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator className="my-1 border-t border-border/40" />
+                                <DropdownMenuItem
+                                  onClick={() => handleDeleteFolder(sf.id, sf.name)}
+                                  className="text-xs text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer rounded-lg flex items-center gap-2 font-semibold"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" /> Delete Folder
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </Card>
                       );
                     })}
@@ -1396,7 +1686,7 @@ export default function NotesPage() {
               <div className="space-y-3">
                 <h2 className="text-sm font-bold text-muted-foreground/80 uppercase tracking-wider">Root Documents</h2>
                 {filteredNotes.length === 0 ? (
-                  <Card className="border border-dashed border-border/60 bg-muted/5 rounded-3xl py-12 flex flex-col items-center justify-center text-center">
+                  <Card className="border border border-border/80 bg-muted/5 rounded-3xl py-12 flex flex-col items-center justify-center text-center">
                     <div className="h-10 w-10 rounded-xl bg-muted flex items-center justify-center mb-3 text-muted-foreground/60">
                       <FileText className="h-5 w-5" />
                     </div>
@@ -1406,7 +1696,20 @@ export default function NotesPage() {
                     </p>
                   </Card>
                 ) : (
-                  <NotesGrid notesList={filteredNotes} handleOpenEditor={handleOpenEditor} handleDeleteDocument={handleDeleteDocument} isAdmin={isAdmin} activeStaff={activeStaff} profileId={profile?.id} />
+                  <>
+                    <NotesGrid notesList={filteredNotes.slice(0, visibleNotesCount)} handleOpenEditor={handleOpenEditor} handleDeleteDocument={handleDeleteDocument} isAdmin={isAdmin} activeStaff={activeStaff} profileId={profile?.id} foldersList={folders} />
+                    {filteredNotes.length > visibleNotesCount && (
+                      <div className="flex justify-center pt-4">
+                        <Button
+                          onClick={() => setVisibleNotesCount(prev => prev + 21)}
+                          variant="outline"
+                          className="rounded-xl border-border/60 hover:bg-muted/50 font-semibold gap-1.5 px-6 cursor-pointer"
+                        >
+                          <RefreshCw className="h-4 w-4 text-muted-foreground animate-spin-hover" /> Load More Documents
+                        </Button>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -1422,25 +1725,38 @@ export default function NotesPage() {
                   <p className="text-muted-foreground text-xs max-w-[320px] mt-1">
                     No documents created in this subfolder yet. Click "+ New Document" to write notes.
                   </p>
-                  <Button 
+                  <Button
                     onClick={() => {
                       const targetFolder = folders.find(f => f.id === activeFolderId);
                       setCreateClientId(targetFolder?.client_id || "none");
                       setCreateFolderId(activeFolderId);
                       setCreateOpen(true);
-                    }} 
+                    }}
                     className="gradient-primary rounded-xl gap-2 mt-4 cursor-pointer text-xs"
                   >
                     <Plus className="h-4 w-4" /> Create Document
                   </Button>
                 </Card>
               ) : (
-                <NotesGrid notesList={filteredNotes} handleOpenEditor={handleOpenEditor} handleDeleteDocument={handleDeleteDocument} isAdmin={isAdmin} activeStaff={activeStaff} profileId={profile?.id} />
+                <>
+                  <NotesGrid notesList={filteredNotes.slice(0, visibleNotesCount)} handleOpenEditor={handleOpenEditor} handleDeleteDocument={handleDeleteDocument} isAdmin={isAdmin} activeStaff={activeStaff} profileId={profile?.id} foldersList={folders} />
+                  {filteredNotes.length > visibleNotesCount && (
+                    <div className="flex justify-center pt-4">
+                      <Button
+                        onClick={() => setVisibleNotesCount(prev => prev + 21)}
+                        variant="outline"
+                        className="rounded-xl border-border/60 hover:bg-muted/50 font-semibold gap-1.5 px-6 cursor-pointer"
+                      >
+                        <RefreshCw className="h-4 w-4 text-muted-foreground animate-spin-hover" /> Load More Documents
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
         </>
-) : (
+      ) : (
         // GOOGLE DOCS A4 EDITOR CANVAS VIEW
         <div className="flex flex-col bg-slate-50 dark:bg-slate-950 rounded-3xl border border-border/40 shadow-sm h-[calc(100vh-100px)] md:h-[calc(100vh-125px)] lg:h-[calc(100vh-150px)] overflow-hidden">
           {/* Header and Toolbar Wrapper */}
@@ -1458,7 +1774,7 @@ export default function NotesPage() {
                 >
                   <ArrowLeft className="h-4 w-4" />
                 </Button>
-                
+
                 <div className="flex flex-col gap-0.5 flex-1 min-w-0">
                   <div className="flex items-center gap-2 md:gap-3 w-full">
                     {currentNote.permission_level === "edit" ? (
@@ -1469,11 +1785,11 @@ export default function NotesPage() {
                           setEditorTitle(e.target.value);
                           triggerImmediateSave(e.target.value, editorClientId, editorFolderId);
                         }}
-                        className="text-lg md:text-xl font-bold bg-transparent border-none focus:outline-none focus:ring-0 p-0 text-foreground flex-1 min-w-[200px] truncate"
+                        className="text-lg md:text-xl font-bold bg-transparent border-none focus:outline-none focus:ring-0 p-0 text-foreground flex-1 min-w-[200px] truncate font-bengali"
                         placeholder="Untitled Document"
                       />
                     ) : (
-                      <h2 className="text-lg md:text-xl font-bold p-0 text-foreground truncate flex-1 min-w-0">{editorTitle}</h2>
+                      <h2 className="text-lg md:text-xl font-bold p-0 text-foreground truncate flex-1 min-w-0 font-bengali">{editorTitle}</h2>
                     )}
                   </div>
 
@@ -1548,11 +1864,10 @@ export default function NotesPage() {
 
               <div className="flex items-center gap-2">
                 {/* Premium Cloud status badge */}
-                <div className={`flex items-center gap-1.5 px-3 py-1 rounded-xl border text-xs font-semibold select-none shrink-0 h-9 transition-colors duration-200 ${
-                  saveStatus === "unsaved"
-                    ? "bg-amber-500/5 dark:bg-amber-500/10 border-amber-500/10 text-amber-600 dark:text-amber-500"
-                    : "bg-emerald-500/5 dark:bg-emerald-500/10 border-emerald-500/10 text-emerald-600 dark:text-emerald-500"
-                }`}>
+                <div className={`flex items-center gap-1.5 px-3 py-1 rounded-xl border text-xs font-semibold select-none shrink-0 h-9 transition-colors duration-200 ${saveStatus === "unsaved"
+                  ? "bg-amber-500/5 dark:bg-amber-500/10 border-amber-500/10 text-amber-600 dark:text-amber-500"
+                  : "bg-emerald-500/5 dark:bg-emerald-500/10 border-emerald-500/10 text-emerald-600 dark:text-emerald-500"
+                  }`}>
                   {saveStatus === "saving" ? (
                     <>
                       <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
@@ -1595,7 +1910,7 @@ export default function NotesPage() {
                 >
                   <ArrowLeft className="h-4 w-4" />
                 </Button>
-                
+
                 {/* Title Input */}
                 {currentNote.permission_level === "edit" ? (
                   <input
@@ -1605,18 +1920,18 @@ export default function NotesPage() {
                       setEditorTitle(e.target.value);
                       triggerImmediateSave(e.target.value, editorClientId, editorFolderId);
                     }}
-                    className="text-sm font-bold bg-transparent border-none focus:outline-none focus:ring-0 p-0 text-foreground flex-1 min-w-0 truncate"
+                    className="text-sm font-bold bg-transparent border-none focus:outline-none focus:ring-0 p-0 text-foreground flex-1 min-w-0 truncate font-bengali"
                     placeholder="Untitled Document"
                   />
                 ) : (
-                  <h2 className="text-sm font-bold p-0 text-foreground truncate flex-1 min-w-0">{editorTitle}</h2>
+                  <h2 className="text-sm font-bold p-0 text-foreground truncate flex-1 min-w-0 font-bengali">{editorTitle}</h2>
                 )}
               </div>
 
               {/* Action Controls */}
               <div className="flex items-center gap-1.5 shrink-0 select-none">
                 {/* Cloud status icon */}
-                <div 
+                <div
                   className={cn(
                     "flex h-8 w-8 items-center justify-center rounded-xl border transition-colors duration-200 shrink-0",
                     saveStatus === "unsaved"
@@ -1720,404 +2035,446 @@ export default function NotesPage() {
               </div>
             </div>
             {/* Formatting Toolbar */}
-          {currentNote.permission_level === "edit" ? (
-            <div className="hidden md:flex flex-wrap items-center gap-1 bg-card/95 p-2 shrink-0 transition-all border-b border-border/40">
-              {/* Format Painter */}
-              <Button
-                size="icon"
-                variant={isFormatPainterActive ? "secondary" : "ghost"}
-                className={cn(
-                  "h-8 w-8 hover:bg-muted cursor-pointer rounded-lg transition-colors",
-                  isFormatPainterActive && "bg-primary/15 text-primary hover:bg-primary/20 border border-primary/20"
+            {currentNote.permission_level === "edit" ? (
+              <div className="hidden md:flex flex-wrap items-center gap-1 bg-card/95 p-2 shrink-0 transition-all border-b border-border/40">
+                {/* Format Painter */}
+                <Button
+                  size="icon"
+                  variant={isFormatPainterActive ? "secondary" : "ghost"}
+                  className={cn(
+                    "h-8 w-8 hover:bg-muted cursor-pointer rounded-lg transition-colors",
+                    isFormatPainterActive && "bg-primary/15 text-primary hover:bg-primary/20 border border-primary/20"
+                  )}
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    handleFormatPainterClick();
+                  }}
+                  title="Paint format"
+                >
+                  <Paintbrush className="h-4 w-4" />
+                </Button>
+
+                <div className="h-4 w-[1px] bg-border mx-1" />
+
+                {/* Bold */}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 hover:bg-muted cursor-pointer rounded-lg"
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    handleApplyStyle("bold");
+                  }}
+                  title="Bold (Ctrl+B)"
+                >
+                  <Bold className="h-4 w-4" />
+                </Button>
+
+                {/* Italic */}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 hover:bg-muted cursor-pointer rounded-lg"
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    handleApplyStyle("italic");
+                  }}
+                  title="Italic (Ctrl+I)"
+                >
+                  <Italic className="h-4 w-4" />
+                </Button>
+
+                {/* Underline */}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 hover:bg-muted cursor-pointer rounded-lg"
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    handleApplyStyle("underline");
+                  }}
+                  title="Underline (Ctrl+U)"
+                >
+                  <Underline className="h-4 w-4" />
+                </Button>
+
+                <div className="h-4 w-[1px] bg-border mx-1" />
+
+                {/* Bullet list */}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 hover:bg-muted cursor-pointer rounded-lg"
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    handleApplyStyle("insertUnorderedList");
+                  }}
+                  title="Bullet List"
+                >
+                  <List className="h-4 w-4" />
+                </Button>
+
+                {/* Numbered list */}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 hover:bg-muted cursor-pointer rounded-lg"
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    handleApplyStyle("insertOrderedList");
+                  }}
+                  title="Numbered List"
+                >
+                  <ListOrdered className="h-4 w-4" />
+                </Button>
+
+                <div className="h-4 w-[1px] bg-border mx-1" />
+
+                {/* Align Left */}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 hover:bg-muted cursor-pointer rounded-lg"
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    handleApplyStyle("justifyLeft");
+                  }}
+                  title="Align Left"
+                >
+                  <AlignLeft className="h-4 w-4" />
+                </Button>
+
+                {/* Align Center */}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 hover:bg-muted cursor-pointer rounded-lg"
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    handleApplyStyle("justifyCenter");
+                  }}
+                  title="Align Center"
+                >
+                  <AlignCenter className="h-4 w-4" />
+                </Button>
+
+                {/* Align Right */}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 hover:bg-muted cursor-pointer rounded-lg"
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    handleApplyStyle("justifyRight");
+                  }}
+                  title="Align Right"
+                >
+                  <AlignRight className="h-4 w-4" />
+                </Button>
+
+                <div className="h-4 w-[1px] bg-border mx-1" />
+
+                {/* Table Insertion Popover */}
+                <Popover open={tableInsertOpen} onOpenChange={setTableInsertOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 hover:bg-muted cursor-pointer rounded-lg"
+                      onMouseDown={e => {
+                        e.preventDefault();
+                      }}
+                      title="Insert table"
+                    >
+                      <Table2 className="h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[195px] p-2 bg-card border border-border/60 rounded-xl shadow-lg z-30" align="start">
+                    <div className="text-[10px] font-semibold text-muted-foreground mb-2 text-center select-none">
+                      {hoveredRow > 0 && hoveredCol > 0 ? `Insert ${hoveredRow} × ${hoveredCol} table` : "Select size"}
+                    </div>
+                    <div
+                      className="grid grid-cols-8 gap-1 p-1 bg-muted/30 rounded-lg"
+                      onMouseLeave={() => {
+                        setHoveredRow(0);
+                        setHoveredCol(0);
+                      }}
+                    >
+                      {Array.from({ length: 64 }).map((_, index) => {
+                        const r = Math.floor(index / 8) + 1;
+                        const c = (index % 8) + 1;
+                        const isHighlighted = r <= hoveredRow && c <= hoveredCol;
+                        return (
+                          <div
+                            key={index}
+                            className={cn(
+                              "h-4 w-4 rounded-[3px] border border-border/70 cursor-pointer transition-all duration-100",
+                              isHighlighted
+                                ? "bg-primary border-primary shadow-sm"
+                                : "bg-background hover:bg-muted/80"
+                            )}
+                            onMouseEnter={() => {
+                              setHoveredRow(r);
+                              setHoveredCol(c);
+                            }}
+                            onMouseDown={e => {
+                              e.preventDefault();
+                            }}
+                            onClick={() => {
+                              insertTable(r, c);
+                              setTableInsertOpen(false);
+                              setHoveredRow(0);
+                              setHoveredCol(0);
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+
+                <div className="h-4 w-[1px] bg-border mx-1" />
+
+                {/* Google Fonts selector dropdown */}
+                <Select
+                  value={selectedFont}
+                  onValueChange={v => {
+                    setSelectedFont(v);
+                    handleApplyStyle("fontName", v);
+                  }}
+                  onOpenChange={open => {
+                    if (open) {
+                      saveSelection();
+                    } else {
+                      setTimeout(() => {
+                        restoreSelection();
+                        if (editorRef.current && document.activeElement !== editorRef.current) {
+                          editorRef.current.focus();
+                        }
+                      }, 50);
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-[125px] h-8 text-xs border border-border/50 cursor-pointer rounded-lg [&>span]:flex [&>span]:items-center [&>span]:gap-1.5">
+                    <Type className="h-3.5 w-3.5 text-primary shrink-0" />
+                    <span className="truncate">{selectedFont}</span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {/* Sans-serif Fonts */}
+                    <SelectItem value="Inter" className="text-xs font-sans cursor-pointer">Inter</SelectItem>
+                    <SelectItem value="Roboto" className="text-xs font-sans cursor-pointer">Roboto</SelectItem>
+                    <SelectItem value="Outfit" className="text-xs font-sans cursor-pointer">Outfit</SelectItem>
+                    <SelectItem value="Poppins" className="text-xs font-sans cursor-pointer">Poppins</SelectItem>
+                    <SelectItem value="Montserrat" className="text-xs font-sans cursor-pointer">Montserrat</SelectItem>
+                    <SelectItem value="Open Sans" className="text-xs font-sans cursor-pointer">Open Sans</SelectItem>
+                    <SelectItem value="Lato" className="text-xs font-sans cursor-pointer">Lato</SelectItem>
+                    <SelectItem value="Josefin Sans" className="text-xs font-sans cursor-pointer">Josefin Sans</SelectItem>
+                    <SelectItem value="Ubuntu" className="text-xs font-sans cursor-pointer">Ubuntu</SelectItem>
+                    <SelectItem value="Nunito" className="text-xs font-sans cursor-pointer">Nunito</SelectItem>
+                    <SelectItem value="Oswald" className="text-xs font-sans cursor-pointer" style={{ fontFamily: 'Oswald, sans-serif' }}>Oswald</SelectItem>
+
+                    {/* Serif Fonts */}
+                    <SelectItem value="Playfair Display" className="text-xs serif cursor-pointer" style={{ fontFamily: 'Playfair Display, serif' }}>Playfair Display</SelectItem>
+                    <SelectItem value="Lora" className="text-xs serif cursor-pointer" style={{ fontFamily: 'Lora, serif' }}>Lora</SelectItem>
+                    <SelectItem value="Merriweather" className="text-xs serif cursor-pointer" style={{ fontFamily: 'Merriweather, serif' }}>Merriweather</SelectItem>
+                    <SelectItem value="Cinzel" className="text-xs serif cursor-pointer" style={{ fontFamily: 'Cinzel, serif' }}>Cinzel</SelectItem>
+
+                    {/* Monospace Fonts */}
+                    <SelectItem value="Fira Code" className="text-xs monospace cursor-pointer" style={{ fontFamily: 'Fira Code, monospace' }}>Fira Code</SelectItem>
+                    <SelectItem value="Source Code Pro" className="text-xs monospace cursor-pointer" style={{ fontFamily: 'Source Code Pro, monospace' }}>Source Code Pro</SelectItem>
+
+                    {/* Cursive / Creative Fonts */}
+                    <SelectItem value="Pacifico" className="text-xs cursor-pointer" style={{ fontFamily: 'Pacifico, cursive' }}>Pacifico</SelectItem>
+                    <SelectItem value="Dancing Script" className="text-xs cursor-pointer" style={{ fontFamily: 'Dancing Script, cursive' }}>Dancing Script</SelectItem>
+
+                    {/* Bengali Fonts */}
+                    <SelectItem value="Hind Siliguri" className="text-xs cursor-pointer" style={{ fontFamily: 'Hind Siliguri, sans-serif' }}>Hind Siliguri</SelectItem>
+                    <SelectItem value="Baloo Da 2" className="text-xs cursor-pointer" style={{ fontFamily: 'Baloo Da 2, cursive' }}>Baloo Da 2</SelectItem>
+                    <SelectItem value="Anek Bangla" className="text-xs cursor-pointer" style={{ fontFamily: 'Anek Bangla, sans-serif' }}>Anek Bangla</SelectItem>
+                    <SelectItem value="Noto Sans Bengali" className="text-xs cursor-pointer" style={{ fontFamily: 'Noto Sans Bengali, sans-serif' }}>Noto Sans Bengali</SelectItem>
+                    <SelectItem value="Noto Serif Bengali" className="text-xs cursor-pointer" style={{ fontFamily: 'Noto Serif Bengali, serif' }}>Noto Serif Bengali</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {/* Font Size selector dropdown */}
+                <Select
+                  value={selectedFontSize}
+                  onValueChange={v => {
+                    setSelectedFontSize(v);
+                    let attrVal = "3";
+                    if (v === "12") attrVal = "1";
+                    else if (v === "14") attrVal = "2";
+                    else if (v === "16") attrVal = "3";
+                    else if (v === "18") attrVal = "4";
+                    else if (v === "24") attrVal = "5";
+                    else if (v === "32") attrVal = "6";
+                    else if (v === "48") attrVal = "7";
+                    handleApplyFontSize(attrVal);
+                  }}
+                  onOpenChange={open => {
+                    if (open) {
+                      saveSelection();
+                    } else {
+                      setTimeout(() => {
+                        restoreSelection();
+                        if (editorRef.current && document.activeElement !== editorRef.current) {
+                          editorRef.current.focus();
+                        }
+                      }, 50);
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-[85px] h-8 text-xs border border-border/50 cursor-pointer rounded-lg [&>span]:flex [&>span]:items-center [&>span]:gap-1 shrink-0 px-2">
+                    <span className="truncate">{selectedFontSize} px</span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="12" className="text-xs cursor-pointer">12 px</SelectItem>
+                    <SelectItem value="14" className="text-xs cursor-pointer">14 px</SelectItem>
+                    <SelectItem value="16" className="text-xs cursor-pointer">16 px</SelectItem>
+                    <SelectItem value="18" className="text-xs cursor-pointer">18 px</SelectItem>
+                    <SelectItem value="24" className="text-xs cursor-pointer">24 px</SelectItem>
+                    <SelectItem value="32" className="text-xs cursor-pointer">32 px</SelectItem>
+                    <SelectItem value="48" className="text-xs cursor-pointer">48 px</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {/* Text format selectors */}
+                <Select
+                  onValueChange={v => {
+                    handleApplyStyle("formatBlock", v);
+                  }}
+                  onOpenChange={open => {
+                    if (open) {
+                      saveSelection();
+                    } else {
+                      setTimeout(() => {
+                        restoreSelection();
+                        if (editorRef.current && document.activeElement !== editorRef.current) {
+                          editorRef.current.focus();
+                        }
+                      }, 50);
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-[120px] h-8 text-xs border border-border/50 cursor-pointer rounded-lg">
+                    <SelectValue placeholder="Text Format" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="p" className="text-xs cursor-pointer">Paragraph</SelectItem>
+                    <SelectItem value="h1" className="text-xs font-bold cursor-pointer">Heading 1</SelectItem>
+                    <SelectItem value="h2" className="text-xs font-bold cursor-pointer">Heading 2</SelectItem>
+                    <SelectItem value="h3" className="text-xs font-bold cursor-pointer">Heading 3</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {/* Color picker */}
+                <Select
+                  value={selectedColor}
+                  onValueChange={v => {
+                    setSelectedColor(v);
+                    handleApplyStyle("foreColor", v);
+                  }}
+                  onOpenChange={open => {
+                    if (open) {
+                      saveSelection();
+                    } else {
+                      setTimeout(() => {
+                        restoreSelection();
+                        if (editorRef.current && document.activeElement !== editorRef.current) {
+                          editorRef.current.focus();
+                        }
+                      }, 50);
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-[115px] h-8 text-xs border border-border/50 cursor-pointer rounded-lg [&>span]:flex [&>span]:items-center [&>span]:gap-1.5">
+                    <Palette
+                      className="h-3.5 w-3.5 text-primary shrink-0 transition-colors"
+                      style={{ color: selectedColor !== "#000000" ? selectedColor : undefined }}
+                    />
+                    <span className="truncate">
+                      {selectedColor === "#000000" ? "Color" : (selectedColor === "#2563eb" ? "Blue" : (selectedColor === "#dc2626" ? "Red" : (selectedColor === "#16a34a" ? "Green" : (selectedColor === "#eab308" ? "Yellow" : (selectedColor === "#7c3aed" ? "Violet" : "Color")))))}
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="#000000" className="text-xs text-black cursor-pointer">Default</SelectItem>
+                    <SelectItem value="#2563eb" className="text-xs text-blue-600 font-semibold cursor-pointer">Blue</SelectItem>
+                    <SelectItem value="#dc2626" className="text-xs text-red-600 font-semibold cursor-pointer">Red</SelectItem>
+                    <SelectItem value="#16a34a" className="text-xs text-green-600 font-semibold cursor-pointer">Green</SelectItem>
+                    <SelectItem value="#eab308" className="text-xs text-yellow-600 font-semibold cursor-pointer">Yellow</SelectItem>
+                    <SelectItem value="#7c3aed" className="text-xs text-purple-600 font-semibold cursor-pointer">Violet</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {isInsideTable && (
+                  <>
+                    <div className="h-4 w-[1px] bg-border mx-1" />
+
+                    {/* Table Actions Dropdown */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 px-2 rounded-lg text-xs gap-1 cursor-pointer border border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 transition-colors"
+                        >
+                          <Table2 className="h-3.5 w-3.5" /> Actions
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-[180px] rounded-xl p-1 shadow-lg bg-card border border-border/60 z-30">
+                        <DropdownMenuItem onClick={insertRowAbove} className="text-xs cursor-pointer rounded-lg focus:bg-muted/80">
+                          Insert Row Above
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={insertRowBelow} className="text-xs cursor-pointer rounded-lg focus:bg-muted/80">
+                          Insert Row Below
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator className="my-1 border-t border-border/40" />
+                        <DropdownMenuItem onClick={insertColumnLeft} className="text-xs cursor-pointer rounded-lg focus:bg-muted/80">
+                          Insert Column Left
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={insertColumnRight} className="text-xs cursor-pointer rounded-lg focus:bg-muted/80">
+                          Insert Column Right
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator className="my-1 border-t border-border/40" />
+                        <DropdownMenuItem onClick={deleteRow} className="text-xs text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer rounded-lg">
+                          Delete Row
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={deleteColumn} className="text-xs text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer rounded-lg">
+                          Delete Column
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator className="my-1 border-t border-border/40" />
+                        <DropdownMenuItem onClick={deleteTable} className="text-xs text-destructive font-semibold focus:text-destructive focus:bg-destructive/10 cursor-pointer rounded-lg">
+                          Delete Table
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </>
                 )}
-                onMouseDown={e => {
-                  e.preventDefault();
-                  handleFormatPainterClick();
-                }}
-                title="Paint format"
-              >
-                <Paintbrush className="h-4 w-4" />
-              </Button>
 
-              <div className="h-4 w-[1px] bg-border mx-1" />
-
-              {/* Bold */}
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-8 w-8 hover:bg-muted cursor-pointer rounded-lg"
-                onMouseDown={e => {
-                  e.preventDefault();
-                  handleApplyStyle("bold");
-                }}
-                title="Bold (Ctrl+B)"
-              >
-                <Bold className="h-4 w-4" />
-              </Button>
-              
-              {/* Italic */}
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-8 w-8 hover:bg-muted cursor-pointer rounded-lg"
-                onMouseDown={e => {
-                  e.preventDefault();
-                  handleApplyStyle("italic");
-                }}
-                title="Italic (Ctrl+I)"
-              >
-                <Italic className="h-4 w-4" />
-              </Button>
-
-              {/* Underline */}
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-8 w-8 hover:bg-muted cursor-pointer rounded-lg"
-                onMouseDown={e => {
-                  e.preventDefault();
-                  handleApplyStyle("underline");
-                }}
-                title="Underline (Ctrl+U)"
-              >
-                <Underline className="h-4 w-4" />
-              </Button>
-
-              <div className="h-4 w-[1px] bg-border mx-1" />
-
-              {/* Bullet list */}
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-8 w-8 hover:bg-muted cursor-pointer rounded-lg"
-                onMouseDown={e => {
-                  e.preventDefault();
-                  handleApplyStyle("insertUnorderedList");
-                }}
-                title="Bullet List"
-              >
-                <List className="h-4 w-4" />
-              </Button>
-
-              {/* Numbered list */}
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-8 w-8 hover:bg-muted cursor-pointer rounded-lg"
-                onMouseDown={e => {
-                  e.preventDefault();
-                  handleApplyStyle("insertOrderedList");
-                }}
-                title="Numbered List"
-              >
-                <ListOrdered className="h-4 w-4" />
-              </Button>
-
-              <div className="h-4 w-[1px] bg-border mx-1" />
-
-              {/* Align Left */}
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-8 w-8 hover:bg-muted cursor-pointer rounded-lg"
-                onMouseDown={e => {
-                  e.preventDefault();
-                  handleApplyStyle("justifyLeft");
-                }}
-                title="Align Left"
-              >
-                <AlignLeft className="h-4 w-4" />
-              </Button>
-
-              {/* Align Center */}
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-8 w-8 hover:bg-muted cursor-pointer rounded-lg"
-                onMouseDown={e => {
-                  e.preventDefault();
-                  handleApplyStyle("justifyCenter");
-                }}
-                title="Align Center"
-              >
-                <AlignCenter className="h-4 w-4" />
-              </Button>
-
-              {/* Align Right */}
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-8 w-8 hover:bg-muted cursor-pointer rounded-lg"
-                onMouseDown={e => {
-                  e.preventDefault();
-                  handleApplyStyle("justifyRight");
-                }}
-                title="Align Right"
-              >
-                <AlignRight className="h-4 w-4" />
-              </Button>
-
-              <div className="h-4 w-[1px] bg-border mx-1" />
-
-              {/* Table Insertion Popover */}
-              <Popover open={tableInsertOpen} onOpenChange={setTableInsertOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 hover:bg-muted cursor-pointer rounded-lg"
-                    onMouseDown={e => {
-                      e.preventDefault();
-                    }}
-                    title="Insert table"
-                  >
-                    <Table2 className="h-4 w-4" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[195px] p-2 bg-card border border-border/60 rounded-xl shadow-lg z-30" align="start">
-                  <div className="text-[10px] font-semibold text-muted-foreground mb-2 text-center select-none">
-                    {hoveredRow > 0 && hoveredCol > 0 ? `Insert ${hoveredRow} × ${hoveredCol} table` : "Select size"}
-                  </div>
-                  <div 
-                    className="grid grid-cols-8 gap-1 p-1 bg-muted/30 rounded-lg"
-                    onMouseLeave={() => {
-                      setHoveredRow(0);
-                      setHoveredCol(0);
-                    }}
-                  >
-                    {Array.from({ length: 64 }).map((_, index) => {
-                      const r = Math.floor(index / 8) + 1;
-                      const c = (index % 8) + 1;
-                      const isHighlighted = r <= hoveredRow && c <= hoveredCol;
-                      return (
-                        <div
-                          key={index}
-                          className={cn(
-                            "h-4 w-4 rounded-[3px] border border-border/70 cursor-pointer transition-all duration-100",
-                            isHighlighted 
-                              ? "bg-primary border-primary shadow-sm" 
-                              : "bg-background hover:bg-muted/80"
-                          )}
-                          onMouseEnter={() => {
-                            setHoveredRow(r);
-                            setHoveredCol(c);
-                          }}
-                          onMouseDown={e => {
-                            e.preventDefault();
-                          }}
-                          onClick={() => {
-                            insertTable(r, c);
-                            setTableInsertOpen(false);
-                            setHoveredRow(0);
-                            setHoveredCol(0);
-                          }}
-                        />
-                      );
-                    })}
-                  </div>
-                </PopoverContent>
-              </Popover>
-
-              <div className="h-4 w-[1px] bg-border mx-1" />
-
-              {/* Google Fonts selector dropdown */}
-              <Select
-                value={selectedFont}
-                onValueChange={v => {
-                  setSelectedFont(v);
-                  handleApplyStyle("fontName", v);
-                }}
-                onOpenChange={open => {
-                  if (open) {
-                    saveSelection();
-                  } else {
-                    setTimeout(() => {
-                      restoreSelection();
-                      if (editorRef.current && document.activeElement !== editorRef.current) {
-                        editorRef.current.focus();
-                      }
-                    }, 50);
-                  }
-                }}
-              >
-                <SelectTrigger className="w-[125px] h-8 text-xs border border-border/50 cursor-pointer rounded-lg [&>span]:flex [&>span]:items-center [&>span]:gap-1.5">
-                  <Type className="h-3.5 w-3.5 text-primary shrink-0" />
-                  <span className="truncate">{selectedFont}</span>
-                </SelectTrigger>
-                <SelectContent>
-                   {/* Sans-serif Fonts */}
-                   <SelectItem value="Inter" className="text-xs font-sans cursor-pointer">Inter</SelectItem>
-                   <SelectItem value="Roboto" className="text-xs font-sans cursor-pointer">Roboto</SelectItem>
-                   <SelectItem value="Outfit" className="text-xs font-sans cursor-pointer">Outfit</SelectItem>
-                   <SelectItem value="Poppins" className="text-xs font-sans cursor-pointer">Poppins</SelectItem>
-                   <SelectItem value="Montserrat" className="text-xs font-sans cursor-pointer">Montserrat</SelectItem>
-                   <SelectItem value="Open Sans" className="text-xs font-sans cursor-pointer">Open Sans</SelectItem>
-                   <SelectItem value="Lato" className="text-xs font-sans cursor-pointer">Lato</SelectItem>
-                   <SelectItem value="Josefin Sans" className="text-xs font-sans cursor-pointer">Josefin Sans</SelectItem>
-                   <SelectItem value="Ubuntu" className="text-xs font-sans cursor-pointer">Ubuntu</SelectItem>
-                   <SelectItem value="Nunito" className="text-xs font-sans cursor-pointer">Nunito</SelectItem>
-                   <SelectItem value="Oswald" className="text-xs font-sans cursor-pointer" style={{ fontFamily: 'Oswald, sans-serif' }}>Oswald</SelectItem>
-
-                   {/* Serif Fonts */}
-                   <SelectItem value="Playfair Display" className="text-xs serif cursor-pointer" style={{ fontFamily: 'Playfair Display, serif' }}>Playfair Display</SelectItem>
-                   <SelectItem value="Lora" className="text-xs serif cursor-pointer" style={{ fontFamily: 'Lora, serif' }}>Lora</SelectItem>
-                   <SelectItem value="Merriweather" className="text-xs serif cursor-pointer" style={{ fontFamily: 'Merriweather, serif' }}>Merriweather</SelectItem>
-                   <SelectItem value="Cinzel" className="text-xs serif cursor-pointer" style={{ fontFamily: 'Cinzel, serif' }}>Cinzel</SelectItem>
-
-                   {/* Monospace Fonts */}
-                   <SelectItem value="Fira Code" className="text-xs monospace cursor-pointer" style={{ fontFamily: 'Fira Code, monospace' }}>Fira Code</SelectItem>
-                   <SelectItem value="Source Code Pro" className="text-xs monospace cursor-pointer" style={{ fontFamily: 'Source Code Pro, monospace' }}>Source Code Pro</SelectItem>
-
-                   {/* Cursive / Creative Fonts */}
-                   <SelectItem value="Pacifico" className="text-xs cursor-pointer" style={{ fontFamily: 'Pacifico, cursive' }}>Pacifico</SelectItem>
-                   <SelectItem value="Dancing Script" className="text-xs cursor-pointer" style={{ fontFamily: 'Dancing Script, cursive' }}>Dancing Script</SelectItem>
-
-                   {/* Bengali Fonts */}
-                   <SelectItem value="Hind Siliguri" className="text-xs cursor-pointer" style={{ fontFamily: 'Hind Siliguri, sans-serif' }}>Hind Siliguri</SelectItem>
-                   <SelectItem value="Baloo Da 2" className="text-xs cursor-pointer" style={{ fontFamily: 'Baloo Da 2, cursive' }}>Baloo Da 2</SelectItem>
-                   <SelectItem value="Anek Bangla" className="text-xs cursor-pointer" style={{ fontFamily: 'Anek Bangla, sans-serif' }}>Anek Bangla</SelectItem>
-                   <SelectItem value="Noto Sans Bengali" className="text-xs cursor-pointer" style={{ fontFamily: 'Noto Sans Bengali, sans-serif' }}>Noto Sans Bengali</SelectItem>
-                   <SelectItem value="Noto Serif Bengali" className="text-xs cursor-pointer" style={{ fontFamily: 'Noto Serif Bengali, serif' }}>Noto Serif Bengali</SelectItem>
-                </SelectContent>
-              </Select>
-
-              {/* Text format selectors */}
-              <Select
-                onValueChange={v => {
-                  handleApplyStyle("formatBlock", v);
-                }}
-                onOpenChange={open => {
-                  if (open) {
-                    saveSelection();
-                  } else {
-                    setTimeout(() => {
-                      restoreSelection();
-                      if (editorRef.current && document.activeElement !== editorRef.current) {
-                        editorRef.current.focus();
-                      }
-                    }, 50);
-                  }
-                }}
-              >
-                <SelectTrigger className="w-[120px] h-8 text-xs border border-border/50 cursor-pointer rounded-lg">
-                  <SelectValue placeholder="Text Format" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="p" className="text-xs cursor-pointer">Paragraph</SelectItem>
-                  <SelectItem value="h1" className="text-xs font-bold cursor-pointer">Heading 1</SelectItem>
-                  <SelectItem value="h2" className="text-xs font-bold cursor-pointer">Heading 2</SelectItem>
-                  <SelectItem value="h3" className="text-xs font-bold cursor-pointer">Heading 3</SelectItem>
-                </SelectContent>
-              </Select>
-
-              {/* Color picker */}
-              <Select
-                value={selectedColor}
-                onValueChange={v => {
-                  setSelectedColor(v);
-                  handleApplyStyle("foreColor", v);
-                }}
-                onOpenChange={open => {
-                  if (open) {
-                    saveSelection();
-                  } else {
-                    setTimeout(() => {
-                      restoreSelection();
-                      if (editorRef.current && document.activeElement !== editorRef.current) {
-                        editorRef.current.focus();
-                      }
-                    }, 50);
-                  }
-                }}
-              >
-                <SelectTrigger className="w-[115px] h-8 text-xs border border-border/50 cursor-pointer rounded-lg [&>span]:flex [&>span]:items-center [&>span]:gap-1.5">
-                  <Palette 
-                    className="h-3.5 w-3.5 text-primary shrink-0 transition-colors" 
-                    style={{ color: selectedColor !== "#000000" ? selectedColor : undefined }}
-                  /> 
-                  <span className="truncate">
-                    {selectedColor === "#000000" ? "Color" : (selectedColor === "#2563eb" ? "Blue" : (selectedColor === "#dc2626" ? "Red" : (selectedColor === "#16a34a" ? "Green" : (selectedColor === "#eab308" ? "Yellow" : (selectedColor === "#7c3aed" ? "Violet" : "Color")))))}
-                  </span>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="#000000" className="text-xs text-black cursor-pointer">Default</SelectItem>
-                  <SelectItem value="#2563eb" className="text-xs text-blue-600 font-semibold cursor-pointer">Blue</SelectItem>
-                  <SelectItem value="#dc2626" className="text-xs text-red-600 font-semibold cursor-pointer">Red</SelectItem>
-                  <SelectItem value="#16a34a" className="text-xs text-green-600 font-semibold cursor-pointer">Green</SelectItem>
-                  <SelectItem value="#eab308" className="text-xs text-yellow-600 font-semibold cursor-pointer">Yellow</SelectItem>
-                  <SelectItem value="#7c3aed" className="text-xs text-purple-600 font-semibold cursor-pointer">Violet</SelectItem>
-                </SelectContent>
-              </Select>
-
-              {isInsideTable && (
-                <>
-                  <div className="h-4 w-[1px] bg-border mx-1" />
-                  
-                  {/* Table Actions Dropdown */}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-8 px-2 rounded-lg text-xs gap-1 cursor-pointer border border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 transition-colors"
-                      >
-                        <Table2 className="h-3.5 w-3.5" /> Actions
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-[180px] rounded-xl p-1 shadow-lg bg-card border border-border/60 z-30">
-                      <DropdownMenuItem onClick={insertRowAbove} className="text-xs cursor-pointer rounded-lg focus:bg-muted/80">
-                        Insert Row Above
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={insertRowBelow} className="text-xs cursor-pointer rounded-lg focus:bg-muted/80">
-                        Insert Row Below
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator className="my-1 border-t border-border/40" />
-                      <DropdownMenuItem onClick={insertColumnLeft} className="text-xs cursor-pointer rounded-lg focus:bg-muted/80">
-                        Insert Column Left
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={insertColumnRight} className="text-xs cursor-pointer rounded-lg focus:bg-muted/80">
-                        Insert Column Right
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator className="my-1 border-t border-border/40" />
-                      <DropdownMenuItem onClick={deleteRow} className="text-xs text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer rounded-lg">
-                        Delete Row
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={deleteColumn} className="text-xs text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer rounded-lg">
-                        Delete Column
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator className="my-1 border-t border-border/40" />
-                      <DropdownMenuItem onClick={deleteTable} className="text-xs text-destructive font-semibold focus:text-destructive focus:bg-destructive/10 cursor-pointer rounded-lg">
-                        Delete Table
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </>
-              )}
-
-              {/* Eraser */}
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-8 w-8 hover:bg-muted text-destructive cursor-pointer rounded-lg ml-auto"
-                onMouseDown={e => {
-                  e.preventDefault();
-                  handleApplyStyle("removeFormat");
-                }}
-                title="Clear Formatting"
-              >
-                <Eraser className="h-4 w-4" />
-              </Button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 bg-muted/90 p-2 shrink-0 text-xs text-muted-foreground px-4 py-2 font-medium border-b border-border/40">
-              <Lock className="h-3.5 w-3.5 text-muted-foreground" /> Read-Only Mode. You do not have permissions to edit this document.
-            </div>
-          )}
+                {/* Eraser */}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 hover:bg-muted text-destructive cursor-pointer rounded-lg ml-auto"
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    handleApplyStyle("removeFormat");
+                  }}
+                  title="Clear Formatting"
+                >
+                  <Eraser className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 bg-muted/90 p-2 shrink-0 text-xs text-muted-foreground px-4 py-2 font-medium border-b border-border/40">
+                <Lock className="h-3.5 w-3.5 text-muted-foreground" /> Read-Only Mode. You do not have permissions to edit this document.
+              </div>
+            )}
           </div>
 
           {/* Pageless Workspace Canvas */}
           <div className="flex-1 bg-background overflow-auto flex justify-center min-h-[500px] rounded-none md:rounded-b-3xl">
-            <div 
+            <div
               ref={editorRef}
               contentEditable={currentNote.permission_level === "edit"}
               onInput={handleEditorInput}
@@ -2136,7 +2493,7 @@ export default function NotesPage() {
                   display: none;
                 }
               `}</style>
-              <div 
+              <div
                 className="md:hidden flex items-center gap-1.5 bg-card/95 backdrop-blur-md border-t border-border/40 p-2 overflow-x-auto whitespace-nowrap shrink-0 no-scrollbar rounded-b-3xl"
                 style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
               >
@@ -2172,7 +2529,7 @@ export default function NotesPage() {
                 >
                   <Bold className="h-4.5 w-4.5" />
                 </Button>
-                
+
                 {/* Italic */}
                 <Button
                   size="icon"
@@ -2313,11 +2670,11 @@ export default function NotesPage() {
               {isFormatPanelOpen && (
                 <>
                   {/* Backdrop */}
-                  <div 
+                  <div
                     className="md:hidden fixed inset-0 z-40 bg-background/40 backdrop-blur-xs transition-opacity duration-300"
                     onClick={() => setIsFormatPanelOpen(false)}
                   />
-                  
+
                   {/* Slide up Drawer */}
                   <div className="md:hidden fixed inset-x-0 bottom-0 z-50 flex flex-col bg-card/98 backdrop-blur-md border-t border-border/60 rounded-t-3xl shadow-2xl max-h-[80vh] overflow-hidden transition-transform duration-300 transform translate-y-0 pb-safe">
                     {/* Drag Handle & Header */}
@@ -2325,7 +2682,7 @@ export default function NotesPage() {
                       <div className="w-12 h-1.5 rounded-full bg-muted-foreground/20 my-3 cursor-pointer" onClick={() => setIsFormatPanelOpen(false)} />
                       <div className="flex items-center justify-between w-full px-5 pb-1">
                         <span className="text-base font-bold text-foreground">Format</span>
-                        <button 
+                        <button
                           onClick={() => setIsFormatPanelOpen(false)}
                           className="p-1 hover:bg-muted rounded-full cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
                         >
@@ -2336,23 +2693,23 @@ export default function NotesPage() {
 
                     {/* Tabs */}
                     <div className="flex border-b border-border/40 bg-muted/10 shrink-0 select-none">
-                      <button 
+                      <button
                         onClick={() => setActiveFormatTab("text")}
                         className={cn(
                           "flex-1 py-3 text-center text-sm font-bold border-b-2 transition-colors duration-200 cursor-pointer",
-                          activeFormatTab === "text" 
-                            ? "border-primary text-primary" 
+                          activeFormatTab === "text"
+                            ? "border-primary text-primary"
                             : "border-transparent text-muted-foreground hover:text-foreground"
                         )}
                       >
                         Text
                       </button>
-                      <button 
+                      <button
                         onClick={() => setActiveFormatTab("paragraph")}
                         className={cn(
                           "flex-1 py-3 text-center text-sm font-bold border-b-2 transition-colors duration-200 cursor-pointer",
-                          activeFormatTab === "paragraph" 
-                            ? "border-primary text-primary" 
+                          activeFormatTab === "paragraph"
+                            ? "border-primary text-primary"
                             : "border-transparent text-muted-foreground hover:text-foreground"
                         )}
                       >
@@ -2420,6 +2777,51 @@ export default function NotesPage() {
                             </Select>
                           </div>
 
+                          {/* Font Size Selector */}
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Font Size</label>
+                            <Select
+                              value={selectedFontSize}
+                              onValueChange={v => {
+                                setSelectedFontSize(v);
+                                let attrVal = "3";
+                                if (v === "12") attrVal = "1";
+                                else if (v === "14") attrVal = "2";
+                                else if (v === "16") attrVal = "3";
+                                else if (v === "18") attrVal = "4";
+                                else if (v === "24") attrVal = "5";
+                                else if (v === "32") attrVal = "6";
+                                else if (v === "48") attrVal = "7";
+                                handleApplyFontSize(attrVal);
+                              }}
+                              onOpenChange={open => {
+                                if (open) {
+                                  saveSelection();
+                                } else {
+                                  setTimeout(() => {
+                                    restoreSelection();
+                                    if (editorRef.current && document.activeElement !== editorRef.current) {
+                                      editorRef.current.focus();
+                                    }
+                                  }, 50);
+                                }
+                              }}
+                            >
+                              <SelectTrigger className="w-full h-11 text-sm border border-border/60 cursor-pointer rounded-xl bg-background px-3.5">
+                                <SelectValue placeholder="Font Size" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="12" className="text-sm cursor-pointer">12 px</SelectItem>
+                                <SelectItem value="14" className="text-sm cursor-pointer">14 px</SelectItem>
+                                <SelectItem value="16" className="text-sm cursor-pointer">16 px (Default)</SelectItem>
+                                <SelectItem value="18" className="text-sm cursor-pointer">18 px</SelectItem>
+                                <SelectItem value="24" className="text-sm cursor-pointer">24 px</SelectItem>
+                                <SelectItem value="32" className="text-sm cursor-pointer">32 px</SelectItem>
+                                <SelectItem value="48" className="text-sm cursor-pointer">48 px</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
                           {/* Text Format (Headings/Paragraph) */}
                           <div className="space-y-2">
                             <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Text Format</label>
@@ -2480,11 +2882,11 @@ export default function NotesPage() {
                                     title={colorObj.label}
                                   >
                                     {isCurrent && (
-                                      <Check 
+                                      <Check
                                         className={cn(
                                           "h-5 w-5",
                                           colorObj.value === "#000000" || colorObj.value === "#eab308" ? "text-slate-900" : "text-white"
-                                        )} 
+                                        )}
                                       />
                                     )}
                                     {colorObj.value === "#000000" && !isCurrent && (
@@ -2626,7 +3028,7 @@ export default function NotesPage() {
                               {hoveredRowMobile > 0 && hoveredColMobile > 0 ? `Insert ${hoveredRowMobile} × ${hoveredColMobile} Table` : "Quick Insert Table"}
                             </label>
                             <div className="bg-muted/30 border border-border/50 rounded-2xl p-4 flex flex-col items-center justify-center">
-                              <div 
+                              <div
                                 className="grid grid-cols-5 gap-2.5"
                                 onMouseLeave={() => {
                                   setHoveredRowMobile(0);
@@ -2642,8 +3044,8 @@ export default function NotesPage() {
                                       key={index}
                                       className={cn(
                                         "h-7 w-7 rounded-lg border border-border/70 cursor-pointer transition-all duration-100 flex items-center justify-center",
-                                        isHighlighted 
-                                          ? "bg-primary border-primary shadow-sm" 
+                                        isHighlighted
+                                          ? "bg-primary border-primary shadow-sm"
                                           : "bg-background hover:bg-muted/80"
                                       )}
                                       onMouseEnter={() => {
@@ -2771,8 +3173,8 @@ export default function NotesPage() {
 
             <div className="space-y-1.5">
               <Label htmlFor="doc-client" className="text-xs font-semibold">Client Folder</Label>
-              <Select 
-                value={createClientId} 
+              <Select
+                value={createClientId}
                 onValueChange={v => {
                   setCreateClientId(v);
                   setCreateFolderId("none"); // Reset folder selection
@@ -2972,7 +3374,7 @@ export default function NotesPage() {
               <div className="space-y-3">
                 {activeStaff.map(s => {
                   const sMap = sharingMap[s.id] || { selected: false, level: "view" };
-                  
+
                   if (currentNote && s.id === currentNote.created_by) {
                     return (
                       <div key={s.id} className="flex items-center justify-between gap-4 p-2.5 rounded-xl bg-muted/40 border border-border/30 opacity-80">
@@ -3066,7 +3468,7 @@ export default function NotesPage() {
               <div className="space-y-3">
                 {activeStaff.map(s => {
                   const sMap = sharingFolderMap[s.id] || { selected: false, level: "view" };
-                  
+
                   if (activeFolderToShare && s.id === activeFolderToShare.created_by) {
                     return (
                       <div key={s.id} className="flex items-center justify-between gap-4 p-2.5 rounded-xl bg-muted/40 border border-border/30 opacity-80">
@@ -3150,18 +3552,19 @@ interface NotesGridProps {
   isAdmin: boolean;
   activeStaff: Profile[];
   profileId: string | undefined;
+  foldersList?: NoteFolder[];
 }
 
-function NotesGrid({ notesList, handleOpenEditor, handleDeleteDocument, isAdmin, activeStaff, profileId }: NotesGridProps) {
+function NotesGrid({ notesList, handleOpenEditor, handleDeleteDocument, isAdmin, activeStaff, profileId, foldersList }: NotesGridProps) {
   return (
     <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7">
       {notesList.map(n => {
         const isOwned = n.created_by === profileId;
-        
+
         return (
-          <div 
-            key={n.id} 
-            className="group relative flex flex-col justify-between p-3.5 rounded-2xl border border-border/40 hover:border-primary/30 bg-card hover:bg-muted/10 hover:shadow-elegant transition-all duration-200 cursor-pointer min-h-[135px]"
+          <div
+            key={n.id}
+            className="group relative flex flex-col justify-between p-3.5 rounded-2xl border border-border/60 hover:border-primary/30 bg-card hover:bg-muted/10 hover:shadow-elegant transition-all duration-200 cursor-pointer min-h-[135px]"
             onClick={() => handleOpenEditor(n)}
           >
             {/* Card Top Row: File icon and Delete button */}
@@ -3169,7 +3572,7 @@ function NotesGrid({ notesList, handleOpenEditor, handleDeleteDocument, isAdmin,
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
                 <FileText className="h-4.5 w-4.5" />
               </div>
-              
+
               {(isOwned || isAdmin) && (
                 <Button
                   size="icon"
@@ -3188,8 +3591,8 @@ function NotesGrid({ notesList, handleOpenEditor, handleDeleteDocument, isAdmin,
 
             {/* Card Middle: Title */}
             <div className="mt-2.5 flex-1 min-w-0">
-              <h3 className="font-semibold text-xs leading-snug text-foreground group-hover:text-primary transition-colors line-clamp-2">
-                {n.title}
+              <h3 className="font-semibold text-xs leading-snug text-foreground group-hover:text-primary transition-colors line-clamp-2 font-bengali">
+                {n.title.trim() || "Untitled Note"}
               </h3>
             </div>
 
@@ -3198,6 +3601,14 @@ function NotesGrid({ notesList, handleOpenEditor, handleDeleteDocument, isAdmin,
               <span className="truncate">
                 {formatDate(n.updated_at)}
               </span>
+              {n.folder_id && foldersList && (
+                <span className="flex items-center gap-0.5 text-primary max-w-[55%] truncate" title={foldersList.find(f => f.id === n.folder_id)?.name}>
+                  <Folder className="h-2.5 w-2.5 shrink-0" />
+                  <span className="truncate font-semibold">
+                    {foldersList.find(f => f.id === n.folder_id)?.name}
+                  </span>
+                </span>
+              )}
             </div>
           </div>
         );
