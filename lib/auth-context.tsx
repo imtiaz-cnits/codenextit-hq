@@ -112,12 +112,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         
         if (error) {
           console.error("Auth initialization error:", error.message);
-          // If the refresh token is invalid or not found, we must sign out to clear local storage
+          // If the refresh token is invalid or not found, we must sign out and clear local storage
           if (error.message.includes("refresh_token_not_found") || 
               error.message.includes("Refresh Token Not Found") ||
-              error.message.includes("Invalid Refresh Token")) {
-            console.warn("Invalid refresh token detected, signing out...");
-            await supabase.auth.signOut();
+              error.message.includes("Invalid Refresh Token") ||
+              error.message.includes("invalid_grant")) {
+            console.warn("Invalid refresh token detected, clearing local storage...");
+            if (typeof window !== 'undefined') {
+              const keysToRemove: string[] = [];
+              for (let i = 0; i < window.localStorage.length; i++) {
+                const key = window.localStorage.key(i);
+                if (key && (key.includes('auth-token') || key.includes('supabase.auth.token'))) {
+                  keysToRemove.push(key);
+                }
+              }
+              keysToRemove.forEach(k => window.localStorage.removeItem(k));
+            }
+            try {
+              await supabase.auth.signOut();
+            } catch (signOutErr) {
+              console.warn("Error during signOut call:", signOutErr);
+            }
           }
           setLoading(false);
           return;
