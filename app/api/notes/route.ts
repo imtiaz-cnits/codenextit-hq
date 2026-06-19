@@ -252,7 +252,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { title, content, client_id, folder_id, shared_staff } = body;
+    const { title, content, client_id, folder_id, shared_staff, audio_url } = body;
 
     if (!title) {
       return NextResponse.json({ error: "Title is required" }, { status: 400 });
@@ -266,6 +266,7 @@ export async function POST(req: NextRequest) {
         content: content || "",
         client_id: client_id || null,
         folder_id: folder_id || null,
+        audio_url: audio_url || null,
         created_by: user.id
       })
       .select("id")
@@ -314,7 +315,7 @@ export async function PUT(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { id, title, content, client_id, folder_id, shared_staff } = body;
+    const { id, title, content, client_id, folder_id, shared_staff, audio_url } = body;
 
     if (!id || !title) {
       return NextResponse.json({ error: "ID and Title are required" }, { status: 400 });
@@ -395,6 +396,7 @@ export async function PUT(req: NextRequest) {
         content: content || "",
         client_id: client_id || null,
         folder_id: folder_id || null,
+        audio_url: audio_url || null,
         updated_at: new Date().toISOString()
       })
       .eq("id", id);

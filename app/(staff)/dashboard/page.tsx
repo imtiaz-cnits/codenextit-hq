@@ -13,7 +13,7 @@ import { formatCurrency, toLocalDateString, formatDate } from "../../../lib/form
 import {
   TrendingUp, Users, Server, LifeBuoy, Plus, Receipt, Clock, FileText,
   ArrowUpRight, Activity, Briefcase, CheckCircle, ListTodo, CalendarDays,
-  LogIn, LogOut, Coffee
+  Coffee
 } from "lucide-react";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { cn } from "../../../lib/utils";
@@ -37,7 +37,7 @@ export default function Dashboard() {
   const {
     invoices, projects, tasks, employees, attendance,
     leaves, clients, infrastructure, currentEmployee,
-    toggleClock, loading
+    loading
   } = useMock();
   const { hasRole, profile, user } = useAuth();
   const router = useRouter();
@@ -45,33 +45,36 @@ export default function Dashboard() {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
   const [isWeeklyPopupOpen, setIsWeeklyPopupOpen] = useState(false);
 
-  // Holidays from Supabase (multi-day ranges represented as one row per day)
+  // Holidays & renewals fetching (optimized concurrently)
   const [holidays, setHolidays] = useState<{ id?: string; date: string; name: string }[]>([]);
-  useEffect(() => {
-    void (async () => {
-      const { data } = await supabase.from("company_holidays" as any).select("*").order("date", { ascending: true });
-      if (data) setHolidays(data as any);
-    })();
-  }, []);
-
-  // Fetch client domains for combined renewals stats
   const [domains, setDomains] = useState<any[]>([]);
+
   useEffect(() => {
     void (async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session?.access_token) return;
-        const res = await fetch("/api/domains", {
-          headers: {
-            "Authorization": `Bearer ${session.access_token}`
+        const [holidaysRes, sessionRes] = await Promise.all([
+          supabase.from("company_holidays" as any).select("*").order("date", { ascending: true }),
+          supabase.auth.getSession()
+        ]);
+
+        if (holidaysRes.data) {
+          setHolidays(holidaysRes.data as any);
+        }
+
+        const session = sessionRes.data?.session;
+        if (session?.access_token) {
+          const res = await fetch("/api/domains", {
+            headers: {
+              "Authorization": `Bearer ${session.access_token}`
+            }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setDomains(data || []);
           }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setDomains(data || []);
         }
       } catch (err) {
-        console.error("Error loading domains for dashboard renewals:", err);
+        console.error("Error loading dashboard layout metrics:", err);
       }
     })();
   }, [user]);
@@ -80,7 +83,10 @@ export default function Dashboard() {
 
   const isSuperAdmin = hasRole("super_admin");
   const isClient = hasRole("client");
-  const t = toLocalDateString();
+  // Get Bangladesh-aware local date string (YYYY-MM-DD)
+  const t = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Dhaka", year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(new Date());
 
   const activeEmployees = useMemo(() => {
     return employees.filter(e => e.status !== "disabled");
@@ -95,11 +101,12 @@ export default function Dashboard() {
   const revenueUSD = invoices.filter((i) => i.currency === "USD" && i.status === "paid").reduce((s, i) => s + i.paid, 0);
 
   const getDaysRemaining = (dateStr: string) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Use Bangladesh time for consistent "today" calculation
+    const bdNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Dhaka" }));
+    bdNow.setHours(0, 0, 0, 0);
     const target = new Date(dateStr);
     target.setHours(0, 0, 0, 0);
-    return Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    return Math.ceil((target.getTime() - bdNow.getTime()) / (1000 * 60 * 60 * 24));
   };
 
   const upcomingRenewals = useMemo(() => {
@@ -145,6 +152,9 @@ export default function Dashboard() {
 
   // Staff Stats
   const todayAttendance = attendance.find(a => a.employee_id === targetEmployee?.id && a.date === t);
+
+  // Active user's own attendance for Clock In/Out button is managed in attendance page
+
   const myPendingTasks = tasks.filter(tk => tk.assignee_id === currentEmployee?.id && tk.status !== 'done');
   const myActiveProjects = projects.filter(p => p.team_members?.includes(currentEmployee?.id || ""));
 
@@ -179,7 +189,7 @@ export default function Dashboard() {
   const isTodayHoliday = !!todayHoliday;
 
   // Friday weekly off
-  const todayDay = new Date(t).getDay();
+  const todayDay = (parseDateSafely(t) || new Date(t)).getDay();
   const isWeeklyOff = todayDay === 5;
 
   // Group holidays into multi-day ranges sharing same base name
@@ -205,7 +215,9 @@ export default function Dashboard() {
 
   // Find next upcoming holiday (date > today, within 60 days)
   const upcomingHoliday = (() => {
-    const sixtyDaysOut = new Date(Date.now() + 60 * 24 * 3600 * 1000).toISOString().split("T")[0];
+    // We already have 't' which is Asia/Dhaka today (YYYY-MM-DD)
+    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Dhaka" }));
+    const sixtyDaysOut = new Date(now.getTime() + 60 * 24 * 3600 * 1000).toISOString().split("T")[0];
     return holidayGroups
       .filter(g => g.firstDate > t && g.firstDate <= sixtyDaysOut)
       .sort((a, b) => a.firstDate.localeCompare(b.firstDate))[0];
@@ -213,7 +225,7 @@ export default function Dashboard() {
 
   // Days until next holiday
   const daysUntilHoliday = upcomingHoliday
-    ? Math.ceil((new Date(upcomingHoliday.firstDate).getTime() - new Date(t).getTime()) / (24 * 3600 * 1000))
+    ? getDaysRemaining(upcomingHoliday.firstDate)
     : null;
 
   // Detect if current BD time is before standard office start (11:00) — show "Yet to Clock In" instead of "Absent"
@@ -229,8 +241,11 @@ export default function Dashboard() {
   // ==== Daily & Weekly Hour Calculations (Bangladesh time) ====
   const calcWorkedMinutes = (clockIn: string | null, clockOut: string | null) => {
     if (!clockIn) return 0;
-    const inMs = new Date(clockIn).getTime();
-    const outMs = clockOut ? new Date(clockOut).getTime() : Date.now();
+    const parsedIn = parseDateSafely(clockIn);
+    const parsedOut = clockOut ? parseDateSafely(clockOut) : new Date();
+    if (!parsedIn || !parsedOut) return 0;
+    const inMs = parsedIn.getTime();
+    const outMs = parsedOut.getTime();
     if (isNaN(inMs) || isNaN(outMs) || outMs <= inMs) return 0;
     return Math.floor((outMs - inMs) / 60000);
   };
@@ -344,8 +359,8 @@ export default function Dashboard() {
         statusColor = "text-amber-500 bg-amber-500/10 dark:bg-amber-500/5";
         hoursDisplay = isHalf ? "4h 0m (Credited)" : "8h 0m (Credited)";
       } else if (att) {
-        clockInTime = att.clock_in ? new Date(att.clock_in).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : "—";
-        clockOutTime = att.clock_out ? new Date(att.clock_out).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : "—";
+        clockInTime = att.clock_in ? (parseDateSafely(att.clock_in) || new Date(att.clock_in)).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : "—";
+        clockOutTime = att.clock_out ? (parseDateSafely(att.clock_out) || new Date(att.clock_out)).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : "—";
 
         if (att.clock_in && targetEmployee) {
           try {
@@ -353,7 +368,7 @@ export default function Dashboard() {
             if (!isMgmtOrAdmin) {
               const officeStart = targetEmployee.office_start || "11:00";
               const [startH, startM] = officeStart.split(":").map(Number);
-              const inDate = new Date(att.clock_in);
+              const inDate = parseDateSafely(att.clock_in) || new Date(att.clock_in);
               const dhakaStr = inDate.toLocaleTimeString("en-US", {
                 timeZone: "Asia/Dhaka",
                 hour12: false,
@@ -500,8 +515,8 @@ export default function Dashboard() {
                       ? "Approved Leave"
                       : (todayAttendance
                         ? (todayAttendance.clock_out
-                          ? `Clocked out at ${new Date(todayAttendance.clock_out).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`
-                          : `Clocked in at ${new Date(todayAttendance.clock_in!).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`)
+                          ? `Clocked out at ${(parseDateSafely(todayAttendance.clock_out) || new Date(todayAttendance.clock_out)).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`
+                          : `Clocked in at ${(parseDateSafely(todayAttendance.clock_in) || new Date()).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`)
                         : (isBeforeOfficeStart ? "Office starts at 11:00 AM" : "Not yet clocked in"))
               }
               icon={isTodayHoliday || isWeeklyOff ? Coffee : Clock}
@@ -530,7 +545,7 @@ export default function Dashboard() {
           <DailyHadithWidget />
         </div>
 
-        {!isClient && (currentEmployee || isSuperAdmin) ? (
+        {!isClient && (currentEmployee || isSuperAdmin) && (
           <div className="space-y-4">
             {isSuperAdmin && (
               <Card className="shadow-card border border-primary/20 bg-primary/[0.02] dark:bg-primary/[0.01]">
@@ -570,8 +585,8 @@ export default function Dashboard() {
               subtitle={
                 todayAttendance?.clock_in
                   ? (todayAttendance.clock_out
-                    ? `${new Date(todayAttendance.clock_in).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} → ${new Date(todayAttendance.clock_out).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
-                    : `Started ${new Date(todayAttendance.clock_in).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} · still clocked in`)
+                    ? `${(parseDateSafely(todayAttendance.clock_in) || new Date(todayAttendance.clock_in)).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} → ${(parseDateSafely(todayAttendance.clock_out) || new Date(todayAttendance.clock_out)).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
+                    : `Started ${(parseDateSafely(todayAttendance.clock_in) || new Date()).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} · still clocked in`)
                   : (isOnLeaveToday
                     ? ((isOnLeaveToday as any).is_half_day ? "½ day approved leave (4h credited)" : "Full day approved leave (8h credited)")
                     : "Not clocked in yet")
@@ -588,53 +603,6 @@ export default function Dashboard() {
               onClick={() => setIsWeeklyPopupOpen(true)}
             />
           </div>
-        ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle>Quick Actions</CardTitle>
-              <CardDescription>Jump right in</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {currentEmployee && (
-                <Button
-                  variant={todayAttendance && !todayAttendance.clock_out ? "outline" : "default"}
-                  className={cn(
-                    "w-full justify-start font-bold mb-2",
-                    todayAttendance && !todayAttendance.clock_out ? "border-primary text-primary hover:bg-primary/5" : "bg-primary hover:bg-primary/90"
-                  )}
-                  onClick={() => toggleClock(currentEmployee.id)}
-                >
-                  {todayAttendance && !todayAttendance.clock_out ? (
-                    <>
-                      <LogOut className="h-4 w-4 mr-2" />
-                      Clock Out
-                    </>
-                  ) : (
-                    <>
-                      <LogIn className="h-4 w-4 mr-2" />
-                      Clock In
-                    </>
-                  )}
-                  <Badge variant="secondary" className="ml-auto text-[10px] h-5">Today</Badge>
-                </Button>
-              )}
-              {[
-                ...(isSuperAdmin ? [
-                  { icon: TrendingUp, label: "Add New Lead" },
-                  { icon: Receipt, label: "Create Invoice" },
-                ] : []),
-                { icon: Clock, label: "Log Time" },
-                { icon: LifeBuoy, label: "New Ticket" },
-                { icon: FileText, label: "New Quotation" },
-              ].map((a) => (
-                <Button key={a.label} variant="outline" className="w-full justify-start">
-                  <a.icon className="h-4 w-4 mr-2" />
-                  {a.label}
-                  <ArrowUpRight className="h-3.5 w-3.5 ml-auto text-muted-foreground" />
-                </Button>
-              ))}
-            </CardContent>
-          </Card>
         )}
       </div>
       <Dialog open={isWeeklyPopupOpen} onOpenChange={setIsWeeklyPopupOpen}>
@@ -907,4 +875,26 @@ function formatHrMinInline(mins: number): string {
   if (h === 0) return `${m}m`;
   if (m === 0) return `${h}h`;
   return `${h}h ${m}m`;
+}
+
+function parseDateSafely(dateStr: string | null | undefined): Date | null {
+  if (!dateStr) return null;
+  let normalized = dateStr.trim();
+  if (normalized.includes(" ") && !normalized.includes("T")) {
+    normalized = normalized.replace(" ", "T");
+  }
+  const date = new Date(normalized);
+  if (!isNaN(date.getTime())) {
+    return date;
+  }
+  try {
+    const cleaned = normalized.replace(/\s+/g, "T");
+    const parsed = new Date(cleaned);
+    if (!isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  } catch (e) {
+    console.error("Error parsing date safely:", e);
+  }
+  return null;
 }

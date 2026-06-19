@@ -35,6 +35,24 @@ async function checkIsSuperAdmin(userId: string): Promise<boolean> {
   return data?.some((r: any) => r.role === "super_admin" || r.role === "admin") ?? false;
 }
 
+// Helper to recursively check if a folder is a descendant of another folder
+async function isDescendantOf(folderIdToCheck: string, possibleAncestorId: string): Promise<boolean> {
+  let currentId: string | null = folderIdToCheck;
+  while (currentId) {
+    const res = await (supabaseAdmin
+      .from("note_folders" as any) as any)
+      .select("parent_id")
+      .eq("id", currentId)
+      .maybeSingle();
+
+    const data = res.data as { parent_id: string | null } | null;
+    if (!data) return false;
+    if (data.parent_id === possibleAncestorId) return true;
+    currentId = data.parent_id;
+  }
+  return false;
+}
+
 export async function GET(req: NextRequest) {
   try {
     const user = await getAuthUser(req);
@@ -147,7 +165,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { name, client_id } = body;
+    const { name, client_id, parent_id } = body;
 
     if (!name) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -158,6 +176,7 @@ export async function POST(req: NextRequest) {
       .insert({
         name,
         client_id: client_id || null,
+        parent_id: parent_id || null,
         created_by: user.id
       })
       .select()
@@ -185,7 +204,7 @@ export async function PUT(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { id, name, shared_staff } = body;
+    const { id, name, parent_id, shared_staff } = body;
 
     if (!id) {
       return NextResponse.json({ error: "ID is required" }, { status: 400 });
@@ -238,14 +257,28 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "Forbidden. You do not have permission to edit this folder." }, { status: 403 });
     }
 
-    // Update folder details if name is provided
-    if (name) {
+    // Update folder details if name or parent_id is provided
+    if (name !== undefined || parent_id !== undefined) {
+      const updateData: any = {
+        updated_at: new Date().toISOString()
+      };
+      if (name !== undefined) updateData.name = name;
+      if (parent_id !== undefined) {
+        if (parent_id === id) {
+          return NextResponse.json({ error: "A folder cannot be its own parent." }, { status: 400 });
+        }
+        if (parent_id) {
+          const isCircular = await isDescendantOf(parent_id, id);
+          if (isCircular) {
+            return NextResponse.json({ error: "Circular dependency detected. A folder cannot be nested under its own subfolders." }, { status: 400 });
+          }
+        }
+        updateData.parent_id = parent_id || null;
+      }
+
       const { error } = await (supabaseAdmin
         .from("note_folders" as any) as any)
-        .update({
-          name,
-          updated_at: new Date().toISOString()
-        })
+        .update(updateData)
         .eq("id", id);
 
       if (error) throw error;

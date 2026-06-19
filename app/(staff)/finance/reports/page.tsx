@@ -78,16 +78,24 @@ export default function FinancialReportsPage() {
   async function loadReportsData(start: string, end: string) {
     setLoading(true);
     try {
-      // 1. Fetch view_monthly_pnl (PNL)
-      const { data: pnlRes, error: pnlErr } = await supabase
-        .from("view_monthly_pnl" as any)
-        .select("*")
-        .limit(12); // Last 12 months
-      
-      if (pnlErr) throw pnlErr;
-      
+      // Fetch all reports analytical data concurrently
+      const [pnlResResult, duesResResult, equityResResult, expenseResResult] = await Promise.all([
+        supabase.from("view_monthly_pnl" as any).select("*").limit(12),
+        supabase.from("view_client_dues" as any).select("*").order("total_outstanding_due", { ascending: false }),
+        supabase.from("view_founder_equity" as any).select("*"),
+        (supabase as any).rpc("get_expense_breakdown", { 
+          start_date: start, 
+          end_date: end 
+        })
+      ]);
+
+      if (pnlResResult.error) throw pnlResResult.error;
+      if (duesResResult.error) throw duesResResult.error;
+      if (equityResResult.error) throw equityResResult.error;
+      if (expenseResResult.error) throw expenseResResult.error;
+
       // Reverse P&L data to keep months chronological (ascending)
-      const formattedPnl = (pnlRes || []).map((p: any) => ({
+      const formattedPnl = (pnlResResult.data || []).map((p: any) => ({
         month: p.month,
         total_income: Number(p.total_income),
         total_expense: Number(p.total_expense),
@@ -95,14 +103,7 @@ export default function FinancialReportsPage() {
       })).reverse();
       setPnlData(formattedPnl);
 
-      // 2. Fetch view_client_dues
-      const { data: duesRes, error: duesErr } = await supabase
-        .from("view_client_dues" as any)
-        .select("*")
-        .order("total_outstanding_due", { ascending: false });
-      
-      if (duesErr) throw duesErr;
-      setClientDues((duesRes || []).map((d: any) => ({
+      setClientDues((duesResResult.data || []).map((d: any) => ({
         client_id: d.client_id,
         company_name: d.company_name,
         total_invoiced_amount: Number(d.total_invoiced_amount),
@@ -110,28 +111,14 @@ export default function FinancialReportsPage() {
         total_outstanding_due: Number(d.total_outstanding_due)
       })));
 
-      // 3. Fetch view_founder_equity
-      const { data: equityRes, error: eqErr } = await supabase
-        .from("view_founder_equity" as any)
-        .select("*");
-      
-      if (eqErr) throw eqErr;
-      setFounderEquity((equityRes || []).map((e: any) => ({
+      setFounderEquity((equityResResult.data || []).map((e: any) => ({
         founder_name: e.founder_name,
         total_invested: Number(e.total_invested),
         total_repaid: Number(e.total_repaid),
         remaining_outstanding_due: Number(e.remaining_outstanding_due)
       })));
 
-      // 4. Fetch Expense Breakdown RPC
-      const { data: expenseRes, error: expErr } = await (supabase as any)
-        .rpc("get_expense_breakdown", { 
-          start_date: start, 
-          end_date: end 
-        });
-
-      if (expErr) throw expErr;
-      setExpenseBreakdown(((expenseRes as any[]) || []).map((x: any) => ({
+      setExpenseBreakdown(((expenseResResult.data as any[]) || []).map((x: any) => ({
         category: x.category,
         total_amount: Number(x.total_amount),
         currency: x.currency

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useMemo } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import { supabase } from "../../../integrations/supabase/client";
 import { useAuth } from "../../../lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
@@ -14,17 +14,25 @@ import { Checkbox } from "../../../components/ui/checkbox";
 import { ScrollArea } from "../../../components/ui/scroll-area";
 import { Popover, PopoverContent, PopoverTrigger } from "../../../components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "../../../components/ui/dropdown-menu";
-import {
-  FileText, Globe, Calendar, AlertTriangle, AlertCircle, ShieldCheck, Edit, Trash2, Plus,
-  ExternalLink, Loader2, RefreshCw, Search, Folder, DollarSign, Bell, ArrowLeft, ChevronLeft, Save,
+import { FileText, Globe, Calendar, AlertTriangle, AlertCircle, ShieldCheck, Edit, Trash2, Plus,
+  ExternalLink, Loader2, RefreshCw, Search, Folder, FolderOpen, DollarSign, Bell, ArrowLeft, ChevronLeft, ChevronDown, Save,
   Share2, Users, Bold, Italic, Underline, List, ListOrdered, AlignLeft, AlignCenter,
   AlignRight, Heading1, Heading2, Heading3, Palette, Eraser, Check, Cloud, CloudOff, Lock,
-  ChevronRight, HardDrive, Type, FolderPlus, Paintbrush, Table2, Baseline, MoreVertical, SlidersHorizontal
+  ChevronRight, HardDrive, Type, FolderPlus, Paintbrush, Table2, Baseline, MoreVertical, SlidersHorizontal,
+  Mic, AudioLines, Maximize2, ListTodo
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDate } from "../../../lib/format";
 import { CardGridSkeleton } from "../../../components/loading-skeletons";
 import { cn } from "../../../lib/utils";
+import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious, type CarouselApi } from "../../../components/ui/carousel";
+import * as Y from "yjs";
+import { SupabaseYjsProvider, getSelectionCharacterOffsetWithin, setSelectionCharacterOffsetWithin } from "./collaboration";
+import { Avatar, AvatarFallback, AvatarImage } from "../../../components/ui/avatar";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../../components/ui/tooltip";
+
+import { useSpeechToText } from "../../../hooks/use-speech-to-text";
+import { useAudioRecorder } from "../../../hooks/use-audio-recorder";
 
 interface Profile {
   id: string;
@@ -50,6 +58,7 @@ interface NoteRow {
   updated_at: string;
   permission_level: "view" | "edit";
   shared_with: SharedStaffMember[];
+  audio_url: string | null;
 }
 
 interface ClientRow {
@@ -61,11 +70,17 @@ interface ClientRow {
 interface NoteFolder {
   id: string;
   name: string;
+  parent_id?: string | null;
   client_id: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
   shared_with?: SharedStaffMember[];
+}
+
+interface TreeNode {
+  folder: NoteFolder;
+  children: TreeNode[];
 }
 
 const SUPPORTED_FONTS = [
@@ -94,6 +109,9 @@ const rgbToHex = (rgbStr: string) => {
 export default function NotesPage() {
   const { profile, roles } = useAuth();
   const isAdmin = roles.includes("super_admin") || roles.includes("admin");
+
+  const { isListening, transcript, startListening, stopListening, setTranscript, isTranscribing } = useSpeechToText();
+  const { isRecording, audioBlob, startRecording, stopRecording, uploadAudio, setAudioBlob } = useAudioRecorder();
 
   const [notes, setNotes] = useState<NoteRow[]>([]);
   const [clients, setClients] = useState<ClientRow[]>([]); // Vault client folders representing clients list
@@ -124,6 +142,7 @@ export default function NotesPage() {
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [newFolderClientId, setNewFolderClientId] = useState<string>("none");
+  const [newFolderParentId, setNewFolderParentId] = useState<string>("none");
   const [creatingFolder, setCreatingFolder] = useState(false);
 
   // Rename custom notes folder state
@@ -132,11 +151,381 @@ export default function NotesPage() {
   const [renameFolderName, setRenameFolderName] = useState("");
   const [renamingFolder, setRenamingFolder] = useState(false);
 
+  // Move item modal state
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [moveItemId, setMoveItemId] = useState("");
+  const [moveItemType, setMoveItemType] = useState<"note" | "folder">("note");
+  const [moveTargetFolderId, setMoveTargetFolderId] = useState<string>("none");
+  const [movingItem, setMovingItem] = useState(false);
+
   // Editor state
   const [currentNote, setCurrentNote] = useState<NoteRow | null>(null);
   const [editorTitle, setEditorTitle] = useState("");
   const [editorClientId, setEditorClientId] = useState<string>("");
   const [editorFolderId, setEditorFolderId] = useState<string>("");
+  const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+  const lastTranscriptRef = useRef("");
+
+  // When transcription finishes, append the transcript
+  useEffect(() => {
+    if (transcript && editorRef.current) {
+      // Focus editor and insert at current selection if possible, otherwise append
+      editorRef.current.focus();
+      restoreSelection();
+
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0);
+        
+        if (!isListening && !isTranscribing) {
+          // Final transcript
+          const textNode = document.createTextNode(transcript + " ");
+          range.deleteContents();
+          range.insertNode(textNode);
+          range.collapse(false);
+          sel.removeAllRanges();
+          sel.addRange(range);
+          lastTranscriptRef.current = ""; 
+        } else {
+          // Interim or transcribing transcript
+          let interimSpan = editorRef.current.querySelector("#interim-transcript");
+          if (!interimSpan) {
+            interimSpan = document.createElement("span");
+            interimSpan.id = "interim-transcript";
+            range.insertNode(interimSpan);
+          }
+          if (isTranscribing) {
+            interimSpan.className = "text-primary/70 italic animate-pulse";
+            interimSpan.textContent = transcript + " (Correcting...)";
+          } else {
+            interimSpan.className = "text-muted-foreground italic";
+            interimSpan.textContent = transcript;
+          }
+          
+          range.setStartAfter(interimSpan);
+          range.setEndAfter(interimSpan);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+      } else {
+        if (!isListening && !isTranscribing) {
+          const textNode = document.createTextNode(transcript + " ");
+          editorRef.current.appendChild(textNode);
+        }
+      }
+      
+      handleEditorInput();
+      if (!isListening && !isTranscribing) setTranscript("");
+      saveSelection();
+    } else if (transcript.startsWith("Error:")) {
+      // Clear error after showing it
+      setTimeout(() => {
+        if (transcript.startsWith("Error:")) {
+          setTranscript("");
+        }
+      }, 5000);
+    }
+  }, [transcript, isListening, isTranscribing]);
+
+  // Clean up interim span on stop
+  useEffect(() => {
+    if (editorRef.current) {
+      const interimSpan = editorRef.current.querySelector("#interim-transcript");
+      if (interimSpan) {
+        if (transcript.startsWith("Error:")) {
+          interimSpan.remove();
+          handleEditorInput();
+        } else if (!isListening && !isTranscribing) {
+          const text = transcript || interimSpan.textContent?.replace(" (Correcting...)", "") || "";
+          if (text.trim() === "") {
+            interimSpan.remove();
+          } else {
+            const textNode = document.createTextNode(text + " ");
+            interimSpan.parentNode?.replaceChild(textNode, interimSpan);
+          }
+          handleEditorInput();
+        }
+      }
+    }
+  }, [isListening, isTranscribing, transcript]);
+
+  // Handle Recording stop and upload
+  useEffect(() => {
+    const handleAudioUpload = async () => {
+      if (!isRecording && audioBlob && currentNote) {
+        setIsUploadingAudio(true);
+        try {
+          const publicUrl = await uploadAudio(currentNote.id, audioBlob);
+          if (publicUrl) {
+            insertAudioBlock(publicUrl);
+            setAudioBlob(null);
+          }
+        } catch (err) {
+          console.error("Failed to upload and insert audio:", err);
+          toast.error("Failed to upload audio");
+        } finally {
+          setIsUploadingAudio(false);
+        }
+      }
+    };
+    handleAudioUpload();
+  }, [isRecording, audioBlob]);
+
+  // Delegated event listener for custom audio players
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    const handlePlayClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      
+      const playBtn = target.closest(".voice-note-play-btn");
+      const slider = target.closest(".voice-note-slider-container");
+      const deleteBtn = target.closest(".voice-note-delete-btn");
+      
+      if (deleteBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (confirm("Are you sure you want to delete this voice note?")) {
+          const container = deleteBtn.closest(".voice-note-container");
+          if (container) {
+            container.remove();
+            handleEditorInput();
+          }
+        }
+        return;
+      }
+      
+      if (playBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const container = playBtn.closest(".voice-note-container");
+        const audio = container?.querySelector(".voice-note-audio") as HTMLAudioElement;
+        const playIcon = playBtn.querySelector(".play-icon");
+        const pauseIcon = playBtn.querySelector(".pause-icon");
+        
+        if (audio && playIcon && pauseIcon) {
+          if (audio.paused) {
+            // Pause all other playing voice notes
+            editor.querySelectorAll(".voice-note-audio").forEach((otherAudioAny) => {
+              const otherAudio = otherAudioAny as HTMLAudioElement;
+              if (otherAudio !== audio && !otherAudio.paused) {
+                otherAudio.pause();
+                const otherContainer = otherAudio.closest(".voice-note-container");
+                const otherPlayBtn = otherContainer?.querySelector(".voice-note-play-btn");
+                const otherPlayIcon = otherPlayBtn?.querySelector(".play-icon");
+                const otherPauseIcon = otherPlayBtn?.querySelector(".pause-icon");
+                if (otherPlayIcon && otherPauseIcon) {
+                  otherPlayIcon.classList.remove("hidden");
+                  otherPauseIcon.classList.add("hidden");
+                }
+              }
+            });
+
+            audio.play().catch(err => console.error(err));
+            playIcon.classList.add("hidden");
+            pauseIcon.classList.remove("hidden");
+          } else {
+            audio.pause();
+            playIcon.classList.remove("hidden");
+            pauseIcon.classList.add("hidden");
+          }
+        }
+      }
+      
+      if (slider) {
+        e.preventDefault();
+        e.stopPropagation();
+        const container = slider.closest(".voice-note-container");
+        const audio = container?.querySelector(".voice-note-audio") as HTMLAudioElement;
+        if (audio && audio.duration) {
+          const rect = slider.getBoundingClientRect();
+          const clickX = e.clientX - rect.left;
+          const percentage = Math.max(0, Math.min(1, clickX / rect.width));
+          audio.currentTime = percentage * audio.duration;
+        }
+      }
+    };
+
+    const handleTimeUpdate = (e: Event) => {
+      const audio = e.target as HTMLAudioElement;
+      if (!audio.classList.contains("voice-note-audio")) return;
+      
+      const container = audio.closest(".voice-note-container");
+      if (!container) return;
+      
+      const progress = container.querySelector(".voice-note-progress") as HTMLElement;
+      const timeDisplay = container.querySelector(".voice-note-time") as HTMLElement;
+      
+      if (progress && timeDisplay) {
+        const currentTime = audio.currentTime || 0;
+        const duration = audio.duration || 0;
+        
+        const formatTime = (time: number) => {
+          if (isNaN(time)) return "0:00";
+          const mins = Math.floor(time / 60);
+          const secs = Math.floor(time % 60);
+          return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
+        };
+        
+        const percent = duration > 0 ? (currentTime / duration) * 100 : 0;
+        progress.style.width = `${percent}%`;
+        timeDisplay.innerText = `${formatTime(currentTime)} / ${formatTime(duration)}`;
+      }
+    };
+
+    const handleAudioEnded = (e: Event) => {
+      const audio = e.target as HTMLAudioElement;
+      if (!audio.classList.contains("voice-note-audio")) return;
+      
+      const container = audio.closest(".voice-note-container");
+      const playBtn = container?.querySelector(".voice-note-play-btn");
+      const playIcon = playBtn?.querySelector(".play-icon");
+      const pauseIcon = playBtn?.querySelector(".pause-icon");
+      
+      if (playIcon && pauseIcon) {
+        playIcon.classList.remove("hidden");
+        pauseIcon.classList.add("hidden");
+      }
+    };
+
+    const handleMetadataLoad = (e: Event) => {
+      const audio = e.target as HTMLAudioElement;
+      if (!audio.classList.contains("voice-note-audio")) return;
+      
+      const container = audio.closest(".voice-note-container");
+      const timeDisplay = container?.querySelector(".voice-note-time") as HTMLElement;
+      if (timeDisplay) {
+        const formatTime = (time: number) => {
+          if (isNaN(time)) return "0:00";
+          const mins = Math.floor(time / 60);
+          const secs = Math.floor(time % 60);
+          return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
+        };
+        timeDisplay.innerText = `0:00 / ${formatTime(audio.duration)}`;
+      }
+    };
+
+    // Initialize durations for already loaded elements
+    editor.querySelectorAll(".voice-note-audio").forEach((audioAny) => {
+      const audio = audioAny as HTMLAudioElement;
+      if (audio.duration) {
+        const container = audio.closest(".voice-note-container");
+        const timeDisplay = container?.querySelector(".voice-note-time") as HTMLElement;
+        if (timeDisplay) {
+          const formatTime = (time: number) => {
+            if (isNaN(time)) return "0:00";
+            const mins = Math.floor(time / 60);
+            const secs = Math.floor(time % 60);
+            return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
+          };
+          timeDisplay.innerText = `0:00 / ${formatTime(audio.duration)}`;
+        }
+      }
+    });
+
+    editor.addEventListener("click", handlePlayClick);
+    editor.addEventListener("timeupdate", handleTimeUpdate, true);
+    editor.addEventListener("ended", handleAudioEnded, true);
+    editor.addEventListener("loadedmetadata", handleMetadataLoad, true);
+
+    return () => {
+      editor.removeEventListener("click", handlePlayClick);
+      editor.removeEventListener("timeupdate", handleTimeUpdate, true);
+      editor.removeEventListener("ended", handleAudioEnded, true);
+      editor.removeEventListener("loadedmetadata", handleMetadataLoad, true);
+    };
+  }, [currentNote]);
+
+  const insertAudioBlock = (url: string) => {
+    if (!editorRef.current) return;
+    
+    editorRef.current.focus();
+    restoreSelection();
+
+    const container = document.createElement("div");
+    container.className = "voice-note-container my-4 p-4 bg-muted/60 dark:bg-muted/30 rounded-2xl border border-border/80 flex items-center gap-4 not-prose select-none";
+    container.contentEditable = "false";
+    
+    const audio = document.createElement("audio");
+    audio.src = url;
+    audio.className = "voice-note-audio hidden";
+    
+    const playBtn = document.createElement("button");
+    playBtn.className = "voice-note-play-btn flex items-center justify-center w-10 h-10 rounded-full bg-primary text-primary-foreground hover:scale-105 active:scale-95 transition-all cursor-pointer shrink-0";
+    playBtn.innerHTML = `
+      <svg class="play-icon w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+      <svg class="pause-icon w-4 h-4 fill-current hidden" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+    `;
+    
+    const playerBody = document.createElement("div");
+    playerBody.className = "flex-1 flex flex-col gap-1.5 min-w-0";
+    
+    const metaInfo = document.createElement("div");
+    metaInfo.className = "flex items-center justify-between text-[11px] font-semibold text-muted-foreground/90";
+    
+    const label = document.createElement("span");
+    label.className = "tracking-wider uppercase text-[10px] font-bold text-primary/80";
+    label.innerText = "Voice Note Attachment";
+    
+    const timeDisplay = document.createElement("span");
+    timeDisplay.className = "voice-note-time tabular-nums";
+    timeDisplay.innerText = "0:00 / 0:00";
+    
+    metaInfo.appendChild(label);
+    metaInfo.appendChild(timeDisplay);
+    
+    const sliderContainer = document.createElement("div");
+    sliderContainer.className = "voice-note-slider-container relative w-full h-1.5 bg-secondary/80 rounded-full cursor-pointer overflow-hidden";
+    
+    const progressBar = document.createElement("div");
+    progressBar.className = "voice-note-progress absolute top-0 left-0 h-full w-0 bg-primary rounded-full transition-all duration-100";
+    
+    sliderContainer.appendChild(progressBar);
+    
+    playerBody.appendChild(metaInfo);
+    playerBody.appendChild(sliderContainer);
+    
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "voice-note-delete-btn flex items-center justify-center p-2 rounded-xl text-muted-foreground/75 hover:text-destructive hover:bg-destructive/10 transition-all cursor-pointer shrink-0";
+    deleteBtn.title = "Delete Voice Note";
+    deleteBtn.innerHTML = `
+      <svg class="w-4 h-4 fill-none stroke-current" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+        <path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6"/>
+      </svg>
+    `;
+    
+    container.appendChild(audio);
+    container.appendChild(playBtn);
+    container.appendChild(playerBody);
+    container.appendChild(deleteBtn);
+    
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(container);
+      
+      // Add a line break after the audio block for easier typing
+      const br = document.createElement("p");
+      br.innerHTML = "<br>";
+      container.after(br);
+      
+      range.setStartAfter(br);
+      range.setEndAfter(br);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } else {
+      editorRef.current.appendChild(container);
+      const br = document.createElement("p");
+      br.innerHTML = "<br>";
+      editorRef.current.appendChild(br);
+    }
+    
+    handleEditorInput();
+    saveSelection();
+  };
+
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">("saved");
   const [selectedFont, setSelectedFont] = useState("Inter");
   const [selectedFontSize, setSelectedFontSize] = useState("16");
@@ -149,6 +538,7 @@ export default function NotesPage() {
     underline?: boolean;
     fontName?: string;
     foreColor?: string;
+    fontSizeAttr?: string;
   }>({});
   const [isInsideTable, setIsInsideTable] = useState(false);
   const [hoveredRow, setHoveredRow] = useState(0);
@@ -181,6 +571,814 @@ export default function NotesPage() {
   const editorRef = useRef<HTMLDivElement>(null);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  const [floatingMenuCoords, setFloatingMenuCoords] = useState<{ top: number; left: number; height: number } | null>(null);
+  const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+  const isPopoverOpenRef = useRef(false);
+  const activeBlockRef = useRef<HTMLElement | null>(null);
+  const imageFileInputRef = useRef<HTMLInputElement>(null);
+  const hydratedRootsRef = useRef<Map<Element, any>>(new Map());
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+  // Collaborative states and refs
+  const [activeUsers, setActiveUsers] = useState<any[]>([]);
+  const activeUsersRef = useRef<any[]>([]);
+  const [remoteCursors, setRemoteCursors] = useState<any[]>([]);
+  const ydocRef = useRef<Y.Doc | null>(null);
+  const yproviderRef = useRef<SupabaseYjsProvider | null>(null);
+  const isSyncingRef = useRef(false);
+  const isAudioActionActive = isListening || isTranscribing || isRecording || isUploadingAudio;
+
+  const getHashColor = (str: string) => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const hue = Math.abs(hash % 360);
+    return `hsl(${hue}, 80%, 42%)`;
+  };
+
+  // Close lightbox on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setLightboxUrl(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // 1. Image upload method to Supabase note_assets
+  const uploadImageFile = async (file: File): Promise<string | null> => {
+    try {
+      const fileExt = file.name.split(".").pop();
+      const fileName = `${crypto.randomUUID()}.${fileExt}`;
+      const path = `${fileName}`;
+
+      const { data, error } = await supabase.storage
+        .from("note_assets")
+        .upload(path, file, {
+          cacheControl: "3600",
+          upsert: false
+        });
+
+      if (error) throw error;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from("note_assets")
+        .getPublicUrl(path);
+
+      return publicUrl;
+    } catch (err: any) {
+      console.error("Image upload failed:", err);
+      toast.error(`Image upload failed: ${err.message || err}`);
+      return null;
+    }
+  };
+
+  // 2. Hydrate all Carousel Sliders
+  const hydrateSliders = (container: HTMLElement) => {
+    // Unmount any existing roots first to avoid memory leaks
+    hydratedRootsRef.current.forEach((root) => {
+      try { root.unmount(); } catch (e) { console.error(e); }
+    });
+    hydratedRootsRef.current.clear();
+
+    const sliderElements = container.querySelectorAll(".image-slider-block");
+    sliderElements.forEach((el) => {
+      const urlsStr = el.getAttribute("data-urls");
+      if (!urlsStr) return;
+
+      try {
+        const urls = JSON.parse(urlsStr);
+        if (!Array.isArray(urls)) return;
+
+        import("react-dom/client").then(({ createRoot }) => {
+          const root = createRoot(el);
+          root.render(
+            <SliderBlock
+              urls={urls}
+              onViewImage={setLightboxUrl}
+              onDelete={() => {
+                el.remove();
+                handleEditorInput();
+              }}
+            />
+          );
+          hydratedRootsRef.current.set(el, root);
+        });
+      } catch (err) {
+        console.error("Failed to parse slider urls:", err);
+      }
+    });
+  };
+
+  // 3. Auto-merge logic
+  const checkAndMergeImages = (container: HTMLElement) => {
+    const children = Array.from(container.children);
+    let consecutiveImages: HTMLElement[] = [];
+
+    const triggerMerge = (images: HTMLElement[]) => {
+      if (images.length < 2) return;
+
+      const urls = images.map((imgContainer) => {
+        const img = imgContainer.querySelector("img");
+        return img ? img.src : "";
+      }).filter(Boolean);
+
+      const sliderEl = document.createElement("div");
+      sliderEl.className = "image-slider-block relative my-4 w-full max-w-[600px] mx-auto";
+      sliderEl.setAttribute("contenteditable", "false");
+      sliderEl.setAttribute("data-urls", JSON.stringify(urls));
+
+      const firstImg = images[0];
+      firstImg.parentNode?.replaceChild(sliderEl, firstImg);
+
+      for (let i = 1; i < images.length; i++) {
+        images[i].remove();
+      }
+
+      import("react-dom/client").then(({ createRoot }) => {
+        const root = createRoot(sliderEl);
+        root.render(
+          <SliderBlock
+            urls={urls}
+            onViewImage={setLightboxUrl}
+            onDelete={() => {
+              sliderEl.remove();
+              handleEditorInput();
+            }}
+          />
+        );
+        hydratedRootsRef.current.set(sliderEl, root);
+      });
+
+      handleEditorInput();
+    };
+
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i] as HTMLElement;
+      if (child.classList.contains("editor-image-container")) {
+        consecutiveImages.push(child);
+      } else {
+        if (consecutiveImages.length >= 2) {
+          triggerMerge(consecutiveImages);
+        }
+        consecutiveImages = [];
+      }
+    }
+
+    if (consecutiveImages.length >= 2) {
+      triggerMerge(consecutiveImages);
+    }
+  };
+
+  // 4. Insert image block helper
+  const insertImageBlock = (url: string) => {
+    if (!editorRef.current) return;
+    
+    editorRef.current.focus();
+    restoreSelection();
+
+    const container = document.createElement("div");
+    container.className = "editor-image-container relative inline-block my-2 group select-none cursor-pointer border border-transparent rounded-lg";
+    container.setAttribute("contenteditable", "false");
+    container.style.width = "350px";
+    
+    const img = document.createElement("img");
+    img.src = url;
+    img.className = "w-full h-auto rounded-lg select-none";
+    
+    const handle = document.createElement("div");
+    handle.className = "image-resize-handle absolute bottom-1 right-1 w-3 h-3 bg-primary rounded-full border border-background cursor-se-resize opacity-0 group-hover:opacity-100 transition-opacity";
+
+    const viewBtn = document.createElement("button");
+    viewBtn.className = "image-view-btn absolute top-2 right-2 flex items-center justify-center w-7 h-7 bg-black/60 hover:bg-black/80 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all border border-white/10 shadow-sm cursor-pointer z-10 animate-in fade-in duration-200";
+    viewBtn.innerHTML = `<svg class="w-3.5 h-3.5 fill-none stroke-current" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>`;
+    viewBtn.title = "View Full Screen";
+
+    container.appendChild(img);
+    container.appendChild(handle);
+    container.appendChild(viewBtn);
+
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      const range = sel.getRangeAt(0);
+      
+      let parentBlock: HTMLElement | null = null;
+      let node = range.startContainer;
+      let currentElement = node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement;
+
+      while (currentElement && currentElement !== editorRef.current) {
+        if (currentElement.parentElement === editorRef.current) {
+          parentBlock = currentElement;
+          break;
+        }
+        currentElement = currentElement.parentElement;
+      }
+
+      if (parentBlock) {
+        const text = parentBlock.textContent?.trim() || "";
+        const isEmpty = text === "" && (parentBlock.innerHTML === "" || parentBlock.innerHTML === "<br>");
+        if (isEmpty) {
+          parentBlock.parentNode?.replaceChild(container, parentBlock);
+        } else {
+          parentBlock.after(container);
+        }
+      } else {
+        range.deleteContents();
+        range.insertNode(container);
+      }
+
+      const br = document.createElement("p");
+      br.innerHTML = "<br>";
+      container.after(br);
+      
+      range.setStartAfter(br);
+      range.setEndAfter(br);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } else {
+      editorRef.current.appendChild(container);
+      const br = document.createElement("p");
+      br.innerHTML = "<br>";
+      editorRef.current.appendChild(br);
+    }
+
+    checkAndMergeImages(editorRef.current);
+    handleEditorInput();
+    saveSelection();
+  };
+
+  // 5. Insert slider block helper
+  const insertSliderBlock = (urls: string[]) => {
+    if (!editorRef.current) return;
+
+    editorRef.current.focus();
+    restoreSelection();
+
+    const sliderEl = document.createElement("div");
+    sliderEl.className = "image-slider-block relative my-4 w-full max-w-[600px] mx-auto";
+    sliderEl.setAttribute("contenteditable", "false");
+    sliderEl.setAttribute("data-urls", JSON.stringify(urls));
+
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      const range = sel.getRangeAt(0);
+      
+      let parentBlock: HTMLElement | null = null;
+      let node = range.startContainer;
+      let currentElement = node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement;
+
+      while (currentElement && currentElement !== editorRef.current) {
+        if (currentElement.parentElement === editorRef.current) {
+          parentBlock = currentElement;
+          break;
+        }
+        currentElement = currentElement.parentElement;
+      }
+
+      if (parentBlock) {
+        const text = parentBlock.textContent?.trim() || "";
+        const isEmpty = text === "" && (parentBlock.innerHTML === "" || parentBlock.innerHTML === "<br>");
+        if (isEmpty) {
+          parentBlock.parentNode?.replaceChild(sliderEl, parentBlock);
+        } else {
+          parentBlock.after(sliderEl);
+        }
+      } else {
+        range.deleteContents();
+        range.insertNode(sliderEl);
+      }
+
+      const br = document.createElement("p");
+      br.innerHTML = "<br>";
+      sliderEl.after(br);
+
+      range.setStartAfter(br);
+      range.setEndAfter(br);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } else {
+      editorRef.current.appendChild(sliderEl);
+      const br = document.createElement("p");
+      br.innerHTML = "<br>";
+      editorRef.current.appendChild(br);
+    }
+
+    import("react-dom/client").then(({ createRoot }) => {
+      const root = createRoot(sliderEl);
+      root.render(
+        <SliderBlock
+          urls={urls}
+          onViewImage={setLightboxUrl}
+          onDelete={() => {
+            sliderEl.remove();
+            handleEditorInput();
+          }}
+        />
+      );
+      hydratedRootsRef.current.set(sliderEl, root);
+    });
+
+    handleEditorInput();
+    saveSelection();
+  };
+
+  // 6. Handle multi-file selector upload
+  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const fileList = Array.from(files);
+    const uploadToast = toast.loading(`Uploading ${fileList.length} image(s)...`);
+
+    try {
+      const urls = await Promise.all(
+        fileList.map((file) => uploadImageFile(file))
+      );
+
+      const validUrls = urls.filter(Boolean) as string[];
+      if (validUrls.length === 0) {
+        toast.dismiss(uploadToast);
+        return;
+      }
+
+      toast.success(`Uploaded ${validUrls.length} image(s) successfully`, { id: uploadToast });
+
+      if (validUrls.length >= 2) {
+        insertSliderBlock(validUrls);
+      } else {
+        validUrls.forEach((url) => insertImageBlock(url));
+      }
+    } catch (err) {
+      toast.error("Failed to upload image(s)", { id: uploadToast });
+    }
+
+    e.target.value = "";
+  };
+
+  // 7. Handle paste files inside editor
+  const handleEditorPaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    let imageFiles: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) imageFiles.push(file);
+      }
+    }
+
+    if (imageFiles.length > 0) {
+      e.preventDefault();
+      
+      const uploadToast = toast.loading(`Uploading ${imageFiles.length} pasted image(s)...`);
+      try {
+        const urls = await Promise.all(
+          imageFiles.map((file) => uploadImageFile(file))
+        );
+        
+        const validUrls = urls.filter(Boolean) as string[];
+        if (validUrls.length === 0) {
+          toast.dismiss(uploadToast);
+          return;
+        }
+
+        toast.success(`Uploaded ${validUrls.length} pasted image(s) successfully`, { id: uploadToast });
+
+        if (validUrls.length >= 2) {
+          insertSliderBlock(validUrls);
+        } else {
+          validUrls.forEach((url) => insertImageBlock(url));
+        }
+      } catch (err) {
+        toast.error("Failed to upload pasted image(s)", { id: uploadToast });
+      }
+    }
+  };
+
+  // 8. Robust selection change listener for empty block plus icon
+  useEffect(() => {
+    if (typeof window === "undefined" || !editorRef.current) return;
+
+    const updateFloatingMenuPosition = () => {
+      // If popover is open, do not change coordinates or hide the menu to prevent race conditions
+      if (isPopoverOpenRef.current) return;
+
+      if (!editorRef.current || !currentNote || currentNote.permission_level !== "edit") {
+        setFloatingMenuCoords(null);
+        activeBlockRef.current = null;
+        return;
+      }
+
+      const sel = window.getSelection();
+      if (!sel || !sel.isCollapsed || sel.rangeCount === 0) {
+        setFloatingMenuCoords(null);
+        activeBlockRef.current = null;
+        return;
+      }
+
+      const range = sel.getRangeAt(0);
+      const node = range.startContainer;
+      
+      let blockElement: HTMLElement | null = null;
+      let currentElement = node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement;
+      
+      // Walk up to find the closest block-level editable element containing the cursor
+      while (currentElement && currentElement !== editorRef.current) {
+        const tagName = currentElement.tagName.toUpperCase();
+        if (["P", "H1", "H2", "H3", "H4", "H5", "H6", "LI", "BLOCKQUOTE"].includes(tagName)) {
+          blockElement = currentElement;
+          break;
+        }
+        if (tagName === "DIV" && 
+            !currentElement.classList.contains("voice-note-container") && 
+            !currentElement.classList.contains("image-slider-block") && 
+            !currentElement.classList.contains("editor-image-container") &&
+            !currentElement.classList.contains("task-content")) {
+          blockElement = currentElement;
+          break;
+        }
+        currentElement = currentElement.parentElement;
+      }
+
+      // Fallbacks if no specific element was matched
+      if (!blockElement) {
+        if (node === editorRef.current) {
+          const childNodes = Array.from(editorRef.current.children);
+          if (childNodes.length === 0) {
+            const p = document.createElement("p");
+            p.innerHTML = "<br>";
+            editorRef.current.appendChild(p);
+            blockElement = p;
+          } else {
+            const offset = Math.min(range.startOffset, childNodes.length - 1);
+            blockElement = childNodes[offset] as HTMLElement;
+          }
+        } else {
+          let fallbackElement = node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement;
+          while (fallbackElement && fallbackElement.parentElement !== editorRef.current && fallbackElement !== editorRef.current) {
+            fallbackElement = fallbackElement.parentElement;
+          }
+          if (fallbackElement && fallbackElement !== editorRef.current) {
+            blockElement = fallbackElement;
+          }
+        }
+      }
+
+      if (!blockElement) {
+        setFloatingMenuCoords(null);
+        activeBlockRef.current = null;
+        return;
+      }
+
+      // Check if block element is empty
+      const text = (blockElement.textContent || "").replace(/\u200B/g, "").trim();
+      const hasWidget = blockElement.querySelector("img") || 
+                        blockElement.querySelector("table") || 
+                        blockElement.querySelector(".voice-note-container") || 
+                        blockElement.querySelector(".image-slider-block");
+      const isEmpty = text === "" && !hasWidget;
+
+      if (isEmpty) {
+        const editorRect = editorRef.current.getBoundingClientRect();
+        const blockRect = blockElement.getBoundingClientRect();
+        const parentElement = editorRef.current.parentElement;
+        
+        if (parentElement) {
+          const parentRect = parentElement.getBoundingClientRect();
+          const top = blockRect.top - parentRect.top + parentElement.scrollTop;
+          
+          // Determine starting X position, adjusting to the left of checkbox if it's a task item
+          const taskLi = blockElement.closest('li[data-type="taskItem"]');
+          const checkbox = taskLi?.querySelector('input[type="checkbox"]');
+          
+          let targetLeft = blockRect.left;
+          if (checkbox) {
+            targetLeft = checkbox.getBoundingClientRect().left;
+          }
+          
+          const left = targetLeft - parentRect.left + parentElement.scrollLeft - 32;
+          const height = blockRect.height || 28;
+          
+          setFloatingMenuCoords({ top, left: Math.max(8, left), height });
+          activeBlockRef.current = blockElement;
+        }
+      } else {
+        setFloatingMenuCoords(null);
+        activeBlockRef.current = null;
+      }
+    };
+
+    const handleEvents = () => {
+      setTimeout(updateFloatingMenuPosition, 10);
+    };
+
+    document.addEventListener("selectionchange", handleEvents);
+    window.addEventListener("resize", handleEvents);
+
+    return () => {
+      document.removeEventListener("selectionchange", handleEvents);
+      window.removeEventListener("resize", handleEvents);
+    };
+  }, [currentNote]);
+
+  // 9. Resize and deletion listeners for images
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    let isResizing = false;
+    let startX = 0;
+    let startWidth = 0;
+    let resizeTarget: HTMLElement | null = null;
+
+    const handleMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.classList.contains("image-resize-handle")) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const container = target.closest(".editor-image-container") as HTMLElement;
+        if (container) {
+          isResizing = true;
+          startX = e.clientX;
+          startWidth = container.getBoundingClientRect().width;
+          resizeTarget = container;
+          document.body.style.cursor = "se-resize";
+        }
+      }
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing || !resizeTarget) return;
+      const deltaX = e.clientX - startX;
+      const newWidth = Math.max(150, Math.min(800, startWidth + deltaX));
+      resizeTarget.style.width = `${newWidth}px`;
+    };
+
+    const handleMouseUp = () => {
+      if (isResizing) {
+        isResizing = false;
+        resizeTarget = null;
+        document.body.style.cursor = "default";
+        handleEditorInput();
+      }
+    };
+
+    const handleEditorClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      
+      // Handle zoom button click inside editor
+      const viewBtn = target.closest(".image-view-btn");
+      if (viewBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const container = viewBtn.closest(".editor-image-container");
+        const img = container?.querySelector("img");
+        if (img) {
+          setLightboxUrl(img.src);
+        }
+        return;
+      }
+
+      const container = target.closest(".editor-image-container") as HTMLElement;
+
+      editor.querySelectorAll(".editor-image-container").forEach((el) => {
+        el.classList.remove("ring-2", "ring-primary", "is-selected");
+      });
+
+      if (container) {
+        container.classList.add("ring-2", "ring-primary", "is-selected");
+        saveSelection();
+      }
+    };
+
+    const handleDblClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === "IMG" && target.closest(".editor-image-container")) {
+        const img = target as HTMLImageElement;
+        setLightboxUrl(img.src);
+      }
+    };
+
+    const handleCheckboxChange = (e: Event) => {
+      const target = e.target as HTMLInputElement;
+      if (target.tagName === "INPUT" && target.type === "checkbox") {
+        const li = target.closest('li[data-type="taskItem"]');
+        if (li) {
+          if (target.checked) {
+            target.setAttribute("checked", "checked");
+            li.setAttribute("data-checked", "true");
+          } else {
+            target.removeAttribute("checked");
+            li.removeAttribute("data-checked");
+          }
+          handleEditorInput();
+        }
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Backspace" || e.key === "Delete") {
+        const selectedImage = editor.querySelector(".editor-image-container.is-selected") as HTMLElement;
+        if (selectedImage) {
+          e.preventDefault();
+          selectedImage.remove();
+          handleEditorInput();
+          return;
+        }
+      }
+
+      if (e.key === "Enter") {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0) {
+          const range = sel.getRangeAt(0);
+          const node = range.startContainer;
+          let currentElement = node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement;
+          const li = currentElement?.closest('li[data-type="taskItem"]');
+          if (li) {
+            e.preventDefault();
+            
+            // Create new task item
+            const newLi = document.createElement("li");
+            newLi.setAttribute("data-type", "taskItem");
+            newLi.className = "flex items-start mb-1";
+            
+            const label = document.createElement("label");
+            label.setAttribute("contenteditable", "false");
+            label.className = "select-none mr-2 mt-1 shrink-0 cursor-pointer";
+            
+            const input = document.createElement("input");
+            input.type = "checkbox";
+            input.className = "task-checkbox";
+            
+            const span = document.createElement("span");
+            
+            label.appendChild(input);
+            label.appendChild(span);
+            
+            const contentDiv = document.createElement("div");
+            contentDiv.className = "task-content outline-none inline-block min-w-[20px] flex-1";
+            contentDiv.innerHTML = "<br>";
+            
+            newLi.appendChild(label);
+            newLi.appendChild(contentDiv);
+            
+            li.after(newLi);
+            
+            contentDiv.focus();
+            const newRange = document.createRange();
+            newRange.setStart(contentDiv, 0);
+            newRange.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(newRange);
+            
+            handleEditorInput();
+          }
+        }
+      }
+
+      if (e.key === "Backspace") {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0) {
+          const range = sel.getRangeAt(0);
+          const node = range.startContainer;
+          let currentElement = node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement;
+          const li = currentElement?.closest('li[data-type="taskItem"]');
+          if (li) {
+            const contentDiv = li.querySelector(".task-content");
+            if (contentDiv && (contentDiv.textContent === "" || contentDiv.innerHTML === "<br>")) {
+              e.preventDefault();
+              
+              const parent = li.parentElement;
+              const p = document.createElement("p");
+              p.innerHTML = "<br>";
+              li.parentNode?.replaceChild(p, li);
+              
+              p.focus();
+              const newRange = document.createRange();
+              newRange.setStart(p, 0);
+              newRange.collapse(true);
+              sel.removeAllRanges();
+              sel.addRange(newRange);
+              
+              if (parent && parent.tagName === "UL" && parent.getAttribute("data-type") === "taskList" && parent.children.length === 0) {
+                parent.remove();
+              }
+              
+              handleEditorInput();
+            }
+          }
+        }
+      }
+    };
+
+    editor.addEventListener("mousedown", handleMouseDown);
+    editor.addEventListener("click", handleEditorClick);
+    editor.addEventListener("dblclick", handleDblClick);
+    editor.addEventListener("keydown", handleKeyDown);
+    editor.addEventListener("change", handleCheckboxChange);
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      editor.removeEventListener("mousedown", handleMouseDown);
+      editor.removeEventListener("click", handleEditorClick);
+      editor.removeEventListener("dblclick", handleDblClick);
+      editor.removeEventListener("keydown", handleKeyDown);
+      editor.removeEventListener("change", handleCheckboxChange);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [currentNote]);
+
+  const handleFloatingMenuOption = async (option: "voice" | "dictate" | "image" | "text" | "todo") => {
+    isPopoverOpenRef.current = false;
+    setIsPopoverOpen(false);
+    setFloatingMenuCoords(null);
+    if (!editorRef.current || !activeBlockRef.current) return;
+
+    if (option === "voice") {
+      if (isRecording) {
+        stopRecording();
+      } else {
+        await startRecording();
+        setTimeout(() => {
+          editorRef.current?.focus();
+          restoreSelection();
+        }, 50);
+      }
+    } else if (option === "dictate") {
+      if (isListening) {
+        stopListening();
+      } else {
+        startListening();
+        setTimeout(() => {
+          editorRef.current?.focus();
+          restoreSelection();
+        }, 50);
+      }
+    } else if (option === "image") {
+      imageFileInputRef.current?.click();
+    } else if (option === "text") {
+      const sel = window.getSelection();
+      if (sel) {
+        const range = document.createRange();
+        range.selectNodeContents(activeBlockRef.current);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+      activeBlockRef.current.focus();
+    } else if (option === "todo") {
+      const ul = document.createElement("ul");
+      ul.setAttribute("data-type", "taskList");
+      ul.className = "list-none pl-0 my-2";
+      
+      const li = document.createElement("li");
+      li.setAttribute("data-type", "taskItem");
+      li.className = "flex items-start mb-1";
+      
+      const label = document.createElement("label");
+      label.setAttribute("contenteditable", "false");
+      label.className = "select-none mr-2 mt-1 shrink-0 cursor-pointer";
+      
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.className = "task-checkbox";
+      
+      const span = document.createElement("span");
+      
+      label.appendChild(input);
+      label.appendChild(span);
+      
+      const contentDiv = document.createElement("div");
+      contentDiv.className = "task-content outline-none inline-block min-w-[20px] flex-1";
+      contentDiv.innerHTML = "<br>";
+      
+      li.appendChild(label);
+      li.appendChild(contentDiv);
+      ul.appendChild(li);
+      
+      activeBlockRef.current.parentNode?.replaceChild(ul, activeBlockRef.current);
+      
+      contentDiv.focus();
+      const sel = window.getSelection();
+      if (sel) {
+        const range = document.createRange();
+        range.setStart(contentDiv, 0);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+      handleEditorInput();
+    }
+  };
+
   // Share Dialog state
   const [shareOpen, setShareOpen] = useState(false);
   const [shareSubmitting, setShareSubmitting] = useState(false);
@@ -192,12 +1390,286 @@ export default function NotesPage() {
   const [sharingFolderMap, setSharingFolderMap] = useState<Record<string, { selected: boolean; level: "view" | "edit" }>>({});
   const [activeFolderToShare, setActiveFolderToShare] = useState<NoteFolder | null>(null);
 
+  const unmountSpecificSliders = (el: HTMLElement) => {
+    const sliders = el.classList.contains("image-slider-block") ? [el] : Array.from(el.querySelectorAll(".image-slider-block"));
+    sliders.forEach((slider) => {
+      const root = hydratedRootsRef.current.get(slider);
+      if (root) {
+        try {
+          root.unmount();
+        } catch (e) {
+          console.error("Failed to unmount slider root:", e);
+        }
+        hydratedRootsRef.current.delete(slider);
+      }
+    });
+  };
+
+  const hydrateSpecificSliders = (el: HTMLElement) => {
+    const sliders = el.classList.contains("image-slider-block") ? [el] : Array.from(el.querySelectorAll(".image-slider-block"));
+    sliders.forEach((slider) => {
+      const urlsStr = slider.getAttribute("data-urls");
+      if (!urlsStr) return;
+      try {
+        const urls = JSON.parse(urlsStr);
+        if (!Array.isArray(urls)) return;
+        import("react-dom/client").then(({ createRoot }) => {
+          const root = createRoot(slider);
+          root.render(
+            <SliderBlock
+              urls={urls}
+              onViewImage={setLightboxUrl}
+              onDelete={() => {
+                slider.remove();
+                handleEditorInput();
+              }}
+            />
+          );
+          hydratedRootsRef.current.set(slider, root);
+        });
+      } catch (e) {
+        console.error("Failed to hydrate slider:", e);
+      }
+    });
+  };
+
+  const patchDOM = (target: HTMLElement, source: HTMLElement) => {
+    const targetChildren = Array.from(target.childNodes);
+    const sourceChildren = Array.from(source.childNodes);
+
+    const maxLength = Math.max(targetChildren.length, sourceChildren.length);
+    for (let i = 0; i < maxLength; i++) {
+      const targetNode = targetChildren[i];
+      const sourceNode = sourceChildren[i];
+
+      if (!targetNode && sourceNode) {
+        const clone = sourceNode.cloneNode(true);
+        target.appendChild(clone);
+        if (clone instanceof HTMLElement) {
+          hydrateSpecificSliders(clone);
+        }
+      } else if (targetNode && !sourceNode) {
+        if (targetNode instanceof HTMLElement) {
+          unmountSpecificSliders(targetNode);
+        }
+        targetNode.remove();
+      } else if (targetNode && sourceNode) {
+        const isTargetEl = targetNode.nodeType === Node.ELEMENT_NODE;
+        const isSourceEl = sourceNode.nodeType === Node.ELEMENT_NODE;
+
+        if (isTargetEl && isSourceEl) {
+          const targetEl = targetNode as HTMLElement;
+          const sourceEl = sourceNode as HTMLElement;
+
+          const isSlider = targetEl.classList.contains("image-slider-block");
+          if (isSlider) {
+            const targetUrls = targetEl.getAttribute("data-urls");
+            const sourceUrls = sourceEl.getAttribute("data-urls");
+            if (targetUrls !== sourceUrls) {
+              unmountSpecificSliders(targetEl);
+              const clone = sourceEl.cloneNode(true);
+              target.replaceChild(clone, targetEl);
+              if (clone instanceof HTMLElement) {
+                hydrateSpecificSliders(clone);
+              }
+            }
+          } else {
+            if (targetEl.tagName !== sourceEl.tagName) {
+              unmountSpecificSliders(targetEl);
+              const clone = sourceEl.cloneNode(true);
+              target.replaceChild(clone, targetEl);
+              if (clone instanceof HTMLElement) {
+                hydrateSpecificSliders(clone);
+              }
+            } else {
+              if (targetEl.children.length === 0 && sourceEl.children.length === 0) {
+                if (targetEl.innerHTML !== sourceEl.innerHTML) {
+                  targetEl.innerHTML = sourceEl.innerHTML;
+                }
+              } else {
+                patchDOM(targetEl, sourceEl);
+              }
+            }
+          }
+        } else {
+          if (targetNode.nodeValue !== sourceNode.nodeValue) {
+            targetNode.nodeValue = sourceNode.nodeValue;
+          }
+        }
+      }
+    }
+  };
+
+  const applyRemoteHtml = (newHtml: string) => {
+    if (!editorRef.current) return;
+    isSyncingRef.current = true;
+    try {
+      const savedOffset = getSelectionCharacterOffsetWithin(editorRef.current);
+      const parser = new DOMParser();
+      const parsedDoc = parser.parseFromString(newHtml, "text/html");
+      const sourceBody = parsedDoc.body;
+      
+      patchDOM(editorRef.current, sourceBody);
+      
+      if (savedOffset) {
+        setSelectionCharacterOffsetWithin(editorRef.current, savedOffset);
+      }
+    } catch (err) {
+      console.error("Failed to apply remote HTML:", err);
+    } finally {
+      isSyncingRef.current = false;
+    }
+  };
+
+  const calculateCursorCoords = (offset: number | undefined) => {
+    if (offset === undefined || !editorRef.current) return null;
+    const element = editorRef.current;
+    
+    let charIndex = 0;
+    const range = document.createRange();
+    
+    const nodeQueue: Node[] = [element];
+    let foundNode: Node | null = null;
+    let foundOffset = 0;
+    
+    while (nodeQueue.length > 0) {
+      const node = nodeQueue.shift()!;
+      if (node.nodeType === Node.TEXT_NODE) {
+        const nextCharIndex = charIndex + node.textContent!.length;
+        if (offset >= charIndex && offset <= nextCharIndex) {
+          foundNode = node;
+          foundOffset = offset - charIndex;
+          break;
+        }
+        charIndex = nextCharIndex;
+      } else {
+        const childNodes = Array.from(node.childNodes);
+        for (let i = childNodes.length - 1; i >= 0; i--) {
+          nodeQueue.unshift(childNodes[i]);
+        }
+      }
+    }
+    
+    if (foundNode) {
+      try {
+        range.setStart(foundNode, foundOffset);
+        range.collapse(true);
+        const rect = range.getBoundingClientRect();
+        const parentElement = editorRef.current.parentElement;
+        if (parentElement) {
+          const parentRect = parentElement.getBoundingClientRect();
+          return {
+            top: rect.top - parentRect.top + parentElement.scrollTop,
+            left: rect.left - parentRect.left + parentElement.scrollLeft,
+            height: rect.height || 20
+          };
+        }
+      } catch (e) {
+        // Ignore range exceptions
+      }
+    }
+    return null;
+  };
+
+  // Setup real-time collaborative doc replication
+  useEffect(() => {
+    if (!currentNote || currentNote.permission_level !== "edit" || !profile) {
+      setActiveUsers([]);
+      activeUsersRef.current = [];
+      setRemoteCursors([]);
+      return;
+    }
+
+    const ydoc = new Y.Doc();
+    ydocRef.current = ydoc;
+    const ytext = ydoc.getText("content");
+
+    // Initialize custom Supabase Yjs Provider
+    const provider = new SupabaseYjsProvider(
+      ydoc,
+      supabase,
+      `realtime:note_collaboration:${currentNote.id}`,
+      profile.id,
+      profile.full_name || "Anonymous Staff",
+      profile.avatar_url,
+      (users) => {
+        const uniqueUsers = Array.from(new Map(users.map(u => [u.user_id, u])).values());
+        setActiveUsers(uniqueUsers);
+        activeUsersRef.current = uniqueUsers;
+      },
+      (cursorData) => {
+        setRemoteCursors((prev) => {
+          const filtered = prev.filter(c => c.userId !== cursorData.userId);
+          if (cursorData.offset) {
+            return [...filtered, cursorData];
+          }
+          return filtered;
+        });
+      }
+    );
+    yproviderRef.current = provider;
+
+    // Timeout: if no remote updates after subscription, populate with db state
+    const initTimeout = setTimeout(() => {
+      if (ydocRef.current && ydocRef.current.getText("content").length === 0) {
+        // Only seed document if we are the first/only user in presence list to prevent duplication
+        const users = activeUsersRef.current;
+        const sortedUsers = [...users].sort((a, b) => a.user_id.localeCompare(b.user_id));
+        const isFirstUser = sortedUsers.length === 0 || sortedUsers[0]?.user_id === profile.id;
+
+        if (isFirstUser) {
+          ydocRef.current.transact(() => {
+            ydocRef.current!.getText("content").insert(0, currentNote.content || "<p><br></p>");
+          }, provider);
+        }
+      }
+    }, 1000);
+
+    const handleRemoteChange = (event: any, transaction: any) => {
+      // If the change is local, we don't need to patch our own editor DOM
+      if (transaction.local) return;
+      if (isSyncingRef.current) return;
+      const remoteHtml = ytext.toString();
+      applyRemoteHtml(remoteHtml);
+    };
+    ytext.observe(handleRemoteChange);
+
+    return () => {
+      clearTimeout(initTimeout);
+      ytext.unobserve(handleRemoteChange);
+      if (yproviderRef.current) {
+        yproviderRef.current.destroy();
+        yproviderRef.current = null;
+      }
+      if (ydocRef.current) {
+        ydocRef.current.destroy();
+        ydocRef.current = null;
+      }
+      setActiveUsers([]);
+      activeUsersRef.current = [];
+      setRemoteCursors([]);
+    };
+  }, [currentNote?.id, profile]);
+
   useEffect(() => {
     void loadNotes();
     void loadClients();
     void loadNoteFolders();
     void loadActiveStaff();
   }, []);
+
+  // Restore editor view on reload if noteId is in URL
+  useEffect(() => {
+    if (typeof window === "undefined" || notes.length === 0 || currentNote) return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const noteId = urlParams.get("noteId");
+    if (noteId) {
+      const foundNote = notes.find(n => n.id === noteId);
+      if (foundNote) {
+        handleOpenEditor(foundNote);
+      }
+    }
+  }, [notes]);
 
   useEffect(() => {
     setIsFoldersExpanded(false);
@@ -227,6 +1699,12 @@ export default function NotesPage() {
       // Ensure the selection is actually inside the editorRef container
       if (editorRef.current.contains(range.commonAncestorContainer)) {
         savedSelectionRef.current = range.cloneRange();
+        
+        // Broadcast local cursor offset for collaborative carets
+        if (yproviderRef.current && !isSyncingRef.current) {
+          const offset = getSelectionCharacterOffsetWithin(editorRef.current);
+          yproviderRef.current.broadcastCursor(offset);
+        }
       }
     };
 
@@ -368,12 +1846,16 @@ export default function NotesPage() {
     if (!newFolderName.trim()) return toast.error("Folder name is required");
     setCreatingFolder(true);
     try {
-      const targetClientId = newFolderClientId === "none" ? null : newFolderClientId;
+      const targetParentFolder = newFolderParentId !== "none" ? folders.find(f => f.id === newFolderParentId) : null;
+      const targetClientId = targetParentFolder ? targetParentFolder.client_id : (newFolderClientId === "none" ? null : newFolderClientId);
+      const targetParentId = newFolderParentId === "none" ? null : newFolderParentId;
+
       const res = await fetchWithAuth("/api/notes/folders", {
         method: "POST",
         body: JSON.stringify({
           name: newFolderName.trim(),
-          client_id: targetClientId
+          client_id: targetClientId,
+          parent_id: targetParentId
         })
       });
       if (!res.ok) {
@@ -383,6 +1865,7 @@ export default function NotesPage() {
       toast.success("Folder created successfully");
       setNewFolderName("");
       setNewFolderClientId("none");
+      setNewFolderParentId("none");
       setCreateFolderOpen(false);
       void loadNoteFolders();
     } catch (err: any) {
@@ -391,6 +1874,74 @@ export default function NotesPage() {
     } finally {
       setCreatingFolder(false);
     }
+  };
+
+  const handleMoveItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMovingItem(true);
+    try {
+      const targetFolderId = moveTargetFolderId === "none" ? null : moveTargetFolderId;
+      
+      if (moveItemType === "note") {
+        const note = notes.find(n => n.id === moveItemId);
+        if (!note) return;
+        
+        const res = await fetchWithAuth("/api/notes", {
+          method: "PUT",
+          body: JSON.stringify({
+            id: note.id,
+            title: note.title,
+            content: note.content,
+            client_id: note.client_id,
+            folder_id: targetFolderId
+          })
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || "Failed to move note");
+        }
+        toast.success("Document moved successfully");
+        await loadNotes();
+      } else {
+        const folder = folders.find(f => f.id === moveItemId);
+        if (!folder) return;
+        
+        const res = await fetchWithAuth("/api/notes/folders", {
+          method: "PUT",
+          body: JSON.stringify({
+            id: folder.id,
+            parent_id: targetFolderId
+          })
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || "Failed to move folder");
+        }
+        toast.success("Folder moved successfully");
+        await loadNoteFolders();
+        await loadNotes();
+      }
+      setMoveOpen(false);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Failed to move item");
+    } finally {
+      setMovingItem(false);
+    }
+  };
+
+  const handleOpenMoveFolder = (folderId: string, currentParentId: string | null) => {
+    setMoveItemId(folderId);
+    setMoveItemType("folder");
+    setMoveTargetFolderId(currentParentId || "none");
+    setMoveOpen(true);
+  };
+
+  const handleOpenMoveNote = (noteId: string, currentFolderId: string | null) => {
+    setMoveItemId(noteId);
+    setMoveItemType("note");
+    setMoveTargetFolderId(currentFolderId || "none");
+    setMoveOpen(true);
   };
 
   const handleRenameFolder = async (e: React.FormEvent) => {
@@ -476,9 +2027,14 @@ export default function NotesPage() {
     setSelectedColor("#000000");
     savedSelectionRef.current = null;
 
+    if (typeof window !== "undefined") {
+      window.history.pushState({}, "", `/notes?noteId=${note.id}`);
+    }
+
     setTimeout(() => {
       if (editorRef.current) {
         editorRef.current.innerHTML = note.content || "<p><br></p>";
+        hydrateSliders(editorRef.current);
       }
     }, 50);
   };
@@ -487,6 +2043,12 @@ export default function NotesPage() {
     if (autoSaveTimeoutRef.current) {
       clearTimeout(autoSaveTimeoutRef.current);
     }
+
+    // Unmount roots
+    hydratedRootsRef.current.forEach((root) => {
+      try { root.unmount(); } catch (e) { console.error(e); }
+    });
+    hydratedRootsRef.current.clear();
 
     if (saveStatus === "unsaved" && currentNote) {
       setSaveStatus("saving");
@@ -499,17 +2061,31 @@ export default function NotesPage() {
       );
     }
 
+    if (typeof window !== "undefined") {
+      window.history.pushState({}, "", "/notes");
+    }
+
     setCurrentNote(null);
     void loadNotes();
   };
 
-  const saveDocumentData = async (id: string, titleStr: string, clientStr: string, folderStr: string, contentStr: string) => {
+  const saveDocumentData = async (id: string, titleStr: string, clientStr: string, folderStr: string, contentStr: string, existingAudioUrl?: string | null) => {
     try {
       const originalNote = notes.find(n => n.id === id);
       const sharedStaff = originalNote ? originalNote.shared_with.map(s => ({
         staff_id: s.staff_id,
         permission_level: s.permission_level
       })) : [];
+
+      let audio_url = existingAudioUrl;
+      if (audioBlob) {
+        setSaveStatus("saving");
+        const uploadedUrl = await uploadAudio(id);
+        if (uploadedUrl) {
+          audio_url = uploadedUrl;
+          setAudioBlob(null); // Clear blob after upload
+        }
+      }
 
       const res = await fetchWithAuth("/api/notes", {
         method: "PUT",
@@ -519,7 +2095,8 @@ export default function NotesPage() {
           content: contentStr,
           client_id: clientStr || null,
           folder_id: folderStr || null,
-          shared_staff: sharedStaff
+          shared_staff: sharedStaff,
+          audio_url
         })
       });
 
@@ -537,6 +2114,39 @@ export default function NotesPage() {
     if (!currentNote || currentNote.permission_level !== "edit") return;
     setSaveStatus("unsaved");
 
+    // Push local diff updates to Yjs document
+    if (ydocRef.current && !isSyncingRef.current) {
+      const ytext = ydocRef.current.getText("content");
+      const currentHtml = editorRef.current?.innerHTML || "";
+      const ytextHtml = ytext.toString();
+      
+      if (currentHtml !== ytextHtml) {
+        let start = 0;
+        while (start < ytextHtml.length && start < currentHtml.length && ytextHtml[start] === currentHtml[start]) {
+          start++;
+        }
+
+        let end1 = ytextHtml.length;
+        let end2 = currentHtml.length;
+        while (end1 > start && end2 > start && ytextHtml[end1 - 1] === currentHtml[end2 - 1]) {
+          end1--;
+          end2--;
+        }
+
+        const deletedLength = end1 - start;
+        const insertedText = currentHtml.slice(start, end2);
+
+        ydocRef.current.transact(() => {
+          if (deletedLength > 0) {
+            ytext.delete(start, deletedLength);
+          }
+          if (insertedText.length > 0) {
+            ytext.insert(start, insertedText);
+          }
+        }, "local");
+      }
+    }
+
     if (autoSaveTimeoutRef.current) {
       clearTimeout(autoSaveTimeoutRef.current);
     }
@@ -548,7 +2158,8 @@ export default function NotesPage() {
         editorTitle,
         editorClientId,
         editorFolderId,
-        editorRef.current?.innerHTML || ""
+        editorRef.current?.innerHTML || "",
+        currentNote.audio_url
       );
     }, 2000);
   };
@@ -562,33 +2173,49 @@ export default function NotesPage() {
     if (editorRef.current.contains(range.commonAncestorContainer)) {
       // 1. Format Painter Application
       if (isFormatPainterActive && !sel.isCollapsed) {
-        try {
-          const styles = copiedStylesRef.current;
-          document.execCommand("styleWithCSS", false, "true");
+        // Defer execution to next tick to resolve UI event blocking and lag
+        setTimeout(() => {
+          try {
+            const styles = copiedStylesRef.current;
+            
+            // Clear any existing custom formatting on the target selection first to avoid toggle bugs
+            document.execCommand("removeFormat");
+            
+            document.execCommand("styleWithCSS", false, "true");
 
-          if (styles.bold !== document.queryCommandState("bold")) {
-            document.execCommand("bold");
-          }
-          if (styles.italic !== document.queryCommandState("italic")) {
-            document.execCommand("italic");
-          }
-          if (styles.underline !== document.queryCommandState("underline")) {
-            document.execCommand("underline");
-          }
-          if (styles.fontName) {
-            document.execCommand("fontName", false, styles.fontName);
-          }
-          if (styles.foreColor) {
-            document.execCommand("foreColor", false, styles.foreColor);
-          }
+            if (styles.bold) {
+              document.execCommand("bold");
+            }
+            if (styles.italic) {
+              document.execCommand("italic");
+            }
+            if (styles.underline) {
+              document.execCommand("underline");
+            }
+            if (styles.fontName) {
+              document.execCommand("fontName", false, styles.fontName);
+            }
+            if (styles.foreColor) {
+              document.execCommand("foreColor", false, styles.foreColor);
+            }
+            if (styles.fontSizeAttr) {
+              try {
+                document.execCommand("styleWithCSS", false, "false");
+                document.execCommand("fontSize", false, styles.fontSizeAttr);
+                document.execCommand("styleWithCSS", false, "true");
+              } catch (e) {
+                console.error(e);
+              }
+            }
 
-          setIsFormatPainterActive(false);
-          copiedStylesRef.current = {};
-          toast.success("Format applied successfully!");
-          handleEditorInput();
-        } catch (err) {
-          console.error("Error applying format painter styles:", err);
-        }
+            setIsFormatPainterActive(false);
+            copiedStylesRef.current = {};
+            toast.success("Format applied successfully!");
+            handleEditorInput();
+          } catch (err) {
+            console.error("Error applying format painter styles:", err);
+          }
+        }, 0);
         return;
       }
 
@@ -682,22 +2309,58 @@ export default function NotesPage() {
       const range = sel.getRangeAt(0);
       if (editorRef.current.contains(range.commonAncestorContainer)) {
         try {
-          const isBold = document.queryCommandState("bold");
-          const isItalic = document.queryCommandState("italic");
-          const isUnderline = document.queryCommandState("underline");
-          const font = document.queryCommandValue("fontName");
-          const color = document.queryCommandValue("foreColor");
+          const node = sel.anchorNode;
+          const element = node?.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node?.parentElement;
 
-          copiedStylesRef.current = {
-            bold: isBold,
-            italic: isItalic,
-            underline: isUnderline,
-            fontName: font ? font.replace(/['"]/g, "") : "",
-            foreColor: color ? rgbToHex(color) : ""
-          };
+          if (element) {
+            const computedStyle = window.getComputedStyle(element);
 
-          setIsFormatPainterActive(true);
-          toast.success("Format copied! Select text to apply.");
+            const isBold = computedStyle.fontWeight === "bold" || 
+                           parseInt(computedStyle.fontWeight) >= 700 || 
+                           element.closest("strong, b") !== null;
+
+            const isItalic = computedStyle.fontStyle === "italic" || 
+                             element.closest("em, i") !== null;
+
+            const isUnderline = computedStyle.textDecoration.includes("underline") || 
+                               computedStyle.textDecorationLine?.includes("underline") || 
+                               element.closest("u") !== null;
+
+            const fontName = computedStyle.fontFamily;
+            const foreColor = computedStyle.color;
+            const fontSize = computedStyle.fontSize;
+
+            // Map font size to execCommand values (1-7)
+            let matchedSizeAttr = "3";
+            const sizePx = parseInt(fontSize);
+            if (!isNaN(sizePx)) {
+              if (sizePx <= 12) matchedSizeAttr = "1";
+              else if (sizePx <= 14) matchedSizeAttr = "2";
+              else if (sizePx <= 16) matchedSizeAttr = "3";
+              else if (sizePx <= 20) matchedSizeAttr = "4";
+              else if (sizePx <= 28) matchedSizeAttr = "5";
+              else if (sizePx <= 38) matchedSizeAttr = "6";
+              else matchedSizeAttr = "7";
+            }
+
+            const hexColor = rgbToHex(foreColor);
+            const isSupportedColor = SUPPORTED_COLORS.includes(hexColor);
+            
+            const fontNames = fontName.split(',').map(f => f.replace(/['"]/g, "").trim());
+            const matchedFont = fontNames.find(name => SUPPORTED_FONTS.includes(name));
+
+            copiedStylesRef.current = {
+              bold: isBold,
+              italic: isItalic,
+              underline: isUnderline,
+              fontName: matchedFont || "inherit",
+              foreColor: isSupportedColor ? hexColor : "inherit",
+              fontSizeAttr: matchedSizeAttr
+            };
+
+            setIsFormatPainterActive(true);
+            toast.success("Format copied! Select text to apply.");
+          }
         } catch (err) {
           console.error("Error copying format:", err);
         }
@@ -887,13 +2550,13 @@ export default function NotesPage() {
     if (autoSaveTimeoutRef.current) {
       clearTimeout(autoSaveTimeoutRef.current);
     }
-
     void saveDocumentData(
       currentNote.id,
       newTitle,
       newClientId,
       newFolderId,
-      editorRef.current?.innerHTML || ""
+      editorRef.current?.innerHTML || "",
+      currentNote.audio_url
     );
   };
 
@@ -1091,26 +2754,115 @@ export default function NotesPage() {
     }
   };
 
-  // Filter custom folders list for main dashboard view based on clientFilter selection and search query
+  // Filter custom folders list for main dashboard view based on clientFilter selection, parent_id, and search query
   const filteredFolders = useMemo(() => {
     return folders.filter(f => {
       if (searchQuery.trim()) {
         const matchesQuery = f.name.toLowerCase().includes(searchQuery.toLowerCase());
         const associatedClient = f.client_id ? clients.find(cl => cl.id === f.client_id) : null;
         const matchesClientName = associatedClient ? associatedClient.company_name.toLowerCase().includes(searchQuery.toLowerCase()) : false;
-        if (!matchesQuery && !matchesClientName) return false;
+        return matchesQuery || matchesClientName;
       }
-      if (clientFilter === "all") return true;
-      if (clientFilter === "internal") return f.client_id === null;
-      return f.client_id === clientFilter;
+      if ((f.parent_id ?? null) !== (activeFolderId || null)) return false;
+      if (!activeFolderId) {
+        if (clientFilter === "internal") return f.client_id === null;
+        if (clientFilter !== "all" && f.client_id !== clientFilter) return false;
+      }
+      return true;
     });
-  }, [folders, clientFilter, searchQuery, clients]);
+  }, [folders, clientFilter, searchQuery, activeFolderId, clients]);
 
   // Slice folders to display a maximum of 3 rows (12 items on desktop, 6 items on mobile) by default
   const visibleFolders = useMemo(() => {
     const limit = isMobile ? 6 : 12;
     return isFoldersExpanded ? filteredFolders : filteredFolders.slice(0, limit);
   }, [filteredFolders, isFoldersExpanded, isMobile]);
+
+  // Memoized map of folder ID to its full path string
+  const folderPathNames = useMemo(() => {
+    const names: Record<string, string> = {};
+    folders.forEach(f => {
+      const path: string[] = [];
+      let current: NoteFolder | undefined = f;
+      while (current) {
+        path.unshift(current.name);
+        const pid: string | null | undefined = current.parent_id;
+        current = pid ? folders.find(parent => parent.id === pid) : undefined;
+      }
+      names[f.id] = path.join(" > ");
+    });
+    return names;
+  }, [folders]);
+
+  // Options for move destination (excluding descendant folders to prevent circular moves)
+  const moveFolderOptions = useMemo(() => {
+    if (moveItemType === "note") {
+      return folders;
+    }
+    const descendants = new Set<string>();
+    const getDescendants = (parentId: string) => {
+      folders.forEach(f => {
+        if (f.parent_id === parentId) {
+          descendants.add(f.id);
+          getDescendants(f.id);
+        }
+      });
+    };
+    if (moveItemId) {
+      descendants.add(moveItemId);
+      getDescendants(moveItemId);
+    }
+    return folders.filter(f => !descendants.has(f.id));
+  }, [folders, moveItemId, moveItemType]);
+
+  // Path array for breadcrumb rendering
+  const folderPath = useMemo(() => {
+    if (!activeFolderId) return [];
+    const path: NoteFolder[] = [];
+    let current = folders.find(f => f.id === activeFolderId);
+    while (current) {
+      path.unshift(current);
+      const parentId = current.parent_id;
+      current = parentId ? folders.find(f => f.id === parentId) : undefined;
+    }
+    return path;
+  }, [activeFolderId, folders]);
+
+
+  // Breadcrumbs element renderer
+  const renderBreadcrumbs = () => {
+    return (
+      <div className="flex items-center flex-wrap gap-1 text-xs text-muted-foreground py-1 select-none">
+        <span
+          onClick={() => setActiveFolderId(null)}
+          className="hover:text-primary cursor-pointer transition-colors font-semibold flex items-center gap-1.5"
+        >
+          <HardDrive className="h-3.5 w-3.5" /> Notes (Root)
+        </span>
+        {folderPath.map((folder, index) => {
+          const isLast = index === folderPath.length - 1;
+          const associatedClient = folder.client_id ? clients.find(c => c.id === folder.client_id) : null;
+          return (
+            <React.Fragment key={folder.id}>
+              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
+              <span
+                onClick={() => !isLast && setActiveFolderId(folder.id)}
+                className={cn(
+                  "transition-colors font-medium truncate max-w-[150px] font-sans",
+                  isLast 
+                    ? "text-foreground font-semibold" 
+                    : "hover:text-primary cursor-pointer"
+                )}
+                title={associatedClient ? `${folder.name} (${associatedClient.company_name})` : folder.name}
+              >
+                {folder.name} {associatedClient && `(${associatedClient.company_name})`}
+              </span>
+            </React.Fragment>
+          );
+        })}
+      </div>
+    );
+  };
 
   // Filter notes based on active custom folder, client filter, search query, and scope
   const filteredNotes = useMemo(() => {
@@ -1278,9 +3030,19 @@ export default function NotesPage() {
               </p>
             </div>
             <div className="flex items-center gap-2 select-none">
-              {activeFolderId === null && !searchQuery.trim() && (
+              {!searchQuery.trim() && (
                 <Button
-                  onClick={() => setCreateFolderOpen(true)}
+                  onClick={() => {
+                    const parentIdVal = activeFolderId || "none";
+                    setNewFolderParentId(parentIdVal);
+                    if (activeFolderId) {
+                      const activeFolder = folders.find(f => f.id === activeFolderId);
+                      setNewFolderClientId(activeFolder?.client_id || "none");
+                    } else {
+                      setNewFolderClientId(clientFilter !== "all" && clientFilter !== "internal" ? clientFilter : "none");
+                    }
+                    setCreateFolderOpen(true);
+                  }}
                   variant="outline"
                   className="rounded-xl gap-2 cursor-pointer shrink-0 border-border/60 hover:bg-muted/50"
                 >
@@ -1365,21 +3127,15 @@ export default function NotesPage() {
 
           {/* Breadcrumb for sub-folder view */}
           {activeFolderId !== null && !searchQuery.trim() && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground select-none">
-              <span onClick={() => setActiveFolderId(null)} className="hover:text-primary cursor-pointer transition-colors font-medium">
-                Notes
-              </span>
-              <ChevronRight className="h-3.5 w-3.5" />
-              <Badge variant="outline" className="font-semibold px-2.5 py-0.5 rounded-full text-indigo-500 border-indigo-200/50 bg-indigo-500/5">
-                {activeFolderName}
-              </Badge>
+            <div className="flex items-center justify-between gap-4 p-2 bg-muted/20 rounded-xl select-none mb-4">
+              {renderBreadcrumbs()}
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => setActiveFolderId(null)}
-                className="h-7 text-xs ml-auto rounded-lg text-primary hover:bg-primary/5 cursor-pointer font-medium"
+                className="h-7 text-xs rounded-lg text-primary hover:bg-primary/5 cursor-pointer font-medium shrink-0"
               >
-                <ArrowLeft className="h-3 w-3 mr-1" /> Back to Dashboard
+                <ArrowLeft className="h-3 w-3 mr-1" /> Back to Root
               </Button>
             </div>
           )}
@@ -1452,6 +3208,15 @@ export default function NotesPage() {
                             <Button
                               size="icon"
                               variant="ghost"
+                              className="h-7 w-7 rounded-lg hover:bg-muted cursor-pointer text-muted-foreground/80 hover:text-foreground"
+                              onClick={() => handleOpenMoveFolder(sf.id, sf.parent_id || null)}
+                              title="Move Folder"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
                               className="h-7 w-7 rounded-lg hover:bg-muted cursor-pointer"
                               onClick={() => {
                                 setRenameFolderId(sf.id);
@@ -1492,6 +3257,12 @@ export default function NotesPage() {
                                   className="text-xs cursor-pointer rounded-lg focus:bg-muted/80 flex items-center gap-2"
                                 >
                                   <Share2 className="h-3.5 w-3.5" /> Share Folder
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleOpenMoveFolder(sf.id, sf.parent_id || null)}
+                                  className="text-xs cursor-pointer rounded-lg focus:bg-muted/80 flex items-center gap-2"
+                                >
+                                  <ExternalLink className="h-3.5 w-3.5" /> Move Folder
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   onClick={() => {
@@ -1535,7 +3306,7 @@ export default function NotesPage() {
                   </Card>
                 ) : (
                   <>
-                    <NotesGrid notesList={filteredNotes.slice(0, visibleNotesCount)} handleOpenEditor={handleOpenEditor} handleDeleteDocument={handleDeleteDocument} isAdmin={isAdmin} activeStaff={activeStaff} profileId={profile?.id} foldersList={folders} />
+                    <NotesGrid notesList={filteredNotes.slice(0, visibleNotesCount)} handleOpenEditor={handleOpenEditor} handleDeleteDocument={handleDeleteDocument} isAdmin={isAdmin} activeStaff={activeStaff} profileId={profile?.id} foldersList={folders} onMoveNote={handleOpenMoveNote} />
                     {filteredNotes.length > visibleNotesCount && (
                       <div className="flex justify-center pt-4">
                         <Button
@@ -1614,6 +3385,15 @@ export default function NotesPage() {
                             <Button
                               size="icon"
                               variant="ghost"
+                              className="h-7 w-7 rounded-lg hover:bg-muted cursor-pointer text-muted-foreground/80 hover:text-foreground"
+                              onClick={() => handleOpenMoveFolder(sf.id, sf.parent_id || null)}
+                              title="Move Folder"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
                               className="h-7 w-7 rounded-lg hover:bg-muted cursor-pointer"
                               onClick={() => {
                                 setRenameFolderId(sf.id);
@@ -1654,6 +3434,12 @@ export default function NotesPage() {
                                   className="text-xs cursor-pointer rounded-lg focus:bg-muted/80 flex items-center gap-2"
                                 >
                                   <Share2 className="h-3.5 w-3.5" /> Share Folder
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleOpenMoveFolder(sf.id, sf.parent_id || null)}
+                                  className="text-xs cursor-pointer rounded-lg focus:bg-muted/80 flex items-center gap-2"
+                                >
+                                  <ExternalLink className="h-3.5 w-3.5" /> Move Folder
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   onClick={() => {
@@ -1697,7 +3483,7 @@ export default function NotesPage() {
                   </Card>
                 ) : (
                   <>
-                    <NotesGrid notesList={filteredNotes.slice(0, visibleNotesCount)} handleOpenEditor={handleOpenEditor} handleDeleteDocument={handleDeleteDocument} isAdmin={isAdmin} activeStaff={activeStaff} profileId={profile?.id} foldersList={folders} />
+                    <NotesGrid notesList={filteredNotes.slice(0, visibleNotesCount)} handleOpenEditor={handleOpenEditor} handleDeleteDocument={handleDeleteDocument} isAdmin={isAdmin} activeStaff={activeStaff} profileId={profile?.id} foldersList={folders} onMoveNote={handleOpenMoveNote} />
                     {filteredNotes.length > visibleNotesCount && (
                       <div className="flex justify-center pt-4">
                         <Button
@@ -1714,41 +3500,187 @@ export default function NotesPage() {
               </div>
             </div>
           ) : (
-            // Custom Sub-folder Detail view mode
-            <div className="space-y-4">
-              {filteredNotes.length === 0 ? (
+            // Custom Sub-folder Detail view mode (Google Drive-like folders + documents layout)
+            <div className="space-y-8">
+              {filteredFolders.length === 0 && filteredNotes.length === 0 ? (
                 <Card className="border border-dashed border-border/60 bg-muted/5 rounded-3xl py-12 flex flex-col items-center justify-center text-center">
                   <div className="h-12 w-12 rounded-2xl bg-muted flex items-center justify-center mb-4 text-muted-foreground/60">
                     <FileText className="h-6 w-6" />
                   </div>
                   <h3 className="font-semibold text-base">Folder is empty</h3>
                   <p className="text-muted-foreground text-xs max-w-[320px] mt-1">
-                    No documents created in this subfolder yet. Click "+ New Document" to write notes.
+                    No folders or documents created in this subfolder yet. Click "New Folder" or "New Document" to add items.
                   </p>
-                  <Button
-                    onClick={() => {
-                      const targetFolder = folders.find(f => f.id === activeFolderId);
-                      setCreateClientId(targetFolder?.client_id || "none");
-                      setCreateFolderId(activeFolderId);
-                      setCreateOpen(true);
-                    }}
-                    className="gradient-primary rounded-xl gap-2 mt-4 cursor-pointer text-xs"
-                  >
-                    <Plus className="h-4 w-4" /> Create Document
-                  </Button>
+                  <div className="flex gap-3 mt-4">
+                    <Button
+                      onClick={() => {
+                        setNewFolderParentId(activeFolderId);
+                        const activeFolder = folders.find(f => f.id === activeFolderId);
+                        setNewFolderClientId(activeFolder?.client_id || "none");
+                        setCreateFolderOpen(true);
+                      }}
+                      variant="outline"
+                      className="rounded-xl gap-2 cursor-pointer text-xs shrink-0 border-border/60 hover:bg-muted/50"
+                    >
+                      <FolderPlus className="h-4 w-4" /> New Folder
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        const targetFolder = folders.find(f => f.id === activeFolderId);
+                        setCreateClientId(targetFolder?.client_id || "none");
+                        setCreateFolderId(activeFolderId);
+                        setCreateOpen(true);
+                      }}
+                      className="gradient-primary rounded-xl gap-2 cursor-pointer text-xs"
+                    >
+                      <Plus className="h-4 w-4" /> Create Document
+                    </Button>
+                  </div>
                 </Card>
               ) : (
                 <>
-                  <NotesGrid notesList={filteredNotes.slice(0, visibleNotesCount)} handleOpenEditor={handleOpenEditor} handleDeleteDocument={handleDeleteDocument} isAdmin={isAdmin} activeStaff={activeStaff} profileId={profile?.id} foldersList={folders} />
-                  {filteredNotes.length > visibleNotesCount && (
-                    <div className="flex justify-center pt-4">
-                      <Button
-                        onClick={() => setVisibleNotesCount(prev => prev + 21)}
-                        variant="outline"
-                        className="rounded-xl border-border/60 hover:bg-muted/50 font-semibold gap-1.5 px-6 cursor-pointer"
-                      >
-                        <RefreshCw className="h-4 w-4 text-muted-foreground animate-spin-hover" /> Load More Documents
-                      </Button>
+                  {/* Folders inside this active subfolder */}
+                  {filteredFolders.length > 0 && (
+                    <div className="space-y-3">
+                      <h2 className="text-sm font-bold text-muted-foreground/80 uppercase tracking-wider">Folders ({filteredFolders.length})</h2>
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        {filteredFolders.map(sf => {
+                          const associatedClient = sf.client_id ? clients.find(cl => cl.id === sf.client_id) : null;
+                          return (
+                            <Card
+                              key={sf.id}
+                              className="group flex items-center justify-between p-3 rounded-xl border border-border/60 hover:border-primary/40 bg-card hover:bg-muted/10 transition-all duration-200 !shadow-none"
+                            >
+                              <div
+                                onClick={() => setActiveFolderId(sf.id)}
+                                className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
+                              >
+                                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:bg-primary/20 transition-colors">
+                                  <Folder className="h-4.5 w-4.5" />
+                                </div>
+                                <div className="flex flex-col min-w-0">
+                                  <span className="font-semibold text-sm truncate group-hover:text-primary transition-colors">
+                                    {sf.name}
+                                  </span>
+                                  <span className="text-[10px] text-muted-foreground font-medium truncate">
+                                    {associatedClient ? associatedClient.company_name : "Personal / Internal"} • {getSubFolderNoteCount(sf.id)} notes
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Desktop controls */}
+                              <div className="hidden md:flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-7 w-7 rounded-lg hover:bg-muted cursor-pointer text-muted-foreground/80 hover:text-foreground"
+                                  onClick={() => handleOpenFolderSharing(sf)}
+                                  title="Share Folder"
+                                >
+                                  <Share2 className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-7 w-7 rounded-lg hover:bg-muted cursor-pointer text-muted-foreground/80 hover:text-foreground"
+                                  onClick={() => handleOpenMoveFolder(sf.id, sf.parent_id || null)}
+                                  title="Move Folder"
+                                >
+                                  <ExternalLink className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-7 w-7 rounded-lg hover:bg-muted cursor-pointer"
+                                  onClick={() => {
+                                    setRenameFolderId(sf.id);
+                                    setRenameFolderName(sf.name);
+                                    setRenameFolderOpen(true);
+                                  }}
+                                  title="Rename Folder"
+                                >
+                                  <Edit className="h-3.5 w-3.5 text-muted-foreground/80 hover:text-foreground" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-7 w-7 rounded-lg text-destructive hover:bg-destructive/10 hover:text-destructive cursor-pointer"
+                                  onClick={() => handleDeleteFolder(sf.id, sf.name)}
+                                  title="Delete Folder"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+
+                              {/* Mobile controls */}
+                              <div className="md:hidden flex items-center shrink-0">
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-8 w-8 rounded-lg hover:bg-muted cursor-pointer text-muted-foreground/80 hover:text-foreground"
+                                      title="Actions"
+                                    >
+                                      <MoreVertical className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="w-[140px] rounded-xl p-1 shadow-lg bg-card border border-border/60 z-30">
+                                    <DropdownMenuItem
+                                      onClick={() => handleOpenFolderSharing(sf)}
+                                      className="text-xs cursor-pointer rounded-lg focus:bg-muted/80 flex items-center gap-2"
+                                    >
+                                      <Share2 className="h-3.5 w-3.5" /> Share Folder
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => handleOpenMoveFolder(sf.id, sf.parent_id || null)}
+                                      className="text-xs cursor-pointer rounded-lg focus:bg-muted/80 flex items-center gap-2"
+                                    >
+                                      <ExternalLink className="h-3.5 w-3.5" /> Move Folder
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => {
+                                        setRenameFolderId(sf.id);
+                                        setRenameFolderName(sf.name);
+                                        setRenameFolderOpen(true);
+                                      }}
+                                      className="text-xs cursor-pointer rounded-lg focus:bg-muted/80 flex items-center gap-2"
+                                    >
+                                      <Edit className="h-3.5 w-3.5" /> Rename Folder
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator className="my-1 border-t border-border/40" />
+                                    <DropdownMenuItem
+                                      onClick={() => handleDeleteFolder(sf.id, sf.name)}
+                                      className="text-xs text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer rounded-lg flex items-center gap-2 font-semibold"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" /> Delete Folder
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                            </Card>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Documents inside this active subfolder */}
+                  {filteredNotes.length > 0 && (
+                    <div className="space-y-3">
+                      <h2 className="text-sm font-bold text-muted-foreground/80 uppercase tracking-wider">Documents ({filteredNotes.length})</h2>
+                      <NotesGrid notesList={filteredNotes.slice(0, visibleNotesCount)} handleOpenEditor={handleOpenEditor} handleDeleteDocument={handleDeleteDocument} isAdmin={isAdmin} activeStaff={activeStaff} profileId={profile?.id} foldersList={folders} onMoveNote={handleOpenMoveNote} />
+                      {filteredNotes.length > visibleNotesCount && (
+                        <div className="flex justify-center pt-4">
+                          <Button
+                            onClick={() => setVisibleNotesCount(prev => prev + 21)}
+                            variant="outline"
+                            className="rounded-xl border-border/60 hover:bg-muted/50 font-semibold gap-1.5 px-6 cursor-pointer"
+                          >
+                            <RefreshCw className="h-4 w-4 text-muted-foreground animate-spin-hover" /> Load More Documents
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </>
@@ -1847,14 +3779,14 @@ export default function NotesPage() {
                             <SelectItem value="none" className="text-xs cursor-pointer">Root Folder</SelectItem>
                             {editorFoldersOptions.map(f => (
                               <SelectItem key={f.id} value={f.id} className="text-xs cursor-pointer">
-                                {f.name}
+                                {folderPathNames[f.id] || f.name}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       ) : (
                         <span className="font-semibold text-foreground">
-                          {editorFolderId ? folders.find(fd => fd.id === editorFolderId)?.name : "Root"}
+                          {editorFolderId ? (folderPathNames[editorFolderId] || folders.find(fd => fd.id === editorFolderId)?.name) : "Root"}
                         </span>
                       )}
                     </div>
@@ -1885,6 +3817,43 @@ export default function NotesPage() {
                     </>
                   )}
                 </div>
+
+                {/* Active Collaborative Users */}
+                {activeUsers.length > 0 && (
+                  <div className="flex items-center -space-x-2 mr-2 select-none shrink-0">
+                    <TooltipProvider>
+                      {activeUsers.map((user) => {
+                        const userColor = getHashColor(user.user_id);
+                        const initials = user.name
+                          ? user.name.split(" ").map((n: string) => n[0]).join("").substring(0, 2).toUpperCase()
+                          : "?";
+                        return (
+                          <Tooltip key={user.user_id}>
+                            <TooltipTrigger asChild>
+                              <Avatar
+                                className="h-8 w-8 rounded-full border-2 bg-background transition-transform hover:scale-105 hover:z-10 cursor-pointer shrink-0"
+                                style={{ borderColor: userColor }}
+                              >
+                                {user.avatar_url && (
+                                  <AvatarImage src={user.avatar_url} className="object-cover" />
+                                )}
+                                <AvatarFallback
+                                  className="text-[10px] font-bold text-white uppercase"
+                                  style={{ backgroundColor: userColor }}
+                                >
+                                  {initials}
+                                </AvatarFallback>
+                              </Avatar>
+                            </TooltipTrigger>
+                            <TooltipContent className="text-xs px-2.5 py-1 bg-popover border border-border shadow-md rounded-lg font-semibold text-popover-foreground">
+                              {user.name} {user.user_id === profile?.id ? "(You)" : ""}
+                            </TooltipContent>
+                          </Tooltip>
+                        );
+                      })}
+                    </TooltipProvider>
+                  </div>
+                )}
 
                 <Button
                   variant="outline"
@@ -1930,6 +3899,39 @@ export default function NotesPage() {
 
               {/* Action Controls */}
               <div className="flex items-center gap-1.5 shrink-0 select-none">
+                {/* Mobile Active Collaborative Users */}
+                {activeUsers.length > 0 && (
+                  <div className="flex items-center -space-x-1.5 mr-1 select-none">
+                    {activeUsers.slice(0, 3).map((user) => {
+                      const userColor = getHashColor(user.user_id);
+                      const initials = user.name
+                        ? user.name.split(" ").map((n: string) => n[0]).join("").substring(0, 2).toUpperCase()
+                        : "?";
+                      return (
+                        <Avatar
+                          key={user.user_id}
+                          className="h-7 w-7 rounded-full border bg-background shrink-0"
+                          style={{ borderColor: userColor }}
+                        >
+                          {user.avatar_url && (
+                            <AvatarImage src={user.avatar_url} className="object-cover" />
+                          )}
+                          <AvatarFallback
+                            className="text-[9px] font-bold text-white uppercase"
+                            style={{ backgroundColor: userColor }}
+                          >
+                            {initials}
+                          </AvatarFallback>
+                        </Avatar>
+                      );
+                    })}
+                    {activeUsers.length > 3 && (
+                      <div className="h-7 w-7 rounded-full bg-muted border border-border flex items-center justify-center text-[9px] font-bold text-muted-foreground shrink-0 pl-0.5">
+                        +{activeUsers.length - 3}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {/* Cloud status icon */}
                 <div
                   className={cn(
@@ -2473,14 +4475,199 @@ export default function NotesPage() {
           </div>
 
           {/* Pageless Workspace Canvas */}
-          <div className="flex-1 bg-background overflow-auto flex justify-center min-h-[500px] rounded-none md:rounded-b-3xl">
+          <div className="flex-1 bg-background overflow-auto flex flex-col items-center min-h-[500px] rounded-none md:rounded-b-3xl relative">
+            {/* Remote Caret Cursor Flags Overlay */}
+            {remoteCursors.map((cursor) => {
+              const coords = calculateCursorCoords(cursor.offset?.start);
+              if (!coords) return null;
+              const userColor = getHashColor(cursor.userId);
+              return (
+                <div
+                  key={cursor.userId}
+                  className="absolute pointer-events-none z-45 transition-all duration-75"
+                  style={{
+                    top: `${coords.top}px`,
+                    left: `${coords.left}px`,
+                    height: `${coords.height}px`
+                  }}
+                >
+                  {/* Caret visual marker line */}
+                  <div
+                    className="w-[2px] h-full animate-pulse"
+                    style={{ backgroundColor: userColor }}
+                  />
+                  {/* Floating username flag */}
+                  <div
+                    className="absolute bottom-full left-0 px-1.5 py-0.5 rounded text-[10px] font-bold text-white whitespace-nowrap opacity-90 border border-white/10"
+                    style={{ backgroundColor: userColor }}
+                  >
+                    {cursor.name}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Floating Menu Button */}
+            {floatingMenuCoords && (
+              <div
+                className="absolute z-50 flex items-center justify-center transition-all duration-150"
+                style={{
+                  top: `${floatingMenuCoords.top + (floatingMenuCoords.height - 28) / 2}px`,
+                  left: `${floatingMenuCoords.left}px`,
+                  height: "28px",
+                }}
+              >
+                <Popover open={isPopoverOpen} onOpenChange={(open) => {
+                  if (isAudioActionActive) {
+                    setIsPopoverOpen(false);
+                    isPopoverOpenRef.current = false;
+                    return;
+                  }
+                  isPopoverOpenRef.current = open;
+                  setIsPopoverOpen(open);
+                }}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant={isAudioActionActive ? "destructive" : "ghost"}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        if (isAudioActionActive) {
+                          if (isListening) stopListening();
+                          if (isRecording) stopRecording();
+                        }
+                      }}
+                      onClick={(e) => {
+                        if (isAudioActionActive) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }
+                      }}
+                      className={cn(
+                        "h-7 w-7 rounded-full border shadow-sm shrink-0 cursor-pointer transition-all duration-200",
+                        isAudioActionActive 
+                          ? "bg-destructive text-destructive-foreground hover:bg-destructive/90 animate-pulse border-destructive" 
+                          : "bg-muted/80 hover:bg-primary/20 text-muted-foreground hover:text-primary border-border"
+                      )}
+                      title={
+                        isTranscribing 
+                          ? "Transcribing..." 
+                          : isUploadingAudio 
+                          ? "Uploading audio..." 
+                          : isListening 
+                          ? "Stop Dictation" 
+                          : isRecording 
+                          ? "Stop Recording" 
+                          : "Insert block"
+                      }
+                    >
+                      {isTranscribing || isUploadingAudio ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : isListening ? (
+                        <Mic className="h-4 w-4 text-white animate-bounce" />
+                      ) : isRecording ? (
+                        <AudioLines className="h-4 w-4 text-white animate-bounce" />
+                      ) : (
+                        <Plus className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-56 p-1 bg-popover border border-border shadow-md rounded-xl" align="start" side="right" sideOffset={8}>
+                    <div className="flex flex-col gap-0.5">
+                      <button
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          saveSelection();
+                        }}
+                        onClick={() => handleFloatingMenuOption("dictate")}
+                        className="flex items-center gap-2.5 px-3 py-2 text-xs text-left font-medium text-foreground hover:bg-muted rounded-lg cursor-pointer transition-colors"
+                      >
+                        <Mic className="h-4 w-4 text-purple-500" />
+                        <div>
+                          <div className="font-semibold font-sans">Dictate</div>
+                          <div className="text-[10px] text-muted-foreground font-normal font-sans">Speech-to-text input</div>
+                        </div>
+                      </button>
+                      <button
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          saveSelection();
+                        }}
+                        onClick={() => handleFloatingMenuOption("voice")}
+                        className="flex items-center gap-2.5 px-3 py-2 text-xs text-left font-medium text-foreground hover:bg-muted rounded-lg cursor-pointer transition-colors"
+                      >
+                        <AudioLines className="h-4 w-4 text-indigo-500" />
+                        <div>
+                          <div className="font-semibold font-sans">Voice Note</div>
+                          <div className="text-[10px] text-muted-foreground font-normal font-sans">Record and attach audio</div>
+                        </div>
+                      </button>
+                      <button
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          saveSelection();
+                        }}
+                        onClick={() => handleFloatingMenuOption("image")}
+                        className="flex items-center gap-2.5 px-3 py-2 text-xs text-left font-medium text-foreground hover:bg-muted rounded-lg cursor-pointer transition-colors"
+                      >
+                        <HardDrive className="h-4 w-4 text-blue-500" />
+                        <div>
+                          <div className="font-semibold font-sans">Image / Slider</div>
+                          <div className="text-[10px] text-muted-foreground font-normal font-sans">Upload images or slider</div>
+                        </div>
+                      </button>
+                      <button
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          saveSelection();
+                        }}
+                        onClick={() => handleFloatingMenuOption("todo")}
+                        className="flex items-center gap-2.5 px-3 py-2 text-xs text-left font-medium text-foreground hover:bg-muted rounded-lg cursor-pointer transition-colors"
+                      >
+                        <ListTodo className="h-4 w-4 text-emerald-500" />
+                        <div>
+                          <div className="font-semibold font-sans">To-do List</div>
+                          <div className="text-[10px] text-muted-foreground font-normal font-sans">Task list with checkboxes</div>
+                        </div>
+                      </button>
+                      <button
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          saveSelection();
+                        }}
+                        onClick={() => handleFloatingMenuOption("text")}
+                        className="flex items-center gap-2.5 px-3 py-2 text-xs text-left font-medium text-foreground hover:bg-muted rounded-lg cursor-pointer transition-colors"
+                      >
+                        <Type className="h-4 w-4 text-amber-500" />
+                        <div>
+                          <div className="font-semibold font-sans">Text</div>
+                          <div className="text-[10px] text-muted-foreground font-normal font-sans">Write paragraph text</div>
+                        </div>
+                      </button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
+            )}
+            <input
+              type="file"
+              ref={imageFileInputRef}
+              multiple
+              accept="image/*"
+              className="hidden"
+              onChange={handleImageFileChange}
+            />
             <div
               ref={editorRef}
               contentEditable={currentNote.permission_level === "edit"}
               onInput={handleEditorInput}
+              onPaste={handleEditorPaste}
               onMouseUp={handleEditorSelectionUpdate}
               onKeyUp={handleEditorSelectionUpdate}
-              className="editor-content w-full max-w-[850px] min-h-[70vh] bg-background focus:outline-none text-slate-800 dark:text-slate-200 font-sans cursor-text px-6 md:px-12 py-8 transition-colors duration-200"
+              className={cn(
+                "editor-content w-full max-w-[850px] min-h-[70vh] bg-background focus:outline-none text-slate-800 dark:text-slate-200 font-sans pl-12 pr-6 md:px-12 py-8 transition-colors duration-200",
+                isFormatPainterActive ? "format-painter-cursor" : "cursor-text"
+              )}
               style={{ outline: 'none' }}
             />
           </div>
@@ -3204,7 +5391,7 @@ export default function NotesPage() {
                   <SelectItem value="none">Root (No custom folder)</SelectItem>
                   {creationFoldersOptions.map(f => (
                     <SelectItem key={f.id} value={f.id}>
-                      {f.name}
+                      {folderPathNames[f.id] || f.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -3272,6 +5459,23 @@ export default function NotesPage() {
                   {clients.map(f => (
                     <SelectItem key={f.id} value={f.id}>
                       {f.company_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="folder-parent" className="text-xs font-semibold">Parent Folder (Optional)</Label>
+              <Select value={newFolderParentId} onValueChange={setNewFolderParentId}>
+                <SelectTrigger id="folder-parent" className="w-full bg-muted/10 border border-border/50 rounded-xl cursor-pointer h-10">
+                  <SelectValue placeholder="Root (No parent folder)" />
+                </SelectTrigger>
+                <SelectContent className="max-h-[250px] overflow-y-auto">
+                  <SelectItem value="none">Root (No parent folder)</SelectItem>
+                  {folders.map(f => (
+                    <SelectItem key={f.id} value={f.id}>
+                      {folderPathNames[f.id] || f.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -3346,6 +5550,61 @@ export default function NotesPage() {
                   <Loader2 className="h-4 w-4 animate-spin mr-1" />
                 ) : (
                   "Rename Folder"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* MOVE DOCUMENT OR FOLDER DIALOG MODAL */}
+      <Dialog open={moveOpen} onOpenChange={setMoveOpen}>
+        <DialogContent className="max-w-[400px] bg-card/95 border border-border/60 rounded-3xl shadow-xl backdrop-blur-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ExternalLink className="h-5 w-5 text-primary" /> Move {moveItemType === "note" ? "Document" : "Folder"}
+            </DialogTitle>
+            <DialogDescription>
+              Select the destination folder to move this {moveItemType === "note" ? "document" : "folder"}.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleMoveItem} className="space-y-4 my-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="move-target" className="text-xs font-semibold">Destination Folder</Label>
+              <Select value={moveTargetFolderId} onValueChange={setMoveTargetFolderId}>
+                <SelectTrigger id="move-target" className="w-full bg-muted/10 border border-border/50 rounded-xl cursor-pointer h-10">
+                  <SelectValue placeholder="Root (No folder)" />
+                </SelectTrigger>
+                <SelectContent className="max-h-[250px] overflow-y-auto">
+                  <SelectItem value="none">Root (No folder)</SelectItem>
+                  {moveFolderOptions.map(f => (
+                    <SelectItem key={f.id} value={f.id}>
+                      {folderPathNames[f.id] || f.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <DialogFooter className="pt-4 border-t border-border/20">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setMoveOpen(false)}
+                className="cursor-pointer rounded-xl"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={movingItem}
+                className="gradient-primary cursor-pointer rounded-xl"
+              >
+                {movingItem ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                ) : (
+                  "Confirm Move"
                 )}
               </Button>
             </DialogFooter>
@@ -3540,6 +5799,73 @@ export default function NotesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* FLOATING AUDIO ACTION CONTROL BOX */}
+      {isAudioActionActive && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[80] bg-background/95 dark:bg-card/95 border border-border/80 shadow-2xl rounded-full pl-4 pr-2.5 py-2 flex items-center gap-4 animate-in slide-in-from-bottom-5 duration-300 ease-out backdrop-blur-md">
+          <div className="flex items-center gap-2">
+            {isTranscribing || isUploadingAudio ? (
+              <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
+            ) : isListening ? (
+              <div className="relative flex h-2 w-2 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500"></span>
+              </div>
+            ) : (
+              <div className="relative flex h-2 w-2 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive/60 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-destructive"></span>
+              </div>
+            )}
+            
+            <span className="text-xs font-semibold text-foreground/90 whitespace-nowrap tracking-medium select-none">
+              {isTranscribing 
+                ? "Transcribing voice..." 
+                : isUploadingAudio 
+                ? "Uploading audio..." 
+                : isListening 
+                ? "Dictation Active (speak now)" 
+                : "Recording Voice Note..."}
+            </span>
+          </div>
+
+          <Button
+            size="sm"
+            variant="destructive"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              if (isListening) stopListening();
+              if (isRecording) stopRecording();
+            }}
+            className="h-8 rounded-full px-4 text-xs font-bold shadow-md cursor-pointer flex items-center gap-1.5 transition-all duration-200 active:scale-95 bg-destructive hover:bg-destructive/95 text-white border-transparent"
+          >
+            <div className="w-1.5 h-1.5 bg-white rounded-xs shrink-0" />
+            Stop
+          </Button>
+        </div>
+      )}
+
+      {/* FULL-SCREEN IMAGE LIGHTBOX VIEWER */}
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md animate-in fade-in duration-200"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <button
+            onClick={() => setLightboxUrl(null)}
+            className="absolute top-4 right-4 flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 hover:bg-white/20 text-white transition-all cursor-pointer border border-white/5"
+            title="Close"
+          >
+            <Plus className="h-6 w-6 rotate-45" />
+          </button>
+          <div
+            className="relative max-w-[92vw] max-h-[90vh] overflow-hidden rounded-2xl border border-white/10 shadow-2xl animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img src={lightboxUrl} alt="Zoomed view" className="max-w-full max-h-[90vh] object-contain rounded-2xl select-none" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3553,9 +5879,10 @@ interface NotesGridProps {
   activeStaff: Profile[];
   profileId: string | undefined;
   foldersList?: NoteFolder[];
+  onMoveNote?: (id: string, currentFolderId: string | null) => void;
 }
 
-function NotesGrid({ notesList, handleOpenEditor, handleDeleteDocument, isAdmin, activeStaff, profileId, foldersList }: NotesGridProps) {
+function NotesGrid({ notesList, handleOpenEditor, handleDeleteDocument, isAdmin, activeStaff, profileId, foldersList, onMoveNote }: NotesGridProps) {
   return (
     <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7">
       {notesList.map(n => {
@@ -3567,25 +5894,44 @@ function NotesGrid({ notesList, handleOpenEditor, handleDeleteDocument, isAdmin,
             className="group relative flex flex-col justify-between p-3.5 rounded-2xl border border-border/60 hover:border-primary/30 bg-card hover:bg-muted/10 hover:shadow-elegant transition-all duration-200 cursor-pointer min-h-[135px]"
             onClick={() => handleOpenEditor(n)}
           >
-            {/* Card Top Row: File icon and Delete button */}
+            {/* Card Top Row: File icon and actions dropdown */}
             <div className="flex items-center justify-between gap-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
                 <FileText className="h-4.5 w-4.5" />
               </div>
 
               {(isOwned || isAdmin) && (
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={(e) => {
-                    e.stopPropagation(); // Prevent opening the editor
-                    handleDeleteDocument(n.id, n.title);
-                  }}
-                  className="h-7 w-7 text-destructive hover:bg-destructive/10 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-150 cursor-pointer shrink-0"
-                  title="Delete Document"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+                <div onClick={e => e.stopPropagation()} className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 shrink-0">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 rounded-lg hover:bg-muted cursor-pointer text-muted-foreground/80 hover:text-foreground"
+                        title="Actions"
+                      >
+                        <MoreVertical className="h-3.5 w-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-[140px] rounded-xl p-1 shadow-lg bg-card border border-border/60 z-30">
+                      {onMoveNote && (
+                        <DropdownMenuItem
+                          onClick={() => onMoveNote(n.id, n.folder_id)}
+                          className="text-xs cursor-pointer rounded-lg focus:bg-muted/80 flex items-center gap-2"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" /> Move Document
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuSeparator className="my-1 border-t border-border/40" />
+                      <DropdownMenuItem
+                        onClick={() => handleDeleteDocument(n.id, n.title)}
+                        className="text-xs text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer rounded-lg flex items-center gap-2 font-semibold"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Delete Document
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               )}
             </div>
 
@@ -3604,7 +5950,7 @@ function NotesGrid({ notesList, handleOpenEditor, handleDeleteDocument, isAdmin,
               {n.folder_id && foldersList && (
                 <span className="flex items-center gap-0.5 text-primary max-w-[55%] truncate" title={foldersList.find(f => f.id === n.folder_id)?.name}>
                   <Folder className="h-2.5 w-2.5 shrink-0" />
-                  <span className="truncate font-semibold">
+                  <span className="truncate font-semibold font-sans">
                     {foldersList.find(f => f.id === n.folder_id)?.name}
                   </span>
                 </span>
@@ -3616,5 +5962,94 @@ function NotesGrid({ notesList, handleOpenEditor, handleDeleteDocument, isAdmin,
     </div>
   );
 }
+
+
+interface SliderBlockProps {
+  urls: string[];
+  onViewImage?: (url: string) => void;
+  onDelete: () => void;
+}
+
+const SliderBlock = ({ urls, onViewImage, onDelete }: SliderBlockProps) => {
+  const [api, setApi] = useState<CarouselApi>();
+  const [current, setCurrent] = useState(0);
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    if (!api) return;
+
+    setCount(api.scrollSnapList().length);
+    setCurrent(api.selectedScrollSnap());
+
+    api.on("select", () => {
+      setCurrent(api.selectedScrollSnap());
+    });
+  }, [api]);
+
+  return (
+    <div className="relative w-full group select-none" contentEditable="false" suppressContentEditableWarning={true}>
+      <Carousel setApi={setApi} opts={{ align: "start", loop: true }} className="w-full relative">
+        <CarouselContent className="-ml-2">
+          {urls.map((url, index) => (
+            <CarouselItem key={index} className="pl-2 basis-full">
+              <div
+                className="relative aspect-video rounded-lg overflow-hidden border border-border/55 group/slide cursor-zoom-in"
+                onClick={() => onViewImage?.(url)}
+              >
+                <img src={url} alt={`Slide ${index + 1}`} className="w-full h-full object-cover" />
+                <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/slide:opacity-100 transition-opacity flex items-center justify-center">
+                  <div className="w-9 h-9 rounded-full bg-black/60 flex items-center justify-center text-white backdrop-blur-xs border border-white/10 shadow-md">
+                    <Maximize2 className="h-4.5 w-4.5" />
+                  </div>
+                </div>
+              </div>
+            </CarouselItem>
+          ))}
+        </CarouselContent>
+        {urls.length > 1 && (
+          <>
+            <CarouselPrevious className="absolute left-2 top-1/2 -translate-y-1/2 h-8 w-8 bg-background/80 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <CarouselNext className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 bg-background/80 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </>
+        )}
+      </Carousel>
+
+      {/* Pagination Indicator Dots */}
+      {urls.length > 1 && count > 0 && (
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-10 bg-black/30 backdrop-blur-md px-2 py-1 rounded-full select-none border border-white/5">
+          {Array.from({ length: count }).map((_, index) => (
+            <button
+              key={index}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                api?.scrollTo(index);
+              }}
+              className={cn(
+                "h-1.5 rounded-full transition-all duration-300 cursor-pointer border-none outline-none p-0",
+                index === current ? "w-4 bg-white" : "w-1.5 bg-white/50 hover:bg-white/80"
+              )}
+              title={`Go to slide ${index + 1}`}
+            />
+          ))}
+        </div>
+      )}
+
+      <Button
+        size="icon"
+        variant="destructive"
+        className="absolute top-2 right-2 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg cursor-pointer animate-in fade-in zoom-in duration-200"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onDelete();
+        }}
+        title="Delete Slider"
+      >
+        <Trash2 className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+};
 
 

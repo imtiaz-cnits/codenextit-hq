@@ -506,15 +506,8 @@ export function MockProvider({ children }: { children: ReactNode }) {
         localStorage.setItem("cnit_device_id", deviceId);
       }
 
-      // 2. Get IP Address
-      let ip = "unknown";
-      try {
-        const res = await fetch("https://api.ipify.org?format=json");
-        const d = await res.json();
-        ip = d.ip;
-      } catch (e) {
-        console.error("IP detection failed", e);
-      }
+      // 2. Get IP Address (Bypassed client-side network fetch to optimize performance)
+      const ip = "unknown";
 
       // 3. Verify Device (Skip for Super Admins)
       const emp = employees.find((e: any) => e.id === empId);

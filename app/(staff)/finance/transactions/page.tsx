@@ -102,50 +102,34 @@ export default function TransactionsPage() {
   async function loadData() {
     setLoading(true);
     try {
-      // 1. Fetch Transactions
-      const { data: txData, error: txErr } = await supabase
-        .from("transactions" as any)
-        .select(`
-          *,
-          clients:client_id ( company_name ),
-          invoices:invoice_id ( number ),
-          employees:employee_id ( full_name )
-        `)
-        .order("date", { ascending: false })
-        .order("created_at", { ascending: false });
+      // Fetch transactions ledger, lookup tables, and analytics concurrently
+      const [txResult, feResult, clResult, empResult, invResult] = await Promise.all([
+        supabase
+          .from("transactions" as any)
+          .select(`
+            *,
+            clients:client_id ( company_name ),
+            invoices:invoice_id ( number ),
+            employees:employee_id ( full_name )
+          `)
+          .order("date", { ascending: false })
+          .order("created_at", { ascending: false }),
+        supabase.from("view_founder_equity" as any).select("*"),
+        supabase.from("clients").select("id, company_name").order("company_name", { ascending: true }),
+        supabase.from("employees").select("id, full_name").order("full_name", { ascending: true }),
+        supabase.from("invoices" as any).select("id, number, title, total, client_id").order("number", { ascending: false })
+      ]);
 
-      if (txErr) throw txErr;
-      setTransactions((txData || []) as any[]);
+      if (txResult.error) throw txResult.error;
+      setTransactions((txResult.data || []) as any[]);
 
-      // 2. Fetch Founder Equity view
-      const { data: feData, error: feErr } = await supabase
-        .from("view_founder_equity" as any)
-        .select("*");
-      
-      if (!feErr && feData) {
-        setFounderEquity(feData as any[]);
+      if (!feResult.error && feResult.data) {
+        setFounderEquity(feResult.data as any[]);
       }
 
-      // 3. Fetch Clients
-      const { data: clData } = await supabase
-        .from("clients")
-        .select("id, company_name")
-        .order("company_name", { ascending: true });
-      setClients(clData || []);
-
-      // 4. Fetch Employees
-      const { data: empData } = await supabase
-        .from("employees")
-        .select("id, full_name")
-        .order("full_name", { ascending: true });
-      setEmployees(empData || []);
-
-      // 5. Fetch Invoices
-      const { data: invData } = await supabase
-        .from("invoices" as any)
-        .select("id, number, title, total, client_id")
-        .order("number", { ascending: false });
-      setInvoices((invData as any[] ?? []) as Invoice[]);
+      setClients(clResult.data || []);
+      setEmployees(empResult.data || []);
+      setInvoices((invResult.data as any[] ?? []) as Invoice[]);
     } catch (err: any) {
       toast.error(err.message || "Failed to load transactions data");
     } finally {

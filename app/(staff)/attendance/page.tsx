@@ -22,7 +22,8 @@ import {
   Clock, LogIn, LogOut, FileDown, FileSpreadsheet,
   Calendar as CalendarIcon, Coffee, Settings2,
   CalendarCheck2, Trash2, Save, Plus, AlertCircle,
-  ChevronLeft, ChevronRight, Smartphone, RotateCcw, Edit3, Trash
+  ChevronLeft, ChevronRight, Smartphone, RotateCcw, Edit3, Trash,
+  Lock
 } from "lucide-react";
 import { initials, avatarColor, formatDate, toLocalDateString } from "../../../lib/format";
 import { cn } from "../../../lib/utils";
@@ -61,6 +62,12 @@ export default function AttendancePage() {
 
   const [activeTab, setActiveTab] = useState("roster");
   const today = toLocalDateString();
+
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => setTick(t => t + 1), 30000); // Force re-render for cooldown lock
+    return () => clearInterval(interval);
+  }, []);
 
   // Database States
   const [holidays, setHolidays] = useState<{ date: string, name: string, id?: string }[]>([]);
@@ -109,8 +116,8 @@ export default function AttendancePage() {
 
   const handleEditClick = (entry: any) => {
     setEditingEntry(entry);
-    const cin = entry.clock_in ? new Date(entry.clock_in) : null;
-    const cout = entry.clock_out ? new Date(entry.clock_out) : null;
+    const cin = entry.clock_in ? (parseDateSafely(entry.clock_in) || new Date(entry.clock_in)) : null;
+    const cout = entry.clock_out ? (parseDateSafely(entry.clock_out) || new Date(entry.clock_out)) : null;
 
     setEditForm({
       clockIn: cin ? `${String(cin.getHours()).padStart(2, "0")}:${String(cin.getMinutes()).padStart(2, "0")}` : "",
@@ -154,7 +161,7 @@ export default function AttendancePage() {
     // Use employee's custom office_start if available, else fallback to global setting
     const officeStart = emp.office_start || officeSettings.start;
     const [startH, startM] = officeStart.split(":").map(Number);
-    const d = new Date(clockIn);
+    const d = parseDateSafely(clockIn) || new Date(clockIn);
     const clockInH = d.getHours();
     const clockInM = d.getMinutes();
 
@@ -165,7 +172,7 @@ export default function AttendancePage() {
     let allowedGrace = 15;
 
     // If pre-approved late permission exists for this date, extend the grace window
-    const checkDate = dateStr || (clockIn ? new Date(clockIn).toISOString().split("T")[0] : today);
+    const checkDate = dateStr || (clockIn ? (parseDateSafely(clockIn) || new Date(clockIn)).toISOString().split("T")[0] : today);
     const permission = getLatePermission(emp.id, checkDate);
     if (permission && permission.permitted_minutes > 0) {
       // Permission grants a window in minutes from office start
@@ -175,7 +182,7 @@ export default function AttendancePage() {
     return clockInTimeInMinutes > (startTimeInMinutes + allowedGrace);
   };
 
-  const fmtTime = (iso: string | null) => iso ? new Date(iso).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }) : "—";
+  const fmtTime = (iso: string | null) => iso ? (parseDateSafely(iso) || new Date(iso)).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }) : "—";
 
   // Format 24h "HH:MM" (e.g. from FlatTimePicker) to 12h "1:30 PM"
   const fmt12hFromTimeStr = (t?: string | null) => {
@@ -620,6 +627,17 @@ export default function AttendancePage() {
                       const status = !a?.clock_in
                         ? (isOnLeave && !isHalfDayLeave ? "leave" : (isTodayHoliday && !overrideHoliday ? "holiday" : (isHalfDayLeave ? "half_leave_absent" : "absent")))
                         : (a.clock_out ? "out" : "in");
+
+                      const getCooldownMins = (clockInStr: string | null | undefined) => {
+                        if (!clockInStr) return 0;
+                        const parsed = parseDateSafely(clockInStr);
+                        if (!parsed) return 0;
+                        const diffMs = (30 * 60 * 1000) - (Date.now() - parsed.getTime());
+                        return Math.ceil(diffMs / 60000);
+                      };
+                      const cooldown = a ? getCooldownMins(a.clock_in) : 0;
+                      const isCooldownActive = cooldown > 0;
+
                       return (
                         <TableRow key={e.id} className="hover:bg-muted/10 transition-colors">
                           <TableCell>
@@ -646,7 +664,7 @@ export default function AttendancePage() {
                                   isBeforeOfficeStart
                                     ? <Badge variant="outline" className="bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20 px-2 py-0.5">Yet to Clock In</Badge>
                                     : <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-500/20 px-2 py-0.5">Absent</Badge>
-                                )}
+                                  )}
                                 {status === "holiday" && <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/20 px-2 py-0.5">Holiday</Badge>}
                                 {status === "leave" && <Badge variant="outline" className="bg-orange-500/10 text-orange-600 border-orange-500/20 px-2 py-0.5">On Leave</Badge>}
                                 {status === "half_leave_absent" && <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 px-2 py-0.5">½ Day Leave</Badge>}
@@ -681,8 +699,23 @@ export default function AttendancePage() {
                                   </Button>
                                 )}
                                 {status === "in" && (
-                                  <Button size="sm" variant="outline" className="border-primary text-primary hover:bg-primary/5 h-8" onClick={() => toggleClock(e.id)}>
-                                    <LogOut className="h-3.5 w-3.5 mr-1.5" /> Clock out
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="border-primary text-primary hover:bg-primary/5 h-8"
+                                    onClick={() => toggleClock(e.id)}
+                                    disabled={isCooldownActive}
+                                  >
+                                    {isCooldownActive ? (
+                                      <>
+                                        <Lock className="h-3.5 w-3.5 mr-1.5 shrink-0 animate-pulse text-amber-500" />
+                                        Locked ({cooldown}m)
+                                      </>
+                                    ) : (
+                                      <>
+                                        <LogOut className="h-3.5 w-3.5 mr-1.5" /> Clock out
+                                      </>
+                                    )}
                                   </Button>
                                 )}
                                 {status === "out" && <span className="text-[10px] font-bold text-muted-foreground bg-muted/30 px-2 py-1 rounded">COMPLETED</span>}
@@ -712,6 +745,16 @@ export default function AttendancePage() {
                   const status = !a?.clock_in
                     ? (isOnLeave && !isHalfDayLeave ? "leave" : (isTodayHoliday && !overrideHoliday ? "holiday" : (isHalfDayLeave ? "half_leave_absent" : "absent")))
                     : (a.clock_out ? "out" : "in");
+
+                  const getCooldownMins = (clockInStr: string | null | undefined) => {
+                    if (!clockInStr) return 0;
+                    const parsed = parseDateSafely(clockInStr);
+                    if (!parsed) return 0;
+                    const diffMs = (30 * 60 * 1000) - (Date.now() - parsed.getTime());
+                    return Math.ceil(diffMs / 60000);
+                  };
+                  const cooldown = a ? getCooldownMins(a.clock_in) : 0;
+                  const isCooldownActive = cooldown > 0;
 
                   return (
                     <div key={e.id} className="bg-muted/10 rounded-xl p-4 border border-muted-foreground/10 space-y-3">
@@ -774,8 +817,23 @@ export default function AttendancePage() {
                             </Button>
                           )}
                           {status === "in" && (
-                            <Button size="sm" variant="outline" className="border-primary text-primary hover:bg-primary/5 h-8 text-[11px] font-bold" onClick={() => toggleClock(e.id)}>
-                              <LogOut className="h-3 w-3 mr-1" /> Clock out
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="border-primary text-primary hover:bg-primary/5 h-8 text-[11px] font-bold"
+                              onClick={() => toggleClock(e.id)}
+                              disabled={isCooldownActive}
+                            >
+                              {isCooldownActive ? (
+                                <>
+                                  <Lock className="h-3 w-3 mr-1 shrink-0 animate-pulse text-amber-500" />
+                                  Locked ({cooldown}m)
+                                </>
+                              ) : (
+                                <>
+                                  <LogOut className="h-3 w-3 mr-1" /> Clock out
+                                </>
+                              )}
                             </Button>
                           )}
                         </div>
@@ -883,7 +941,7 @@ export default function AttendancePage() {
                       <TableHead className="py-2 px-4 font-bold">Employee</TableHead>
                       <TableHead className="py-2 px-4 font-bold">Clock In</TableHead>
                       <TableHead className="py-2 px-4 font-bold">Clock Out</TableHead>
-                      <TableHead className="py-2 px-4 font-bold text-center">IP Address</TableHead>
+                      <TableHead className="py-2 px-4 font-bold text-center">MAC Address</TableHead>
                       <TableHead className="py-2 px-4 font-bold">Status</TableHead>
                       {isSuperAdmin && <TableHead className="py-2 px-4 text-right font-bold">Actions</TableHead>}
                     </TableRow></TableHeader>
@@ -904,7 +962,9 @@ export default function AttendancePage() {
                             </TableCell>
                             <TableCell className="py-2 px-4 font-mono text-xs font-bold">{fmtTime(r.clock_in)}</TableCell>
                             <TableCell className="py-2 px-4 font-mono text-xs font-bold">{fmtTime(r.clock_out)}</TableCell>
-                            <TableCell className="py-2 px-4 text-center font-mono text-[10px] text-muted-foreground">{r.ip_address || "—"}</TableCell>
+                            <TableCell className="py-2 px-4 text-center font-mono text-[10px] text-muted-foreground" title={r.device_id}>
+                              {r.device_id ? (r.device_id.length > 24 ? r.device_id.slice(0, 24) + "..." : r.device_id) : "—"}
+                            </TableCell>
                             <TableCell className="py-2 px-4">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <Badge
@@ -1024,7 +1084,9 @@ export default function AttendancePage() {
 
                       {isSuperAdmin && (
                         <div className="flex items-center justify-between pt-2 border-t">
-                          <p className="text-[10px] text-muted-foreground font-mono">IP: {r.ip_address || "—"}</p>
+                          <p className="text-[10px] text-muted-foreground font-mono" title={r.device_id}>
+                            MAC: {r.device_id ? (r.device_id.length > 24 ? r.device_id.slice(0, 24) + "..." : r.device_id) : "—"}
+                          </p>
                           <div className="flex gap-2">
                             <Button variant="outline" size="sm" className="h-8 w-8 p-0 text-primary border-primary/20" onClick={() => handleEditClick(r)}>
                               <Edit3 className="h-3.5 w-3.5" />
@@ -1784,4 +1846,26 @@ function AttendanceCalendar({ leaves, holidays, employees }: { leaves: any[]; ho
       </CardContent>
     </Card>
   );
+}
+
+function parseDateSafely(dateStr: string | null | undefined): Date | null {
+  if (!dateStr) return null;
+  let normalized = dateStr.trim();
+  if (normalized.includes(" ") && !normalized.includes("T")) {
+    normalized = normalized.replace(" ", "T");
+  }
+  const date = new Date(normalized);
+  if (!isNaN(date.getTime())) {
+    return date;
+  }
+  try {
+    const cleaned = normalized.replace(/\s+/g, "T");
+    const parsed = new Date(cleaned);
+    if (!isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  } catch (e) {
+    console.error("Error parsing date safely:", e);
+  }
+  return null;
 }
