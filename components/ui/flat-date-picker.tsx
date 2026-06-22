@@ -92,6 +92,7 @@ export function FlatDatePicker({ date, onChange, placeholder = "Pick a date", cl
     <PopoverPrimitive.Root open={open} onOpenChange={setOpen} modal={true}>
       <PopoverPrimitive.Trigger asChild>
         <Button
+          type="button"
           variant={"outline"}
           onClick={() => setOpen(true)}
           className={cn(
@@ -112,7 +113,7 @@ export function FlatDatePicker({ date, onChange, placeholder = "Pick a date", cl
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <div className="flex items-center justify-between p-2 border-b bg-muted/5">
-          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={prevMonth}>
+          <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={prevMonth}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
           
@@ -143,7 +144,7 @@ export function FlatDatePicker({ date, onChange, placeholder = "Pick a date", cl
             />
           </div>
 
-          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={nextMonth}>
+          <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={nextMonth}>
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>

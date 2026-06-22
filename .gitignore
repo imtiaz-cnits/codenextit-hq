@@ -36,6 +36,8 @@ yarn-error.log*
 # vercel
 .vercel
 
+.idea
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
@@ -44,3 +46,4 @@ next-env.d.ts
 # AI files
 AGENTS.md
 CLAUDE.md
+cnit.md

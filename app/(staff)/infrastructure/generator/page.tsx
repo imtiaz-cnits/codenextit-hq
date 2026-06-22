@@ -18,7 +18,7 @@ import {
   Edit, Trash2, Settings, Clipboard, Check, Activity, Clock, AlertTriangle, AlertCircle, Copy, UserCheck,
   ChevronLeft, ChevronRight, Eye
 } from "lucide-react";
-import { formatCurrency, formatDate, toLocalDateString } from "../../../../lib/format";
+import { formatCurrency, formatDate, formatTime, toLocalDateString } from "../../../../lib/format";
 import { cn } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/auth-context";
 import { toast } from "sonner";
@@ -191,9 +191,34 @@ ALTER TABLE public.generator_run_logs
 ALTER TABLE public.generator_refueling_logs
   ADD COLUMN IF NOT EXISTS item_type TEXT NOT NULL DEFAULT 'petrol';`;
 
+// Custom Tooltip component for Recharts charts
+const ChartTooltip = ({ active, payload, label, unit }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-background/95 border border-border/80 shadow-xl rounded-xl p-3 backdrop-blur-sm text-xs font-medium">
+        <p className="font-bold text-muted-foreground mb-1.5">{label}</p>
+        <div className="space-y-1.5">
+          {payload.map((entry: any) => (
+            <div key={entry.name} className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color || entry.fill }} />
+                <span className="text-muted-foreground">{entry.name}</span>
+              </div>
+              <span className="font-mono font-bold text-foreground">{entry.value} {unit}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
+
 export default function GeneratorLogsPage() {
   const { profile: currentProfile, hasRole } = useAuth();
   const isSuperAdmin = hasRole("super_admin");
+  const isAdmin = hasRole("admin");
+  const canEditRefuelDate = isSuperAdmin || isAdmin;
   const [generators, setGenerators] = useState<Generator[]>([]);
   const [runLogs, setRunLogs] = useState<RunLog[]>([]);
   const [refuelLogs, setRefuelLogs] = useState<RefuelingLog[]>([]);
@@ -358,6 +383,9 @@ export default function GeneratorLogsPage() {
 
     const lastService = maintenanceLogs.length > 0 ? maintenanceLogs[0].service_date : null;
 
+    const maxRunMinutes = runLogs.reduce((max, log) => Math.max(max, log.duration_minutes || 0), 0);
+    const maxFuelQuantity = refuelLogs.reduce((max, log) => Math.max(max, log.liters_added || 0), 0);
+
     return {
       totalRuntimeMinutes,
       totalRuntimeHours,
@@ -365,7 +393,9 @@ export default function GeneratorLogsPage() {
       totalMobilLiters,
       totalCostBDT,
       totalCostUSD,
-      lastService
+      lastService,
+      maxRunMinutes,
+      maxFuelQuantity
     };
   }, [runLogs, refuelLogs, maintenanceLogs]);
 
@@ -440,6 +470,123 @@ export default function GeneratorLogsPage() {
     const elapsedMin = Math.max(0, Math.floor((now - startMs) / 60000));
     return elapsedMin;
   }, [activeRun, now]);
+
+  const fuelEstimation = useMemo(() => {
+    // Find the last fuel refueling log for the current filter generator
+    const fuelLogs = refuelLogs.filter(log => {
+      const type = (log.item_type || "").toLowerCase();
+      const isMobil = type.includes("mobil") || type.includes("oil");
+      const matchesGen = filterGenerator === "all" || log.generator_id === filterGenerator;
+      return !isMobil && matchesGen;
+    });
+
+    const lastFuel = fuelLogs[0];
+    if (!lastFuel) {
+      return {
+        used: 0,
+        remaining: 0,
+        added: 0,
+        hours: 0,
+        minutes: 0,
+        percentage: 0,
+        date: null,
+      };
+    }
+
+    const runsSince = runLogs.filter(run => {
+      const matchesGen = filterGenerator === "all" || run.generator_id === filterGenerator;
+      if (!matchesGen) return false;
+
+      const runTime = new Date(run.started_at).getTime();
+      const refuelTime = new Date(lastFuel.refueled_at).getTime();
+      return runTime > refuelTime;
+    });
+
+    const minutesSince = runsSince.reduce((acc, run) => {
+      if (run.duration_minutes !== null && run.duration_minutes !== undefined) {
+        return acc + run.duration_minutes;
+      }
+      if (run.id === activeRun?.id && activeRunElapsed !== null) {
+        return acc + activeRunElapsed;
+      }
+      return acc;
+    }, 0);
+
+    const hoursSince = minutesSince / 60;
+    const fuelUsed = hoursSince * 1.25; // 1.25L per hour rate
+    const fuelRemaining = Math.max(0, lastFuel.liters_added - fuelUsed);
+    const percentage = lastFuel.liters_added > 0 ? (fuelRemaining / lastFuel.liters_added) * 100 : 0;
+
+    return {
+      used: fuelUsed,
+      remaining: fuelRemaining,
+      added: lastFuel.liters_added,
+      hours: hoursSince,
+      minutes: minutesSince,
+      percentage,
+      date: lastFuel.refueled_at,
+    };
+  }, [refuelLogs, runLogs, filterGenerator, activeRun, activeRunElapsed]);
+
+  const oilChangeStats = useMemo(() => {
+    const oilLogs = maintenanceLogs.filter(log => {
+      const type = (log.service_type || "").toLowerCase();
+      const matchesGen = filterGenerator === "all" || log.generator_id === filterGenerator;
+      return type.includes("oil") && matchesGen;
+    });
+
+    const lastOilLog = oilLogs[0];
+    if (!lastOilLog) {
+      return { lastDate: null, nextDate: null, runtimeSince: 0, remainingHours: 50, status: "none" };
+    }
+
+    const lastDate = lastOilLog.service_date;
+    const oilChangeTime = new Date(lastDate).getTime();
+    const targetGenId = lastOilLog.generator_id;
+
+    const runsSince = runLogs.filter(run => {
+      if (run.generator_id !== targetGenId) return false;
+      const runTime = new Date(run.started_at).getTime();
+      return runTime > oilChangeTime;
+    });
+
+    const minutesSince = runsSince.reduce((acc, run) => {
+      if (run.duration_minutes !== null && run.duration_minutes !== undefined) {
+        return acc + run.duration_minutes;
+      }
+      if (run.id === activeRun?.id && activeRunElapsed !== null) {
+        return acc + activeRunElapsed;
+      }
+      return acc;
+    }, 0);
+
+    const runtimeSince = minutesSince / 60;
+    const remainingHours = Math.max(0, 50 - runtimeSince);
+
+    const d = new Date(lastDate);
+    d.setMonth(d.getMonth() + 6);
+    const nextDate = d.toISOString().split("T")[0];
+
+    const todayTime = new Date().getTime();
+    const timeLimitTime = d.getTime();
+    const isOverTime = todayTime > timeLimitTime;
+    const isNearTime = todayTime > timeLimitTime - (15 * 24 * 60 * 60 * 1000); // 15 days before 6 months
+
+    let status: "good" | "warning" | "critical" = "good";
+    if (remainingHours <= 5 || isOverTime) {
+      status = "critical";
+    } else if (remainingHours <= 15 || isNearTime) {
+      status = "warning";
+    }
+
+    return {
+      lastDate,
+      nextDate,
+      runtimeSince,
+      remainingHours,
+      status
+    };
+  }, [maintenanceLogs, runLogs, filterGenerator, activeRun, activeRunElapsed]);
 
   // Quick start: log a run with current time as on_time, no off_time
   const [quickStartSubmitting, setQuickStartSubmitting] = useState(false);
@@ -730,8 +877,8 @@ export default function GeneratorLogsPage() {
           {generators.length > 0 && (
             <>
               {!activeRun && <QuickStartSheet generators={generators} profiles={profiles} currentProfile={currentProfile} onStart={handleQuickStart} submitting={quickStartSubmitting} />}
-              <NewRefuelSheet generators={generators} profiles={profiles} currentProfile={currentProfile} onCreated={loadData} />
-              <NewMaintenanceSheet generators={generators} currentProfile={currentProfile} onCreated={loadData} />
+              <NewRefuelSheet generators={generators} profiles={profiles} currentProfile={currentProfile} refuelLogs={refuelLogs} onCreated={loadData} />
+              <NewMaintenanceSheet generators={generators} currentProfile={currentProfile} maintenanceLogs={maintenanceLogs} onCreated={loadData} />
             </>
           )}
         </div>
@@ -742,42 +889,42 @@ export default function GeneratorLogsPage() {
         const isOperator = currentProfile?.full_name === activeRun.operator_name;
         const canStop = isOperator || isSuperAdmin;
         return (
-        <Card className="border-2 border-primary/40 bg-gradient-to-r from-primary/5 to-primary/10 shadow-md">
-          <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <div className="w-3 h-3 rounded-full bg-primary animate-pulse" />
-                <div className="absolute inset-0 w-3 h-3 rounded-full bg-primary animate-ping opacity-50" />
+          <Card className="border-2 border-primary/40 bg-gradient-to-r from-primary/5 to-primary/10 shadow-md">
+            <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <div className="w-3 h-3 rounded-full bg-primary animate-pulse" />
+                  <div className="absolute inset-0 w-3 h-3 rounded-full bg-primary animate-ping opacity-50" />
+                </div>
+                <div>
+                  <p className="text-xs uppercase font-bold text-primary tracking-wider">Generator Running</p>
+                  <p className="text-sm font-semibold mt-0.5">
+                    {activeRun.generators?.name || "Generator"} • Started <span className="font-mono">{activeRun.on_time}</span>
+                    {activeRunElapsed !== null && <span className="text-muted-foreground ml-2">({formatRuntime(activeRunElapsed)} elapsed)</span>}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Operator: <span className="font-semibold">{activeRun.operator_name}</span>
+                    {isSuperAdmin && !isOperator && <span className="ml-1.5 text-amber-600 dark:text-amber-400">(admin can override stop)</span>}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs uppercase font-bold text-primary tracking-wider">Generator Running</p>
-                <p className="text-sm font-semibold mt-0.5">
-                  {activeRun.generators?.name || "Generator"} • Started <span className="font-mono">{activeRun.on_time}</span>
-                  {activeRunElapsed !== null && <span className="text-muted-foreground ml-2">({formatRuntime(activeRunElapsed)} elapsed)</span>}
-                </p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Operator: <span className="font-semibold">{activeRun.operator_name}</span>
-                  {isSuperAdmin && !isOperator && <span className="ml-1.5 text-amber-600 dark:text-amber-400">(admin can override stop)</span>}
-                </p>
-              </div>
-            </div>
-            {canStop ? (
-              <Button
-                onClick={handleStopActiveRun}
-                disabled={stopSubmitting}
-                variant={isSuperAdmin && !isOperator ? "outline" : "destructive"}
-                className={cn("cursor-pointer w-full sm:w-auto", isSuperAdmin && !isOperator && "border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10")}
-              >
-                {stopSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : isSuperAdmin && !isOperator ? <AlertTriangle className="h-4 w-4 mr-1.5" /> : <Clock className="h-4 w-4 mr-1.5" />}
-                {isSuperAdmin && !isOperator ? "Force Stop" : "Stop Run Now"}
-              </Button>
-            ) : (
-              <div className="text-[11px] text-muted-foreground italic w-full sm:w-auto sm:text-right">
-                Only {activeRun.operator_name} can stop this run
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              {canStop ? (
+                <Button
+                  onClick={handleStopActiveRun}
+                  disabled={stopSubmitting}
+                  variant={isSuperAdmin && !isOperator ? "outline" : "destructive"}
+                  className={cn("cursor-pointer w-full sm:w-auto", isSuperAdmin && !isOperator && "border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10")}
+                >
+                  {stopSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : isSuperAdmin && !isOperator ? <AlertTriangle className="h-4 w-4 mr-1.5" /> : <Clock className="h-4 w-4 mr-1.5" />}
+                  {isSuperAdmin && !isOperator ? "Force Stop" : "Stop Run Now"}
+                </Button>
+              ) : (
+                <div className="text-[11px] text-muted-foreground italic w-full sm:w-auto sm:text-right">
+                  Only {activeRun.operator_name} can stop this run
+                </div>
+              )}
+            </CardContent>
+          </Card>
         );
       })()}
 
@@ -809,59 +956,108 @@ export default function GeneratorLogsPage() {
           {/* OVERVIEW TAB */}
           <TabsContent value="overview" className="space-y-6 outline-none">
             {/* KPI Metrics */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
               <Card className="shadow-sm">
-                <CardContent className="p-5 flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">Total Runtime</p>
-                    <p className="text-3xl font-bold mt-1.5">{formatRuntime(stats.totalRuntimeMinutes)}</p>
-                    <p className="text-xs text-muted-foreground mt-1">Aggregated run duration</p>
+                <CardContent className="p-4 flex flex-col justify-between h-full">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Total Runtime</p>
+                      <p className="text-lg sm:text-xl font-bold mt-1.5 leading-none">{formatRuntime(stats.totalRuntimeMinutes)}</p>
+                    </div>
+                    <div className="p-2.5 bg-primary/10 text-primary rounded-xl shrink-0">
+                      <Clock className="h-5 w-5" />
+                    </div>
                   </div>
-                  <div className="p-3 bg-primary/10 text-primary rounded-xl">
-                    <Clock className="h-6 w-6" />
-                  </div>
+                  <p className="text-[10px] text-muted-foreground font-semibold mt-3">Aggregated run duration</p>
                 </CardContent>
               </Card>
 
               <Card className="shadow-sm">
-                <CardContent className="p-5 flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">Petrol Purchased</p>
-                    <p className="text-3xl font-bold mt-1.5">{stats.totalPetrolLiters.toFixed(1)} L</p>
-                    <p className="text-xs text-muted-foreground mt-1">Petrol account inventory</p>
+                <CardContent className="p-4 flex flex-col justify-between h-full">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Petrol Purchased</p>
+                      <p className="text-lg sm:text-xl font-bold mt-1.5 leading-none">{stats.totalPetrolLiters.toFixed(1)} L</p>
+                    </div>
+                    <div className="p-2.5 bg-amber-500/10 text-amber-500 rounded-xl shrink-0">
+                      <Fuel className="h-5 w-5" />
+                    </div>
                   </div>
-                  <div className="p-3 bg-amber-500/10 text-amber-500 rounded-xl">
-                    <Fuel className="h-6 w-6" />
-                  </div>
+                  <p className="text-[10px] text-muted-foreground font-semibold mt-3">Petrol account inventory</p>
                 </CardContent>
               </Card>
 
               <Card className="shadow-sm">
-                <CardContent className="p-5 flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">Mobil Purchased</p>
-                    <p className="text-3xl font-bold mt-1.5">{stats.totalMobilLiters.toFixed(1)} L</p>
-                    <p className="text-xs text-muted-foreground mt-1">Engine Lubricant oil logs</p>
+                <CardContent className="p-4 flex flex-col justify-between h-full">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Mobil Purchased</p>
+                      <p className="text-lg sm:text-xl font-bold mt-1.5 leading-none">{stats.totalMobilLiters.toFixed(1)} L</p>
+                    </div>
+                    <div className="p-2.5 bg-purple-500/10 text-purple-600 dark:text-purple-400 rounded-xl shrink-0">
+                      <Wrench className="h-5 w-5" />
+                    </div>
                   </div>
-                  <div className="p-3 bg-purple-500/10 text-purple-500 rounded-xl">
-                    <Wrench className="h-6 w-6" />
-                  </div>
+                  <p className="text-[10px] text-muted-foreground font-semibold mt-3">Engine Lubricant oil logs</p>
                 </CardContent>
               </Card>
 
               <Card className="shadow-sm">
-                <CardContent className="p-5 flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">Total Cost</p>
-                    <p className="text-2xl font-bold mt-1.5">
-                      {formatCurrency(stats.totalCostBDT, "BDT")}
-                      {stats.totalCostUSD > 0 && ` + ${formatCurrency(stats.totalCostUSD, "USD")}`}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">Petrol + Mobil expenses</p>
+                <CardContent className="p-4 flex flex-col justify-between h-full">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Total Cost</p>
+                      <p className="text-lg sm:text-xl font-bold mt-1.5 leading-none">
+                        {formatCurrency(stats.totalCostBDT, "BDT")}
+                        {stats.totalCostUSD > 0 && ` + ${formatCurrency(stats.totalCostUSD, "USD")}`}
+                      </p>
+                    </div>
+                    <div className="p-2.5 bg-emerald-500/10 text-emerald-500 rounded-xl shrink-0">
+                      <Coins className="h-5 w-5" />
+                    </div>
                   </div>
-                  <div className="p-3 bg-emerald-500/10 text-emerald-500 rounded-xl">
-                    <Coins className="h-6 w-6" />
+                  <p className="text-[10px] text-muted-foreground font-semibold mt-3">Petrol + Mobil expenses</p>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-sm">
+                <CardContent className="p-4 flex flex-col justify-between h-full">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Est. Fuel Status</p>
+                      <p className="text-lg sm:text-xl font-bold mt-1.5 leading-none">
+                        {fuelEstimation.date ? `${fuelEstimation.remaining.toFixed(1)} L` : "No Refuel"}
+                      </p>
+                    </div>
+                    <div className={cn(
+                      "p-2.5 rounded-xl shrink-0",
+                      !fuelEstimation.date ? "bg-muted text-muted-foreground" :
+                        fuelEstimation.percentage > 50 ? "bg-green-500/10 text-green-500" :
+                          fuelEstimation.percentage > 20 ? "bg-amber-500/10 text-amber-500" :
+                            "bg-rose-500/10 text-rose-500"
+                    )}>
+                      <Fuel className="h-5 w-5" />
+                    </div>
                   </div>
+                  {fuelEstimation.date ? (
+                    <div className="mt-3">
+                      <div className="flex justify-between text-[10px] text-muted-foreground font-semibold">
+                        <span>USED: {fuelEstimation.used.toFixed(1)}L</span>
+                        <span>{Math.round(fuelEstimation.percentage)}% LEFT</span>
+                      </div>
+                      <div className="w-full bg-muted h-1 rounded-full mt-1.5 overflow-hidden">
+                        <div
+                          className={cn(
+                            "h-full rounded-full transition-all duration-500",
+                            fuelEstimation.percentage > 50 ? "bg-green-500" : fuelEstimation.percentage > 20 ? "bg-amber-500" : "bg-rose-500"
+                          )}
+                          style={{ width: `${Math.min(100, fuelEstimation.percentage)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-muted-foreground font-semibold mt-3">No recent refueling log found</p>
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -869,9 +1065,32 @@ export default function GeneratorLogsPage() {
             {/* Charts Section */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card>
-                <CardHeader>
-                  <CardTitle className="text-base font-semibold">Grid Outage Runs (Minutes)</CardTitle>
-                  <CardDescription>Visualizing run minutes per session</CardDescription>
+                <CardHeader className="py-5 border-b">
+                  <div className="flex flex-row justify-between items-center gap-2 flex-wrap w-full">
+                    <div>
+                      <CardTitle className="text-base font-semibold">Grid Outage Runs (Minutes)</CardTitle>
+                    </div>
+                    {runChartData.length > 0 && (
+                      <div className="flex items-center gap-3 sm:gap-4 shrink-0 text-right">
+                        <div>
+                          <p className="text-[9px] sm:text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Total Runs</p>
+                          <p className="text-xs sm:text-sm font-bold text-foreground mt-0.5">{runLogs.length}</p>
+                        </div>
+                        <div className="h-8 w-[1px] bg-border" />
+                        <div>
+                          <p className="text-[9px] sm:text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Avg. Session</p>
+                          <p className="text-xs sm:text-sm font-bold text-primary mt-0.5">
+                            {formatRuntime(Math.round(stats.totalRuntimeMinutes / (runLogs.length || 1)))}
+                          </p>
+                        </div>
+                        <div className="h-8 w-[1px] bg-border" />
+                        <div>
+                          <p className="text-[9px] sm:text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Longest Run</p>
+                          <p className="text-xs sm:text-sm font-bold text-amber-500 mt-0.5">{formatRuntime(stats.maxRunMinutes)}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </CardHeader>
                 <CardContent className="h-[300px]">
                   {runChartData.length === 0 ? (
@@ -879,14 +1098,28 @@ export default function GeneratorLogsPage() {
                   ) : (
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={runChartData}>
+                        <defs>
+                          <linearGradient id="colorOutage" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.95} />
+                            <stop offset="95%" stopColor="#2563eb" stopOpacity={0.35} />
+                          </linearGradient>
+                          <linearGradient id="colorTesting" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.95} />
+                            <stop offset="95%" stopColor="#d97706" stopOpacity={0.35} />
+                          </linearGradient>
+                          <linearGradient id="colorMaintenance" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.95} />
+                            <stop offset="95%" stopColor="#7c3aed" stopOpacity={0.35} />
+                          </linearGradient>
+                        </defs>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
                         <XAxis dataKey="date" fontSize={11} stroke="#888888" />
                         <YAxis fontSize={11} stroke="#888888" label={{ value: "Minutes", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} />
-                        <Tooltip />
+                        <Tooltip content={<ChartTooltip unit="min" />} />
                         <Legend verticalAlign="top" height={36} iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
-                        <Bar dataKey="outage" name="Outage Run" fill="var(--color-primary, #3b82f6)" radius={[4, 4, 0, 0]} stackId="a" />
-                        <Bar dataKey="testing" name="Testing" fill="#f59e0b" radius={[4, 4, 0, 0]} stackId="a" />
-                        <Bar dataKey="maintenance" name="Service Test" fill="#8b5cf6" radius={[4, 4, 0, 0]} stackId="a" />
+                        <Bar dataKey="outage" name="Outage Run" fill="url(#colorOutage)" radius={[4, 4, 0, 0]} stackId="a" />
+                        <Bar dataKey="testing" name="Testing" fill="url(#colorTesting)" radius={[4, 4, 0, 0]} stackId="a" />
+                        <Bar dataKey="maintenance" name="Service Test" fill="url(#colorMaintenance)" radius={[4, 4, 0, 0]} stackId="a" />
                       </BarChart>
                     </ResponsiveContainer>
                   )}
@@ -894,9 +1127,32 @@ export default function GeneratorLogsPage() {
               </Card>
 
               <Card>
-                <CardHeader>
-                  <CardTitle className="text-base font-semibold">Fuel & Mobil Accounts (Liters)</CardTitle>
-                  <CardDescription>Quantities purchased per transaction date</CardDescription>
+                <CardHeader className="py-5 border-b">
+                  <div className="flex flex-row justify-between items-center gap-2 flex-wrap w-full">
+                    <div>
+                      <CardTitle className="text-base font-semibold">Fuel & Mobil Accounts (Liters)</CardTitle>
+                    </div>
+                    {fuelChartData.length > 0 && (
+                      <div className="flex items-center gap-3 sm:gap-4 shrink-0 text-right">
+                        <div>
+                          <p className="text-[9px] sm:text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Purchases</p>
+                          <p className="text-xs sm:text-sm font-bold text-foreground mt-0.5">{refuelLogs.length}</p>
+                        </div>
+                        <div className="h-8 w-[1px] bg-border" />
+                        <div>
+                          <p className="text-[9px] sm:text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Avg. Fill</p>
+                          <p className="text-xs sm:text-sm font-bold text-emerald-500 mt-0.5">
+                            {((stats.totalPetrolLiters + stats.totalMobilLiters) / (refuelLogs.length || 1)).toFixed(1)} L
+                          </p>
+                        </div>
+                        <div className="h-8 w-[1px] bg-border" />
+                        <div>
+                          <p className="text-[9px] sm:text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Largest Fill</p>
+                          <p className="text-xs sm:text-sm font-bold text-purple-500 mt-0.5">{stats.maxFuelQuantity.toFixed(1)} L</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </CardHeader>
                 <CardContent className="h-[300px]">
                   {fuelChartData.length === 0 ? (
@@ -904,13 +1160,23 @@ export default function GeneratorLogsPage() {
                   ) : (
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={fuelChartData}>
+                        <defs>
+                          <linearGradient id="colorPetrol" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.95} />
+                            <stop offset="95%" stopColor="#059669" stopOpacity={0.35} />
+                          </linearGradient>
+                          <linearGradient id="colorMobil" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#a855f7" stopOpacity={0.95} />
+                            <stop offset="95%" stopColor="#891bca" stopOpacity={0.35} />
+                          </linearGradient>
+                        </defs>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
                         <XAxis dataKey="date" fontSize={11} stroke="#888888" />
                         <YAxis fontSize={11} stroke="#888888" label={{ value: "Liters", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} />
-                        <Tooltip />
+                        <Tooltip content={<ChartTooltip unit="L" />} />
                         <Legend verticalAlign="top" height={36} iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
-                        <Bar dataKey="petrol" name="Petrol (Fuel)" fill="#10b981" radius={[4, 4, 0, 0]} />
-                        <Bar dataKey="mobil" name="Mobil (Engine Oil)" fill="#a855f7" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="petrol" name="Petrol (Fuel)" fill="url(#colorPetrol)" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="mobil" name="Mobil (Engine Oil)" fill="url(#colorMobil)" radius={[4, 4, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   )}
@@ -928,16 +1194,40 @@ export default function GeneratorLogsPage() {
                     <CardTitle className="text-base font-semibold">Outage Run Logs</CardTitle>
                     <CardDescription>Grid outage logs matches your handwritten register layout.</CardDescription>
                   </div>
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/5 border border-primary/20">
-                    <Clock className="h-4 w-4 text-primary" />
-                    <div>
-                      <p className="text-[10px] uppercase font-bold text-muted-foreground">Lifetime Duration</p>
-                      <p className="text-sm font-bold text-primary font-mono">{formatRuntime(runLogs.reduce((acc, l) => acc + (l.duration_minutes || 0), 0))}</p>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {fuelEstimation.date && (
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/5 border border-amber-500/20">
+                        <Fuel className="h-4 w-4 text-amber-500" />
+                        <div>
+                          <p className="text-[10px] uppercase font-bold text-muted-foreground">Est. Fuel Remaining</p>
+                          <p className="text-sm font-bold text-amber-600 dark:text-amber-400 font-mono">
+                            {fuelEstimation.remaining.toFixed(1)}L <span className="text-[10px] font-normal text-muted-foreground">/ {fuelEstimation.added.toFixed(1)}L</span>
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {fuelEstimation.date && (
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-purple-500/5 border border-purple-500/20">
+                        <TrendingUp className="h-4 w-4 text-purple-500" />
+                        <div>
+                          <p className="text-[10px] uppercase font-bold text-muted-foreground">Used Since Refuel</p>
+                          <p className="text-sm font-bold text-purple-600 dark:text-purple-400 font-mono">
+                            {fuelEstimation.used.toFixed(1)}L <span className="text-[10px] font-normal text-muted-foreground">({formatRuntime(fuelEstimation.minutes)})</span>
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/5 border border-primary/20">
+                      <Clock className="h-4 w-4 text-primary" />
+                      <div>
+                        <p className="text-[10px] uppercase font-bold text-muted-foreground">Lifetime Duration</p>
+                        <p className="text-sm font-bold text-primary font-mono">{formatRuntime(runLogs.reduce((acc, l) => acc + (l.duration_minutes || 0), 0))}</p>
+                      </div>
                     </div>
                   </div>
                 </div>
                 {/* Filter Bar - inline, no separate box */}
-                <div className="flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-end gap-3">
+                {/* <div className="flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-end gap-3">
                   <div className="space-y-1.5">
                     <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Range Type</Label>
                     <Select value={rangeType} onValueChange={(v: any) => { setRangeType(v); setRunPage(1); }}>
@@ -974,55 +1264,55 @@ export default function GeneratorLogsPage() {
                       </Select>
                     </div>
                   )}
-                </div>
+                </div> */}
               </CardHeader>
-              <CardContent className="p-3 md:p-6 md:pt-6">
+              <CardContent className="p-3 md:p-6 md:pt-1">
                 {/* Desktop Table */}
-                <div className="hidden md:block overflow-x-auto scrollbar-hide">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Opr. Person</TableHead>
-                      <TableHead>Generator</TableHead>
-                      <TableHead>On Time</TableHead>
-                      <TableHead>Off Time</TableHead>
-                      <TableHead>Total Duration</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {paginatedRunLogs.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={7} className="text-center text-muted-foreground py-10">No logs found for selected range.</TableCell>
+                <div className="hidden md:block overflow-x-auto scrollbar-hide -mx-6">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50 hover:bg-muted/50">
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider pl-6">Date</TableHead>
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider">Opr. Person</TableHead>
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider">Generator</TableHead>
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider">On Time</TableHead>
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider">Off Time</TableHead>
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider">Total Duration</TableHead>
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider text-right pr-6">Actions</TableHead>
                       </TableRow>
-                    ) : paginatedRunLogs.map(log => (
-                      <TableRow key={log.id}>
-                        <TableCell className="font-semibold text-sm">{log.date ? formatDate(log.date) : formatDate(log.started_at)}</TableCell>
-                        <TableCell className="text-sm font-semibold">{log.operator_name || "—"}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{log.generators?.name || "—"}</TableCell>
-                        <TableCell className="font-mono text-sm font-bold">{log.on_time || "—"}</TableCell>
-                        <TableCell className="font-mono text-sm font-bold">
-                          {log.off_time ? log.off_time : <Badge className="bg-primary/15 text-primary border-primary/30 text-[10px] font-bold animate-pulse">Active</Badge>}
-                        </TableCell>
-                        <TableCell className="font-mono text-sm font-bold text-primary">{log.duration_minutes !== null ? formatRuntime(log.duration_minutes) : "—"}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-1">
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-primary cursor-pointer" onClick={() => setViewItem({ type: "run", data: log })}>
-                              <Eye className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer" onClick={() => handleEditClick("run", log)}>
-                              <Edit className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive cursor-pointer" onClick={() => deleteItem("generator_run_logs", log.id)}>
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {paginatedRunLogs.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center text-muted-foreground py-10">No logs found for selected range.</TableCell>
+                        </TableRow>
+                      ) : paginatedRunLogs.map(log => (
+                        <TableRow key={log.id}>
+                          <TableCell className="font-semibold text-sm pl-6">{log.date ? formatDate(log.date) : formatDate(log.started_at)}</TableCell>
+                          <TableCell className="text-sm font-semibold">{log.operator_name || "—"}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{log.generators?.name || "—"}</TableCell>
+                          <TableCell className="font-mono text-sm font-bold">{log.on_time || "—"}</TableCell>
+                          <TableCell className="font-mono text-sm font-bold">
+                            {log.off_time ? log.off_time : <Badge className="bg-primary/15 text-primary border-primary/30 text-[10px] font-bold animate-pulse">Active</Badge>}
+                          </TableCell>
+                          <TableCell className="font-mono text-sm font-bold text-primary">{log.duration_minutes !== null ? formatRuntime(log.duration_minutes) : "—"}</TableCell>
+                          <TableCell className="text-right pr-6">
+                            <div className="flex justify-end gap-1">
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-primary cursor-pointer" onClick={() => setViewItem({ type: "run", data: log })}>
+                                <Eye className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer" onClick={() => handleEditClick("run", log)}>
+                                <Edit className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive cursor-pointer" onClick={() => deleteItem("generator_run_logs", log.id)}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </div>
 
                 {/* Mobile Card View */}
@@ -1106,67 +1396,92 @@ export default function GeneratorLogsPage() {
           {/* REFUELING LOGS TAB */}
           <TabsContent value="refuels" className="outline-none">
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between border-b pb-4">
+              <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between border-b pb-4 gap-4">
                 <div>
                   <CardTitle className="text-base font-semibold">Fuel Accounts (Petrol / Mobil)</CardTitle>
                   <CardDescription>Log gasoline purchases and mobil/engine oil lubricant expenses.</CardDescription>
                 </div>
+                {refuelLogs.length > 0 && (
+                  <div className="flex items-center gap-6 self-start sm:self-center shrink-0">
+                    <div className="flex flex-col items-end">
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Last Refueling</span>
+                      <span className="text-base font-bold text-foreground mt-0.5">
+                        {refuelLogs[0] ? (
+                          <>
+                            {refuelLogs[0].currency === "USD" ? "$" : "৳"}{refuelLogs[0].cost.toLocaleString()} <span className="font-normal text-muted-foreground text-[11px]">({refuelLogs[0].liters_added}L)</span>
+                          </>
+                        ) : "—"}
+                      </span>
+                    </div>
+                    <div className="h-8 w-[1px] bg-border hidden sm:block" />
+                    <div className="flex flex-col items-end">
+                      <span className="text-[10px] text-primary uppercase font-bold tracking-wider">Total Refueling</span>
+                      <span className="text-base font-bold text-primary mt-0.5">
+                        ৳{stats.totalCostBDT.toLocaleString()}
+                        {stats.totalCostUSD > 0 && ` + $${stats.totalCostUSD.toLocaleString()}`}
+                        <span className="font-normal text-muted-foreground text-[11px] ml-1">
+                          ({(stats.totalPetrolLiters + stats.totalMobilLiters).toFixed(2).replace(/\.00$/, "")}L)
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+                )}
               </CardHeader>
-              <CardContent className="p-3 md:p-6 md:pt-6">
+              <CardContent className="p-3 md:p-6 md:pt-1">
                 {/* Desktop Table */}
-                <div className="hidden md:block overflow-x-auto scrollbar-hide">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date Refueled</TableHead>
-                      <TableHead>Item Account Description</TableHead>
-                      <TableHead>Quantity</TableHead>
-                      <TableHead>Total Cost</TableHead>
-                      <TableHead>Rate / Liter</TableHead>
-                      <TableHead>Supplier/Vendor</TableHead>
-                      <TableHead>Generator</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {paginatedRefuelLogs.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={8} className="text-center text-muted-foreground py-10">No refueling found for selected range.</TableCell>
+                <div className="hidden md:block overflow-x-auto scrollbar-hide -mx-6">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50 hover:bg-muted/50">
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider pl-6">Date Refueled</TableHead>
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider">Item Account Description</TableHead>
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider">Quantity</TableHead>
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider">Total Cost</TableHead>
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider">Rate / Liter</TableHead>
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider">Supplier/Vendor</TableHead>
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider">Generator</TableHead>
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider text-right pr-6">Actions</TableHead>
                       </TableRow>
-                    ) : paginatedRefuelLogs.map(log => {
-                      const rate = log.liters_added > 0 ? (log.cost / log.liters_added) : 0;
-                      const isMobil = (log.item_type || "").toLowerCase().includes("mobil") || (log.item_type || "").toLowerCase().includes("oil");
-                      return (
-                        <TableRow key={log.id}>
-                          <TableCell className="text-sm">{formatDate(log.refueled_at)}</TableCell>
-                          <TableCell className="font-semibold text-sm">
-                            <span className={isMobil ? "text-purple-600 dark:text-purple-400" : "text-amber-600 dark:text-amber-400"}>
-                              {isMobil ? "Mobil purchase" : "Petrol purchase"}
-                            </span>
-                          </TableCell>
-                          <TableCell className="font-mono text-sm font-medium">{log.liters_added} Liters</TableCell>
-                          <TableCell className="font-mono text-sm font-semibold">{formatCurrency(log.cost, log.currency)}</TableCell>
-                          <TableCell className="font-mono text-xs text-muted-foreground">{formatCurrency(rate, log.currency)}/L</TableCell>
-                          <TableCell className="text-sm">{log.vendor || "—"}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{log.generators?.name || "—"}</TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-1">
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-primary cursor-pointer" onClick={() => setViewItem({ type: "refuel", data: log })}>
-                                <Eye className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer" onClick={() => handleEditClick("refuel", log)}>
-                                <Edit className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive cursor-pointer" onClick={() => deleteItem("generator_refueling_logs", log.id)}>
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
-                          </TableCell>
+                    </TableHeader>
+                    <TableBody>
+                      {paginatedRefuelLogs.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center text-muted-foreground py-10">No refueling found for selected range.</TableCell>
                         </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                      ) : paginatedRefuelLogs.map(log => {
+                        const rate = log.liters_added > 0 ? (log.cost / log.liters_added) : 0;
+                        const isMobil = (log.item_type || "").toLowerCase().includes("mobil") || (log.item_type || "").toLowerCase().includes("oil");
+                        return (
+                          <TableRow key={log.id}>
+                            <TableCell className="text-sm pl-6">{formatDate(log.refueled_at)}</TableCell>
+                            <TableCell className="font-semibold text-sm">
+                              <span className={isMobil ? "text-purple-600 dark:text-purple-400" : "text-amber-600 dark:text-amber-400"}>
+                                {isMobil ? "Mobil purchase" : "Petrol purchase"}
+                              </span>
+                            </TableCell>
+                            <TableCell className="font-mono text-sm font-medium">{log.liters_added} Liters</TableCell>
+                            <TableCell className="font-mono text-sm font-semibold">{formatCurrency(log.cost, log.currency)}</TableCell>
+                            <TableCell className="font-mono text-xs text-muted-foreground">{formatCurrency(rate, log.currency)}/L</TableCell>
+                            <TableCell className="text-sm">{log.vendor || "—"}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{log.generators?.name || "—"}</TableCell>
+                            <TableCell className="text-right pr-6">
+                              <div className="flex justify-end gap-1">
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-primary cursor-pointer" onClick={() => setViewItem({ type: "refuel", data: log })}>
+                                  <Eye className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer" onClick={() => handleEditClick("refuel", log)}>
+                                  <Edit className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive cursor-pointer" onClick={() => deleteItem("generator_refueling_logs", log.id)}>
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
                 </div>
 
                 {/* Mobile Card View */}
@@ -1249,57 +1564,96 @@ export default function GeneratorLogsPage() {
           {/* SERVICE & MAINTENANCE TAB */}
           <TabsContent value="maintenance" className="outline-none">
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between border-b pb-4">
+              <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between border-b pb-4 gap-4">
                 <div>
                   <CardTitle className="text-base font-semibold">Service & Maintenance Register</CardTitle>
                   <CardDescription>Logs for spark plugs replacement, generator tune-ups, and repair details.</CardDescription>
                 </div>
+                {oilChangeStats.lastDate ? (
+                  <div className="flex items-center gap-6 self-start sm:self-center shrink-0">
+                    <div className="flex flex-col items-end">
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Last Oil Change</span>
+                      <span className="text-sm font-bold text-foreground mt-0.5">
+                        {formatDate(oilChangeStats.lastDate)}
+                        <span className="font-normal text-muted-foreground text-[11px] ml-1.5">
+                          ({oilChangeStats.runtimeSince.toFixed(1)} hrs run)
+                        </span>
+                      </span>
+                    </div>
+                    <div className="h-8 w-[1px] bg-border hidden sm:block" />
+                    <div className="flex flex-col items-end">
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Next Oil Change</span>
+                      <span className={cn(
+                        "text-sm font-bold mt-0.5 flex items-center gap-1.5",
+                        oilChangeStats.status === "critical" ? "text-rose-500 animate-pulse font-extrabold" :
+                          oilChangeStats.status === "warning" ? "text-amber-500" : "text-emerald-500"
+                      )}>
+                        {oilChangeStats.remainingHours.toFixed(1)} hrs left
+                        <span className="font-normal text-muted-foreground text-[11px]">
+                          (or {formatDate(oilChangeStats.nextDate)})
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-6 self-start sm:self-center shrink-0">
+                    <div className="flex flex-col items-end">
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Last Oil Change</span>
+                      <span className="text-sm font-semibold text-muted-foreground mt-0.5">No records</span>
+                    </div>
+                    <div className="h-8 w-[1px] bg-border hidden sm:block" />
+                    <div className="flex flex-col items-end">
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Next Oil Change</span>
+                      <span className="text-sm font-semibold text-muted-foreground mt-0.5">No records</span>
+                    </div>
+                  </div>
+                )}
               </CardHeader>
-              <CardContent className="p-3 md:p-6 md:pt-6">
+              <CardContent className="p-3 md:p-6 md:pt-1">
                 {/* Desktop Table */}
-                <div className="hidden md:block overflow-x-auto scrollbar-hide">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Service Date</TableHead>
-                      <TableHead>Service Type</TableHead>
-                      <TableHead>Service Cost</TableHead>
-                      <TableHead>Performed By</TableHead>
-                      <TableHead>Details</TableHead>
-                      <TableHead>Generator</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {paginatedMaintenanceLogs.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={7} className="text-center text-muted-foreground py-10">No maintenance services found for selected range.</TableCell>
+                <div className="hidden md:block overflow-x-auto scrollbar-hide -mx-6">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50 hover:bg-muted/50">
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider pl-6">Service Date</TableHead>
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider">Service Type</TableHead>
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider">Service Cost</TableHead>
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider">Performed By</TableHead>
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider">Details</TableHead>
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider">Generator</TableHead>
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider text-right pr-6">Actions</TableHead>
                       </TableRow>
-                    ) : paginatedMaintenanceLogs.map(log => (
-                      <TableRow key={log.id}>
-                        <TableCell className="text-sm">{formatDate(log.service_date)}</TableCell>
-                        <TableCell className="font-semibold text-sm capitalize">{log.service_type}</TableCell>
-                        <TableCell className="font-mono text-sm font-semibold">{formatCurrency(log.cost, log.currency)}</TableCell>
-                        <TableCell className="text-sm">{log.performed_by || "—"}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground max-w-xs truncate">{log.details || "—"}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{log.generators?.name || "—"}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-1">
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-primary cursor-pointer" onClick={() => setViewItem({ type: "maintenance", data: log })}>
-                              <Eye className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer" onClick={() => handleEditClick("maintenance", log)}>
-                              <Edit className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive cursor-pointer" onClick={() => deleteItem("generator_maintenance_logs", log.id)}>
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {paginatedMaintenanceLogs.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center text-muted-foreground py-10">No maintenance services found for selected range.</TableCell>
+                        </TableRow>
+                      ) : paginatedMaintenanceLogs.map(log => (
+                        <TableRow key={log.id}>
+                          <TableCell className="text-sm pl-6">{formatDate(log.service_date)}</TableCell>
+                          <TableCell className="font-semibold text-sm capitalize">{log.service_type}</TableCell>
+                          <TableCell className="font-mono text-sm font-semibold">{formatCurrency(log.cost, log.currency)}</TableCell>
+                          <TableCell className="text-sm">{log.performed_by || "—"}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground max-w-xs truncate">{log.details || "—"}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{log.generators?.name || "—"}</TableCell>
+                          <TableCell className="text-right pr-6">
+                            <div className="flex justify-end gap-1">
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-primary cursor-pointer" onClick={() => setViewItem({ type: "maintenance", data: log })}>
+                                <Eye className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer" onClick={() => handleEditClick("maintenance", log)}>
+                                <Edit className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive cursor-pointer" onClick={() => deleteItem("generator_maintenance_logs", log.id)}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </div>
 
                 {/* Mobile Card View */}
@@ -1383,52 +1737,52 @@ export default function GeneratorLogsPage() {
                 </div>
                 <NewGeneratorSheet onCreated={loadData} trigger={<Button className="w-full sm:w-auto"><Plus className="h-4 w-4 mr-1.5" /> Add Generator</Button>} />
               </CardHeader>
-              <CardContent className="p-3 md:p-6 md:pt-6">
+              <CardContent className="p-3 md:p-6 md:pt-1">
                 {/* Desktop Table */}
-                <div className="hidden md:block overflow-x-auto scrollbar-hide">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Generator Name</TableHead>
-                      <TableHead>Engine Model</TableHead>
-                      <TableHead>Capacity</TableHead>
-                      <TableHead>Fuel Type</TableHead>
-                      <TableHead>Tank Capacity</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {generators.map(g => (
-                      <TableRow key={g.id}>
-                        <TableCell className="font-semibold text-sm">{g.name}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{g.model || "—"}</TableCell>
-                        <TableCell className="text-sm font-medium">{g.capacity || "—"} kVA</TableCell>
-                        <TableCell className="capitalize text-xs"><Badge variant="outline">{g.fuel_type}</Badge></TableCell>
-                        <TableCell className="font-mono text-sm">{g.fuel_capacity} Liters</TableCell>
-                        <TableCell>
-                          {g.status === "active" && <Badge className="bg-green-500/10 text-green-500 border-none capitalize">Active</Badge>}
-                          {g.status === "maintenance" && <Badge className="bg-yellow-500/10 text-yellow-500 border-none capitalize">Service</Badge>}
-                          {g.status === "standby" && <Badge className="bg-blue-500/10 text-blue-500 border-none capitalize">Standby</Badge>}
-                          {g.status === "broken" && <Badge className="bg-red-500/10 text-red-500 border-none capitalize">Broken</Badge>}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-1">
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-primary cursor-pointer" onClick={() => setViewItem({ type: "equipment", data: g })}>
-                              <Eye className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer" onClick={() => handleEditClick("equipment", g)}>
-                              <Edit className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive cursor-pointer" onClick={() => deleteItem("generators", g.id)}>
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </TableCell>
+                <div className="hidden md:block overflow-x-auto scrollbar-hide -mx-6">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50 hover:bg-muted/50">
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider pl-6">Generator Name</TableHead>
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider">Engine Model</TableHead>
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider">Capacity</TableHead>
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider">Fuel Type</TableHead>
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider">Tank Capacity</TableHead>
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider">Status</TableHead>
+                        <TableHead className="font-bold text-foreground/90 text-xs uppercase tracking-wider text-right pr-6">Actions</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {generators.map(g => (
+                        <TableRow key={g.id}>
+                          <TableCell className="font-semibold text-sm pl-6">{g.name}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{g.model || "—"}</TableCell>
+                          <TableCell className="text-sm font-medium">{g.capacity || "—"} kVA</TableCell>
+                          <TableCell className="capitalize text-xs"><Badge variant="outline">{g.fuel_type}</Badge></TableCell>
+                          <TableCell className="font-mono text-sm">{g.fuel_capacity} Liters</TableCell>
+                          <TableCell>
+                            {g.status === "active" && <Badge className="bg-green-500/10 text-green-500 border-none capitalize">Active</Badge>}
+                            {g.status === "maintenance" && <Badge className="bg-yellow-500/10 text-yellow-500 border-none capitalize">Service</Badge>}
+                            {g.status === "standby" && <Badge className="bg-blue-500/10 text-blue-500 border-none capitalize">Standby</Badge>}
+                            {g.status === "broken" && <Badge className="bg-red-500/10 text-red-500 border-none capitalize">Broken</Badge>}
+                          </TableCell>
+                          <TableCell className="text-right pr-6">
+                            <div className="flex justify-end gap-1">
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-primary cursor-pointer" onClick={() => setViewItem({ type: "equipment", data: g })}>
+                                <Eye className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-pointer" onClick={() => handleEditClick("equipment", g)}>
+                                <Edit className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive cursor-pointer" onClick={() => deleteItem("generators", g.id)}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </div>
 
                 {/* Mobile Card View */}
@@ -1641,7 +1995,7 @@ export default function GeneratorLogsPage() {
 
       {/* Edit Dialog */}
       <Dialog open={!!editItem} onOpenChange={(o) => !o && setEditItem(null)}>
-        <DialogContent className="max-w-[95vw] sm:max-w-[450px] rounded-[1.5rem] p-6 sm:p-8 gap-5">
+        <DialogContent className="max-w-[95vw] sm:max-w-[500px] rounded-[1.5rem] p-6 sm:p-8 gap-5">
           <DialogHeader>
             <DialogTitle>
               {editItem?.type === "run" && "Edit Run Log"}
@@ -1661,7 +2015,7 @@ export default function GeneratorLogsPage() {
                     <SelectContent>{profiles.map(p => <SelectItem key={p.id} value={p.full_name}>{p.full_name}</SelectItem>)}</SelectContent>
                   </Select>
                 </Fld>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <Fld label="On Time"><FlatTimePicker value={editForm.on_time} onChange={v => setEditForm({ ...editForm, on_time: v })} /></Fld>
                   <Fld label="Off Time"><FlatTimePicker value={editForm.off_time} onChange={v => setEditForm({ ...editForm, off_time: v })} /></Fld>
                 </div>
@@ -1680,6 +2034,36 @@ export default function GeneratorLogsPage() {
             )}
             {editItem?.type === "refuel" && (
               <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Fld label="Refuel Date">
+                    {canEditRefuelDate ? (
+                      <FlatDatePicker
+                        date={editForm.refuel_date}
+                        onChange={v => setEditForm({ ...editForm, refuel_date: v })}
+                      />
+                    ) : (
+                      <Input
+                        disabled
+                        value={formatDate(editItem.data.refueled_at)}
+                        className="bg-muted text-muted-foreground h-10 text-xs rounded-lg"
+                      />
+                    )}
+                  </Fld>
+                  <Fld label="Refuel Time">
+                    {canEditRefuelDate ? (
+                      <FlatTimePicker
+                        value={editForm.refuel_time}
+                        onChange={v => setEditForm({ ...editForm, refuel_time: v })}
+                      />
+                    ) : (
+                      <Input
+                        disabled
+                        value={formatTime(editItem.data.refueled_at)}
+                        className="bg-muted text-muted-foreground h-10 text-xs rounded-lg"
+                      />
+                    )}
+                  </Fld>
+                </div>
                 <Fld label="Item Type">
                   <Select value={editForm.item_type} onValueChange={v => setEditForm({ ...editForm, item_type: v })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
@@ -1691,7 +2075,7 @@ export default function GeneratorLogsPage() {
                     </SelectContent>
                   </Select>
                 </Fld>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <Fld label="Quantity (Liters)"><Input type="number" step="0.01" value={editForm.liters_added} onChange={e => setEditForm({ ...editForm, liters_added: e.target.value })} /></Fld>
                   <Fld label="Total Cost"><Input type="number" step="0.01" value={editForm.cost} onChange={e => setEditForm({ ...editForm, cost: e.target.value })} /></Fld>
                 </div>
@@ -1715,7 +2099,7 @@ export default function GeneratorLogsPage() {
                     </SelectContent>
                   </Select>
                 </Fld>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <Fld label="Cost"><Input type="number" value={editForm.cost} onChange={e => setEditForm({ ...editForm, cost: e.target.value })} /></Fld>
                   <Fld label="Performed By"><Input value={editForm.performed_by} onChange={e => setEditForm({ ...editForm, performed_by: e.target.value })} /></Fld>
                 </div>
@@ -1725,11 +2109,11 @@ export default function GeneratorLogsPage() {
             {editItem?.type === "equipment" && (
               <>
                 <Fld label="Generator Name"><Input required value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} /></Fld>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <Fld label="Model"><Input value={editForm.model} onChange={e => setEditForm({ ...editForm, model: e.target.value })} /></Fld>
                   <Fld label="Capacity"><Input value={editForm.capacity} onChange={e => setEditForm({ ...editForm, capacity: e.target.value })} /></Fld>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <Fld label="Fuel Type">
                     <Select value={editForm.fuel_type} onValueChange={v => setEditForm({ ...editForm, fuel_type: v })}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
@@ -1842,7 +2226,25 @@ export default function GeneratorLogsPage() {
         notes: data.notes || ""
       });
     } else if (type === "refuel") {
-      setEditForm({ item_type: data.item_type || "petrol", liters_added: String(data.liters_added || ""), cost: String(data.cost || ""), vendor: data.vendor || "", notes: data.notes || "" });
+      const refuelDateObj = new Date(data.refueled_at);
+      const bdParts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Dhaka",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).formatToParts(refuelDateObj);
+      const hour24 = bdParts.find(p => p.type === "hour")?.value || "00";
+      const minute = bdParts.find(p => p.type === "minute")?.value || "00";
+
+      setEditForm({
+        item_type: data.item_type || "petrol",
+        liters_added: String(data.liters_added || ""),
+        cost: String(data.cost || ""),
+        vendor: data.vendor || "",
+        notes: data.notes || "",
+        refuel_date: toLocalDateString(refuelDateObj),
+        refuel_time: `${hour24}:${minute}`
+      });
     } else if (type === "maintenance") {
       setEditForm({ service_date: data.service_date || "", service_type: data.service_type || "", cost: String(data.cost || ""), performed_by: data.performed_by || "", details: data.details || "" });
     } else if (type === "equipment") {
@@ -1894,7 +2296,24 @@ export default function GeneratorLogsPage() {
         };
       } else if (editItem.type === "refuel") {
         table = "generator_refueling_logs";
-        payload = { item_type: editForm.item_type, liters_added: Number(editForm.liters_added) || 0, cost: Number(editForm.cost) || 0, vendor: editForm.vendor || null, notes: editForm.notes || null };
+
+        let refueledAt = editItem.data.refueled_at;
+        if (canEditRefuelDate && editForm.refuel_date && editForm.refuel_time) {
+          const [y, m, d] = editForm.refuel_date.split("-").map(Number);
+          const [hr, mn] = editForm.refuel_time.split(":").map(Number);
+          const bdOffsetMs = 6 * 60 * 60 * 1000;
+          const utcMs = Date.UTC(y, m - 1, d, hr, mn, 0) - bdOffsetMs;
+          refueledAt = new Date(utcMs).toISOString();
+        }
+
+        payload = {
+          item_type: editForm.item_type,
+          liters_added: Number(editForm.liters_added) || 0,
+          cost: Number(editForm.cost) || 0,
+          vendor: editForm.vendor || null,
+          notes: editForm.notes || null,
+          refueled_at: refueledAt
+        };
       } else if (editItem.type === "maintenance") {
         table = "generator_maintenance_logs";
         payload = { service_date: editForm.service_date, service_type: editForm.service_type, cost: Number(editForm.cost) || 0, performed_by: editForm.performed_by || null, details: editForm.details || null };
@@ -2315,9 +2734,16 @@ function NewRunSheet({ generators, profiles, currentProfile, onCreated }: { gene
   );
 }
 
-function NewRefuelSheet({ generators, profiles, currentProfile, onCreated }: { generators: Generator[]; profiles: Profile[]; currentProfile: { id: string; full_name: string } | null; onCreated: () => void }) {
+function NewRefuelSheet({ generators, profiles, currentProfile, refuelLogs = [], onCreated }: { generators: Generator[]; profiles: Profile[]; currentProfile: { id: string; full_name: string } | null; refuelLogs?: RefuelingLog[]; onCreated: () => void }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  const vendors = useMemo(() => {
+    const list = (refuelLogs || [])
+      .map(log => log.vendor)
+      .filter((v): v is string => typeof v === "string" && v.trim() !== "");
+    return Array.from(new Set(list));
+  }, [refuelLogs]);
 
   const toLocalDateString = () => {
     const date = new Date();
@@ -2411,7 +2837,7 @@ function NewRefuelSheet({ generators, profiles, currentProfile, onCreated }: { g
           <Fuel className="h-4 w-4 mr-1.5" /> Log Refueling
         </Button>
       </SheetTrigger>
-      <SheetContent className="p-0 flex flex-col h-full">
+      <SheetContent className="sm:max-w-[500px] p-0 flex flex-col h-full">
         <SheetHeader className="p-6 pb-4 border-b">
           <SheetTitle>Log Generator Refueling</SheetTitle>
           <SheetDescription>Log fuel purchases (diesel, octane) and mobil lubricant accounts.</SheetDescription>
@@ -2462,7 +2888,17 @@ function NewRefuelSheet({ generators, profiles, currentProfile, onCreated }: { g
                 <Input type="number" required placeholder="Calculated automatically" value={form.cost} onChange={e => setForm({ ...form, cost: e.target.value })} />
               </Fld>
               <Fld label="Brand / Vendor / Station">
-                <Input placeholder="e.g. Trust Station" value={form.vendor} onChange={e => setForm({ ...form, vendor: e.target.value })} />
+                <Input
+                  placeholder="e.g. Trust Station"
+                  value={form.vendor}
+                  onChange={e => setForm({ ...form, vendor: e.target.value })}
+                  list="vendor-options"
+                />
+                <datalist id="vendor-options">
+                  {vendors.map(v => (
+                    <option key={v} value={v} />
+                  ))}
+                </datalist>
               </Fld>
             </div>
 
@@ -2505,9 +2941,16 @@ function NewRefuelSheet({ generators, profiles, currentProfile, onCreated }: { g
   );
 }
 
-function NewMaintenanceSheet({ generators, currentProfile, onCreated }: { generators: Generator[]; currentProfile: { id: string; full_name: string } | null; onCreated: () => void }) {
+function NewMaintenanceSheet({ generators, currentProfile, maintenanceLogs = [], onCreated }: { generators: Generator[]; currentProfile: { id: string; full_name: string } | null; maintenanceLogs?: MaintenanceLog[]; onCreated: () => void }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  const technicians = useMemo(() => {
+    const list = (maintenanceLogs || [])
+      .map(log => log.performed_by)
+      .filter((t): t is string => typeof t === "string" && t.trim() !== "");
+    return Array.from(new Set(list));
+  }, [maintenanceLogs]);
 
   const [form, setForm] = useState({
     generator_id: generators[0]?.id || "",
@@ -2556,7 +2999,7 @@ function NewMaintenanceSheet({ generators, currentProfile, onCreated }: { genera
           <Wrench className="h-4 w-4 mr-1.5" /> Log Service
         </Button>
       </SheetTrigger>
-      <SheetContent className="p-0 flex flex-col h-full">
+      <SheetContent className="sm:max-w-[500px] p-0 flex flex-col h-full">
         <SheetHeader className="p-6 pb-4 border-b">
           <SheetTitle>Log Generator Maintenance</SheetTitle>
           <SheetDescription>Log spark plugs replacement, generator tune-ups, filter cleans, or mechanical servicing.</SheetDescription>
@@ -2582,7 +3025,7 @@ function NewMaintenanceSheet({ generators, currentProfile, onCreated }: { genera
                   <SelectContent>
                     <SelectItem value="Engine Tune-up">Engine Tune-up</SelectItem>
                     <SelectItem value="Spark Plug Replacement">Spark Plug Replacement</SelectItem>
-                    <SelectItem value="Oil Change">Oil Change</SelectItem>
+                    <SelectItem value="Engine Oil Change">Engine Oil Change</SelectItem>
                     <SelectItem value="Clean Carburetor">Clean Carburetor</SelectItem>
                     <SelectItem value="Filter Clean/Replacement">Filter Cleaning</SelectItem>
                     <SelectItem value="Other Repairs">Other Repairs</SelectItem>
@@ -2592,7 +3035,17 @@ function NewMaintenanceSheet({ generators, currentProfile, onCreated }: { genera
             </div>
 
             <Fld label="Service Technician / Workshop">
-              <Input placeholder="e.g. Local Mechanic, Honda Service Center" value={form.performed_by} onChange={e => setForm({ ...form, performed_by: e.target.value })} />
+              <Input
+                placeholder="e.g. Local Mechanic, Honda Service Center"
+                value={form.performed_by}
+                onChange={e => setForm({ ...form, performed_by: e.target.value })}
+                list="tech-options"
+              />
+              <datalist id="tech-options">
+                {technicians.map(t => (
+                  <option key={t} value={t} />
+                ))}
+              </datalist>
             </Fld>
 
             <Fld label="Service / Repair Cost (BDT)">

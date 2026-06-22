@@ -287,21 +287,26 @@ export default function LeavePage() {
                 <CardTitle className="text-lg font-bold">Leave Report</CardTitle>
                 <p className="text-xs text-muted-foreground">Detailed summary and history</p>
               </div>
-              <div className="flex flex-col lg:flex-row items-center gap-4 w-full sm:w-auto">
-                <div className="flex items-center justify-center gap-3 w-full sm:w-auto">
-                  <FlatDatePicker
-                    date={reportRange.from}
-                    onChange={d => setReportRange({ ...reportRange, from: d })}
-                    className="h-9 w-full sm:w-[155px]"
-                  />
-                  <span className="text-muted-foreground text-[10px] font-bold uppercase min-w-[20px] text-center">to</span>
-                  <FlatDatePicker
-                    date={reportRange.to}
-                    onChange={d => setReportRange({ ...reportRange, to: d })}
-                    className="h-9 w-full sm:w-[155px]"
-                  />
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full sm:w-auto">
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <span className="text-muted-foreground text-[10px] font-bold uppercase min-w-[34px]">From</span>
+                    <FlatDatePicker
+                      date={reportRange.from}
+                      onChange={d => setReportRange({ ...reportRange, from: d })}
+                      className="h-9 w-full sm:w-[155px]"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <span className="text-muted-foreground text-[10px] font-bold uppercase min-w-[34px] sm:min-w-0">To</span>
+                    <FlatDatePicker
+                      date={reportRange.to}
+                      onChange={d => setReportRange({ ...reportRange, to: d })}
+                      className="h-9 w-full sm:w-[155px]"
+                    />
+                  </div>
                 </div>
-                <Button size="sm" variant="outline" onClick={exportCSV} className="h-9 w-full lg:w-auto shadow-sm cursor-pointer shrink-0">
+                <Button size="sm" variant="outline" onClick={exportCSV} className="h-9 w-full sm:w-auto shadow-sm cursor-pointer shrink-0">
                   <Download className="h-3.5 w-3.5 mr-1" /> Excel
                 </Button>
               </div>
@@ -974,7 +979,7 @@ function NewLeaveSheet({
               </div>
             </>
           ) : (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Fld label="From">
                 <FlatDatePicker
                   date={f.from_date}

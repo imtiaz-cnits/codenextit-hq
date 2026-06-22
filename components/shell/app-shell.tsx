@@ -47,6 +47,28 @@ export const STAFF_GROUPS: { label: string; items: NavItem[] }[] = [
     items: [{ to: "/dashboard", label: "Command Center", icon: LayoutDashboard, module: "dashboard" }],
   },
   {
+    label: "Store",
+    items: [
+      { to: "/vault", label: "Vault", icon: FolderLock, module: "vault" },
+      { to: "/notes", label: "Notes", icon: FileText, module: "vault" },
+    ],
+  },
+  {
+    label: "People",
+    items: [
+      { to: "/team", label: "Team", icon: UserCircle, module: "team" },
+      { to: "/attendance", label: "Attendance", icon: Clock, module: "attendance" },
+      { to: "/leave", label: "Leave", icon: CalendarDays, module: "leave" },
+    ],
+  },
+  {
+    label: "Infrastructure",
+    items: [
+      { to: "/infrastructure/generator", label: "Generator Logs", icon: Zap, module: "infrastructure" },
+      { to: "/domains", label: "Domain Tracker", icon: Globe, module: "vault" },
+    ],
+  },
+  {
     label: "Sales",
     items: [
       { to: "/leads", label: "Leads Pipeline", icon: TrendingUp, module: "leads" },
@@ -62,40 +84,18 @@ export const STAFF_GROUPS: { label: string; items: NavItem[] }[] = [
     ],
   },
   {
-    label: "Vault & Notes",
-    items: [
-      { to: "/vault", label: "Vault", icon: FolderLock, module: "vault" },
-      { to: "/notes", label: "Notes", icon: FileText, module: "vault" },
-    ],
-  },
-  {
-    label: "People",
-    items: [
-      { to: "/team", label: "Team", icon: UserCircle, module: "team" },
-      { to: "/attendance", label: "Attendance", icon: Clock, module: "attendance" },
-      { to: "/leave", label: "Leave", icon: CalendarDays, module: "leave" },
-      { to: "/payroll", label: "Payroll", icon: Wallet, module: "payroll" },
-    ],
-  },
-  {
-    label: "Infrastructure",
-    items: [
-      { to: "/infrastructure/generator", label: "Generator Logs", icon: Zap, module: "infrastructure" },
-    ],
-  },
-  {
     label: "Finance",
     items: [
       { to: "/finance/quotes", label: "Quotations", icon: FileText, module: "finance" },
       { to: "/finance/invoices", label: "Invoices", icon: Receipt, module: "finance" },
       { to: "/finance/transactions", label: "Transactions Ledger", icon: Wallet, module: "finance" },
+      { to: "/payroll", label: "Payroll", icon: Wallet, module: "payroll" },
       { to: "/finance/reports", label: "Financial Reports", icon: TrendingUp, module: "finance" },
     ],
   },
   {
     label: "Workspace",
     items: [
-      { to: "/domains", label: "Domain Tracker", icon: Globe, module: "vault" },
       { to: "/settings", label: "Settings", icon: Settings, module: "settings" },
     ],
   },
@@ -347,11 +347,11 @@ function TopBar({ variant }: { variant: "staff" | "client" }) {
                     onClick={() => {
                       setNotifOpen(false);
                       markNotificationRead(n.id);
-                      
+
                       // Handle explicit links
                       if (n.link) {
                         router.push(n.link);
-                      } 
+                      }
                       // Fallback for older notifications
                       else if (n.title.toLowerCase().includes("leave")) {
                         router.push("/leave");
