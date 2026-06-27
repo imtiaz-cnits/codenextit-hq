@@ -40,22 +40,11 @@ async function checkHasFolderAccess(userId: string, clientId: string, isAdmin: b
 
   const { data: client } = await supabaseAdmin
     .from("clients")
-    .select("created_by")
+    .select("created_by, company_name")
     .eq("id", clientId)
     .maybeSingle();
 
   if (client?.created_by === userId) return true;
-
-  if (isAdmin) {
-    if (!client?.created_by) return true; // System folder
-
-    const { data: creatorRole } = await supabaseAdmin
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", client.created_by);
-    const isCreatorAdmin = creatorRole?.some((r: any) => r.role === "super_admin" || r.role === "admin") ?? false;
-    if (isCreatorAdmin) return true;
-  }
 
   return false;
 }

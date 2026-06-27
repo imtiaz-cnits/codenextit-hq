@@ -25,11 +25,30 @@ You are working on "CodeNext IT HQ" - a highly secure, modern Agency OS (ERP + C
 2. UI & STYLING COMPLIANCE:
    - Always use existing `shadcn/ui` components from `@/components/ui` (e.g., `<Button>`, `<Input>`, `<Dialog>`). Do not invent custom HTML/CSS alternatives if a shadcn component exists.
    - Maintain the existing design language (clean, corporate, glassmorphism where applicable). Use Tailwind utility classes strictly.
+   - Always use the custom date and time pickers `<FlatDatePicker>` (from `@/components/ui/flat-date-picker`) and `<FlatTimePicker>` (from `@/components/ui/flat-time-picker`) instead of browser-native date/time inputs for all forms (e.g., Leave requests, Reminders, etc.) to maintain visual design and consistent input format.
+   - **Card & Table Consistency (Light & Dark Modes):**
+     - Standard container Cards: Use `bg-card/45 border-border/50 shadow-sm` for a clean, consistent semi-transparent border and subtle shadow.
+     - Interactive Card items (grid items, hover states): Use `group overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 bg-card/65 border border-border/50` for smooth micro-animations.
+     - Table wrappers: Place tables inside a card with standard border/shadow wrapping to avoid overflow, e.g. `<Card className="bg-card/45 border-border/50 shadow-sm overflow-hidden">` containing the `<Table>` component. Avoid using custom class names like `shadow-elegant` for tables unless specifically requested.
+   - **Tabs Styling Consistency (CRITICAL):** All main tabs across the application must use the same premium responsive tab style found in the Generator Logs page. 
+     - **Wrapper:** Wrap the `<TabsList>` in an overflow container: `<div className="overflow-x-auto pb-2 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide">`
+     - **TabsList:** Style `<TabsList>` as: `className={cn("inline-flex w-auto md:grid md:w-full md:max-w-[750px] p-1 h-auto bg-muted/50 rounded-xl whitespace-nowrap", isCondition ? "md:grid-cols-X" : "md:grid-cols-Y")}` (where X or Y is the exact number of active rendered triggers). Never hardcode a static column count (e.g. `md:grid-cols-5`) if some tabs are conditionally hidden based on roles/permissions; this avoids rendering broken empty slots.
+     - **Triggers:** Style triggers with: `className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"`. Always provide an icon inside each main page-level tab trigger to preserve a high-quality unified aesthetic.
+   - **Add/Edit Form Drawers (Sheets) Layout (CRITICAL):** All slide-over drawer sheets containing add or edit forms must feature a fixed header, a fixed footer, and a scrollable body container.
+      - **SheetContent:** Style `<SheetContent>` as `className="flex flex-col h-full p-0 w-full sm:max-w-lg"` (or appropriate max-width, e.g., `sm:max-w-md` or `sm:max-w-lg`).
+      - **Fixed Header:** Wrap `<SheetHeader>` inside a container with styling: `<div className="py-3 px-6 border-b border-border/40 shrink-0">` (reduced padding).
+      - **Form Wrapper:** Wrap the form element as `<form className="flex flex-col flex-1 min-h-0" onSubmit={...}>`.
+      - **Scrollable Body:** Wrap the inputs inside `<div className="flex-1 overflow-y-auto p-6 space-y-4">`.
+      - **Fixed Footer:** Wrap `<SheetFooter>` inside a container with styling: `<div className="py-3 px-6 border-t border-border shrink-0 bg-card/50">` (reduced padding).
+      - **Form Action Button:** The submit/action button inside the footer must always be full-width: `<Button type="submit" className="w-full ...">` (always `w-full` instead of `w-full sm:w-auto`).
+      - **Form Fields Width & Alignment:** Do not crowd multiple inputs on a single line (avoid `grid-cols-3` or higher for inputs, unless they are simple unified items like cost/currency). Use `grid-cols-1` or `grid-cols-2` for spacing, ensuring all fields are wide enough and easily readable.
+   - **Bangla Font & Currency Sign "৳" Consistency:** Noto Sans Bengali must be configured as the fallback font family across all primary font stacks (sans, secondary, mono) in `app/globals.css` (`var(--font-bengali)`). This ensures that any Bangla text or the BDT Taka sign "৳" rendered anywhere in the application automatically and consistently defaults to Noto Sans Bengali.
 
 3. ARCHITECTURE & FOLDER STRUCTURE:
    - Respect the route groups: `app/(staff)` for internal ERP/CRM and `app/(client)` for the client portal.
    - Keep Server Actions inside `app/actions/` or alongside the respective feature folders.
    - Use the strongly typed Supabase client from `@/integrations/supabase`.
+   - **Granular Access & Page-Level Protection:** Every single sidebar/navigation menu item under `STAFF_GROUPS` must be assigned a unique, dedicated `module` permission key (e.g. `finance_quotes`, `finance_invoices`, rather than a shared group key like `finance`). Dynamic page-level routing authorization is enforced in `StaffGuard` which matches the active path against these unique module keys. If a user manually types/enters an unauthorized URL, they are blocked and redirected to `/dashboard`. When adding new pages or menu items, always specify a unique `module` key for it in `STAFF_GROUPS`.
 
 4. DATA MUTATION & FETCHING:
    - Prefer Next.js Server Actions for mutations (form submissions, database updates).

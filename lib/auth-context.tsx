@@ -36,6 +36,37 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 const STAFF_ROLES: AppRole[] = ["super_admin", "admin", "project_manager", "staff"];
 
+const clearAuthStorageAndCookies = () => {
+  if (typeof window === "undefined") return;
+
+  // Clear localStorage
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const key = window.localStorage.key(i);
+      if (key && (key.includes("auth-token") || key.includes("supabase.auth.token"))) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach((k) => window.localStorage.removeItem(k));
+  } catch (e) {
+    console.warn("Failed to clear localStorage:", e);
+  }
+
+  // Clear cookies
+  try {
+    document.cookie.split(";").forEach((c) => {
+      const eqPos = c.indexOf("=");
+      const name = eqPos > -1 ? c.substring(0, eqPos).trim() : c.trim();
+      if (name.includes("auth-token") || name.includes("supabase")) {
+        document.cookie = `${name}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;`;
+      }
+    });
+  } catch (e) {
+    console.warn("Failed to clear cookies:", e);
+  }
+};
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -87,6 +118,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
+    // Set up global handler for unhandled promise rejections (Supabase background refreshes)
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const reason = event.reason;
+      if (
+        reason &&
+        (reason.message?.includes("Refresh Token Not Found") ||
+          reason.message?.includes("Invalid Refresh Token") ||
+          reason.message?.includes("refresh_token_not_found") ||
+          reason.message?.includes("invalid_grant") ||
+          reason.name === "AuthApiError")
+      ) {
+        console.warn("Gracefully handled expired or invalid Supabase refresh token background rejection:", reason.message);
+        event.preventDefault(); // prevent Next.js Dev Overlay from displaying
+        clearAuthStorageAndCookies();
+      }
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("unhandledrejection", handleUnhandledRejection);
+    }
+
     // Set up listener BEFORE getSession (per Supabase guidance)
     const { data: subscription } = supabase.auth.onAuthStateChange((event, newSession) => {
       console.log("Auth event:", event);
@@ -111,28 +163,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { data: { session: currentSession }, error } = await supabase.auth.getSession();
         
         if (error) {
-          console.error("Auth initialization error:", error.message);
-          // If the refresh token is invalid or not found, we must sign out and clear local storage
+          // If the refresh token is invalid or not found, we must sign out and clear local storage & cookies
           if (error.message.includes("refresh_token_not_found") || 
               error.message.includes("Refresh Token Not Found") ||
               error.message.includes("Invalid Refresh Token") ||
               error.message.includes("invalid_grant")) {
-            console.warn("Invalid refresh token detected, clearing local storage...");
-            if (typeof window !== 'undefined') {
-              const keysToRemove: string[] = [];
-              for (let i = 0; i < window.localStorage.length; i++) {
-                const key = window.localStorage.key(i);
-                if (key && (key.includes('auth-token') || key.includes('supabase.auth.token'))) {
-                  keysToRemove.push(key);
-                }
-              }
-              keysToRemove.forEach(k => window.localStorage.removeItem(k));
-            }
+            console.warn("Expired or invalid refresh token detected during initialization. Clearing credentials.");
+            clearAuthStorageAndCookies();
             try {
               await supabase.auth.signOut();
             } catch (signOutErr) {
               console.warn("Error during signOut call:", signOutErr);
             }
+          } else {
+            console.error("Auth initialization error:", error.message);
           }
           setLoading(false);
           return;
@@ -153,6 +197,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void initializeAuth();
 
     return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("unhandledrejection", handleUnhandledRejection);
+      }
       subscription.subscription.unsubscribe();
     };
   }, []);

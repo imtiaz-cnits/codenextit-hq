@@ -360,63 +360,64 @@ function NewProjectSheet({ clients, onCreated }: { clients: Client[]; onCreated:
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild><Button><Plus className="h-4 w-4 mr-1.5" /> New project</Button></SheetTrigger>
-      <SheetContent className="overflow-y-auto">
-        <SheetHeader><SheetTitle>New project</SheetTitle><SheetDescription>Spin up a new client engagement.</SheetDescription></SheetHeader>
-        <form onSubmit={submit} className="space-y-4 mt-6">
-          <Fld label="Name"><Input required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Fld>
-          <Fld label="Description"><Textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} rows={3} /></Fld>
-          <Fld label="Client">
-            <Select value={f.client_id} onValueChange={(v) => setF({ ...f, client_id: v })}>
-              <SelectTrigger><SelectValue placeholder="Select client" /></SelectTrigger>
-              <SelectContent>{clients.map((c) => <SelectItem key={c.id} value={c.id}>{c.company_name}</SelectItem>)}</SelectContent>
-            </Select>
-          </Fld>
-          <div className="grid grid-cols-2 gap-3">
-            <Fld label="Category">
-              <Select value={f.category} onValueChange={(v) => setF({ ...f, category: v as Category })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{Object.entries(CATEGORY_LABEL).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
+      <SheetContent className="flex flex-col h-full p-0 w-full sm:max-w-lg">
+        <div className="py-3 px-6 border-b border-border/40 shrink-0">
+          <SheetHeader>
+            <SheetTitle>New project</SheetTitle>
+            <SheetDescription>Spin up a new client engagement.</SheetDescription>
+          </SheetHeader>
+        </div>
+
+        <form onSubmit={submit} className="flex flex-col flex-1 min-h-0">
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            <Fld label="Name"><Input required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Fld>
+            <Fld label="Description"><Textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} rows={3} /></Fld>
+            <Fld label="Client">
+              <Select value={f.client_id} onValueChange={(v) => setF({ ...f, client_id: v })}>
+                <SelectTrigger className="cursor-pointer"><SelectValue placeholder="Select client" /></SelectTrigger>
+                <SelectContent>{clients.map((c) => <SelectItem key={c.id} value={c.id} className="cursor-pointer">{c.company_name}</SelectItem>)}</SelectContent>
               </Select>
             </Fld>
-            <Fld label="Status">
-              <Select value={f.status} onValueChange={(v) => setF({ ...f, status: v as Status })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{["planning", "active", "on_hold", "completed", "cancelled"].map((s) => <SelectItem key={s} value={s}>{s.replace("_", " ")}</SelectItem>)}</SelectContent>
-              </Select>
-            </Fld>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <Fld label="Budget"><Input type="number" value={f.budget} onChange={(e) => setF({ ...f, budget: e.target.value })} /></Fld>
-            <Fld label="Currency">
-              <Select value={f.currency} onValueChange={(v) => setF({ ...f, currency: v as "BDT" | "USD" })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="BDT">BDT</SelectItem><SelectItem value="USD">USD</SelectItem></SelectContent>
-              </Select>
-            </Fld>
-            <Fld label="Progress %"><Input type="number" value={f.progress} onChange={(e) => setF({ ...f, progress: e.target.value })} /></Fld>
-          </div>
-          <Fld label="Deadline">
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button type="button" variant="outline" className={cn("w-full justify-start text-left font-normal", !f.deadline && "text-muted-foreground")}>
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {f.deadline ? format(new Date(f.deadline), "PPP") : <span>Pick a date</span>}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <CalendarPicker
-                  mode="single"
-                  selected={f.deadline ? new Date(f.deadline) : undefined}
-                  onSelect={(d) => setF({ ...f, deadline: d ? format(d, "yyyy-MM-dd") : "" })}
-                  initialFocus
-                  className={cn("p-3 pointer-events-auto")}
+            <div className="grid grid-cols-2 gap-3">
+              <Fld label="Category">
+                <Select value={f.category} onValueChange={(v) => setF({ ...f, category: v as Category })}>
+                  <SelectTrigger className="cursor-pointer"><SelectValue /></SelectTrigger>
+                  <SelectContent>{Object.entries(CATEGORY_LABEL).map(([v, l]) => <SelectItem key={v} value={v} className="cursor-pointer">{l}</SelectItem>)}</SelectContent>
+                </Select>
+              </Fld>
+              <Fld label="Status">
+                <Select value={f.status} onValueChange={(v) => setF({ ...f, status: v as Status })}>
+                  <SelectTrigger className="cursor-pointer"><SelectValue /></SelectTrigger>
+                  <SelectContent>{["planning", "active", "on_hold", "completed", "cancelled"].map((s) => <SelectItem key={s} value={s} className="cursor-pointer">{s.replace("_", " ")}</SelectItem>)}</SelectContent>
+                </Select>
+              </Fld>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Fld label="Budget"><Input type="number" value={f.budget} onChange={(e) => setF({ ...f, budget: e.target.value })} /></Fld>
+              <Fld label="Currency">
+                <Select value={f.currency} onValueChange={(v) => setF({ ...f, currency: v as "BDT" | "USD" })}>
+                  <SelectTrigger className="cursor-pointer"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="BDT" className="cursor-pointer">BDT</SelectItem><SelectItem value="USD" className="cursor-pointer">USD</SelectItem></SelectContent>
+                </Select>
+              </Fld>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Fld label="Progress %"><Input type="number" value={f.progress} onChange={(e) => setF({ ...f, progress: e.target.value })} /></Fld>
+              <Fld label="Deadline">
+                <FlatDatePicker
+                  date={f.deadline}
+                  onChange={(d) => setF({ ...f, deadline: d })}
+                  placeholder="Select deadline"
                 />
-              </PopoverContent>
-            </Popover>
-          </Fld>
-          <SheetFooter>
-            <Button type="submit" disabled={submitting}>{submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create project"}</Button>
-          </SheetFooter>
+              </Fld>
+            </div>
+          </div>
+
+          <div className="py-3 px-6 border-t border-border shrink-0 bg-card/50">
+            <SheetFooter className="mt-0">
+              <Button type="submit" disabled={submitting} className="w-full cursor-pointer">{submitting ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : "Create project"}</Button>
+            </SheetFooter>
+          </div>
         </form>
       </SheetContent>
     </Sheet>

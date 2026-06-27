@@ -14,6 +14,7 @@ import { Plus, Loader2, Banknote } from "lucide-react";
 import { formatCurrency, formatDate } from "../../../../lib/format";
 import { toast } from "sonner";
 import { TableSkeleton } from "../../../../components/loading-skeletons";
+import { FlatDatePicker } from "../../../../components/ui/flat-date-picker";
 
 interface SalaryRow {
   id: string; date: string; purpose: string; amount: number;
@@ -146,30 +147,51 @@ function NewSalarySheet({ employees, onCreated }: { employees: DisplayEmployee[]
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild><Button><Plus className="h-4 w-4 mr-1.5" /> New payroll entry</Button></SheetTrigger>
-      <SheetContent className="overflow-y-auto sm:max-w-lg">
-        <SheetHeader><SheetTitle>New salary entry</SheetTitle><SheetDescription>Set the payout per team member. Total auto-calculates.</SheetDescription></SheetHeader>
-        <form onSubmit={submit} className="space-y-4 mt-6">
-          <div className="grid grid-cols-2 gap-3">
-            <Fld label="Date"><Input type="date" required value={date} onChange={(e) => setDate(e.target.value)} /></Fld>
-            <Fld label="Purpose"><Input required value={purpose} onChange={(e) => setPurpose(e.target.value)} /></Fld>
-          </div>
-          <div className="space-y-2">
-            <Label className="text-xs">Per-member payout (BDT)</Label>
-            <div className="space-y-2 max-h-[300px] overflow-y-auto rounded-md border border-border p-3">
-              {employees.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No employees yet — add team members first.</p>
-              ) : employees.map((e) => (
-                <div key={e.id} className="flex items-center gap-3">
-                  <span className="text-sm flex-1 truncate">{e.name}</span>
-                  <Input className="w-32" type="number" step="0.01" placeholder="0"
-                    value={payouts[e.id] ?? ""} onChange={(ev) => setPayout(e.id, ev.target.value)} />
-                </div>
-              ))}
+      <SheetContent className="flex flex-col h-full p-0 w-full sm:max-w-lg">
+        <div className="py-3 px-6 border-b border-border/40 shrink-0">
+          <SheetHeader>
+            <SheetTitle>New salary entry</SheetTitle>
+            <SheetDescription>Set the payout per team member. Total auto-calculates.</SheetDescription>
+          </SheetHeader>
+        </div>
+
+        <form onSubmit={submit} className="flex flex-col flex-1 min-h-0">
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <Fld label="Date">
+                <FlatDatePicker
+                  date={date}
+                  onChange={(d) => setDate(d)}
+                  placeholder="Select date"
+                />
+              </Fld>
+              <Fld label="Purpose"><Input required value={purpose} onChange={(e) => setPurpose(e.target.value)} /></Fld>
             </div>
-            <p className="text-xs text-muted-foreground">Total: <span className="font-mono font-semibold">{formatCurrency(total, "BDT")}</span></p>
+            <div className="space-y-2">
+              <Label className="text-xs">Per-member payout (BDT)</Label>
+              <div className="space-y-2 max-h-[300px] overflow-y-auto rounded-md border border-border p-3">
+                {employees.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No employees yet — add team members first.</p>
+                ) : employees.map((e) => (
+                  <div key={e.id} className="flex items-center gap-3">
+                    <span className="text-sm flex-1 truncate">{e.name}</span>
+                    <Input className="w-32" type="number" step="0.01" placeholder="0"
+                      value={payouts[e.id] ?? ""} onChange={(ev) => setPayout(e.id, ev.target.value)} />
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">Total: <span className="font-mono font-semibold">{formatCurrency(total, "BDT")}</span></p>
+            </div>
+            <Fld label="Comments"><Textarea value={comments} onChange={(e) => setComments(e.target.value)} rows={2} /></Fld>
           </div>
-          <Fld label="Comments"><Textarea value={comments} onChange={(e) => setComments(e.target.value)} rows={2} /></Fld>
-          <SheetFooter><Button type="submit" disabled={submitting || total === 0}>{submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save entry"}</Button></SheetFooter>
+
+          <div className="py-3 px-6 border-t border-border shrink-0 bg-card/50">
+            <SheetFooter className="mt-0">
+              <Button type="submit" disabled={submitting || total === 0} className="w-full cursor-pointer">
+                {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : "Save entry"}
+              </Button>
+            </SheetFooter>
+          </div>
         </form>
       </SheetContent>
     </Sheet>

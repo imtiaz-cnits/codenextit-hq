@@ -53,10 +53,10 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  --font-sans: var(--font-primary);
-  --font-secondary: var(--font-secondary);
-  --font-mono: var(--font-mono);
-  --font-bengali: var(--font-bengali);
+  --font-sans: var(--font-primary), var(--font-bengali), sans-serif;
+  --font-secondary: var(--font-secondary), var(--font-bengali), sans-serif;
+  --font-mono: var(--font-mono), var(--font-bengali), monospace;
+  --font-bengali: var(--font-bengali), sans-serif;
 }
 
 :root {

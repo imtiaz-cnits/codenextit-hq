@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Globe, ShieldCheck, Server, Database, CreditCard, Plus, AlertTriangle, Loader2 } from "lucide-react";
 import { formatCurrency, formatDate, formatRelativeDays } from "../../../lib/format";
 import { toast } from "sonner";
+import { FlatDatePicker } from "../../../components/ui/flat-date-picker";
 
 type AssetType = "domain" | "ssl" | "hosting" | "vps" | "subscription";
 interface Asset {
@@ -146,37 +147,58 @@ function NewAssetSheet({ clients, onCreated }: { clients: Client[]; onCreated: (
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild><Button><Plus className="h-4 w-4 mr-1.5" /> Add asset</Button></SheetTrigger>
-      <SheetContent className="overflow-y-auto">
-        <SheetHeader><SheetTitle>Add infrastructure asset</SheetTitle><SheetDescription>Track a domain, SSL, hosting or subscription.</SheetDescription></SheetHeader>
-        <form onSubmit={submit} className="space-y-4 mt-6">
-          <Fld label="Name"><Input required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. example.com" /></Fld>
-          <div className="grid grid-cols-2 gap-3">
-            <Fld label="Type">
-              <Select value={f.asset_type} onValueChange={(v) => setF({ ...f, asset_type: v as AssetType })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{(["domain", "ssl", "hosting", "vps", "subscription"] as AssetType[]).map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
-              </Select>
-            </Fld>
-            <Fld label="Provider"><Input value={f.provider} onChange={(e) => setF({ ...f, provider: e.target.value })} /></Fld>
+      <SheetContent className="flex flex-col h-full p-0 w-full sm:max-w-lg">
+        <div className="py-3 px-6 border-b border-border/40 shrink-0">
+          <SheetHeader>
+            <SheetTitle>Add infrastructure asset</SheetTitle>
+            <SheetDescription>Track a domain, SSL, hosting or subscription.</SheetDescription>
+          </SheetHeader>
+        </div>
+
+        <form onSubmit={submit} className="flex flex-col flex-1 min-h-0">
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            <Fld label="Name"><Input required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. example.com" /></Fld>
+            <div className="grid grid-cols-2 gap-3">
+              <Fld label="Type">
+                <Select value={f.asset_type} onValueChange={(v) => setF({ ...f, asset_type: v as AssetType })}>
+                  <SelectTrigger className="cursor-pointer"><SelectValue /></SelectTrigger>
+                  <SelectContent>{(["domain", "ssl", "hosting", "vps", "subscription"] as AssetType[]).map((t) => <SelectItem key={t} value={t} className="cursor-pointer">{t}</SelectItem>)}</SelectContent>
+                </Select>
+              </Fld>
+              <Fld label="Provider"><Input value={f.provider} onChange={(e) => setF({ ...f, provider: e.target.value })} /></Fld>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Fld label="Client (optional)">
+                <Select value={f.client_id} onValueChange={(v) => setF({ ...f, client_id: v })}>
+                  <SelectTrigger className="cursor-pointer"><SelectValue placeholder="Internal" /></SelectTrigger>
+                  <SelectContent>{clients.map((c) => <SelectItem key={c.id} value={c.id} className="cursor-pointer">{c.company_name}</SelectItem>)}</SelectContent>
+                </Select>
+              </Fld>
+              <Fld label="Expires">
+                <FlatDatePicker
+                  date={f.expires_at || ""}
+                  onChange={(d) => setF({ ...f, expires_at: d })}
+                  placeholder="Select expiry date"
+                />
+              </Fld>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Fld label="Cost"><Input type="number" step="0.01" value={f.cost} onChange={(e) => setF({ ...f, cost: e.target.value })} /></Fld>
+              <Fld label="Currency">
+                <Select value={f.currency} onValueChange={(v) => setF({ ...f, currency: v as "BDT" | "USD" })}>
+                  <SelectTrigger className="cursor-pointer"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="USD" className="cursor-pointer">USD</SelectItem><SelectItem value="BDT" className="cursor-pointer">BDT</SelectItem></SelectContent>
+                </Select>
+              </Fld>
+            </div>
+            <Fld label="Notes"><Textarea value={f.notes || ""} onChange={(e) => setF({ ...f, notes: e.target.value })} rows={3} /></Fld>
           </div>
-          <Fld label="Client (optional)">
-            <Select value={f.client_id} onValueChange={(v) => setF({ ...f, client_id: v })}>
-              <SelectTrigger><SelectValue placeholder="Internal" /></SelectTrigger>
-              <SelectContent>{clients.map((c) => <SelectItem key={c.id} value={c.id}>{c.company_name}</SelectItem>)}</SelectContent>
-            </Select>
-          </Fld>
-          <div className="grid grid-cols-3 gap-3">
-            <Fld label="Cost"><Input type="number" step="0.01" value={f.cost} onChange={(e) => setF({ ...f, cost: e.target.value })} /></Fld>
-            <Fld label="Currency">
-              <Select value={f.currency} onValueChange={(v) => setF({ ...f, currency: v as "BDT" | "USD" })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="USD">USD</SelectItem><SelectItem value="BDT">BDT</SelectItem></SelectContent>
-              </Select>
-            </Fld>
-            <Fld label="Expires"><Input type="date" value={f.expires_at} onChange={(e) => setF({ ...f, expires_at: e.target.value })} /></Fld>
+
+          <div className="py-3 px-6 border-t border-border shrink-0 bg-card/50">
+            <SheetFooter className="mt-0">
+              <Button type="submit" disabled={submitting} className="w-full cursor-pointer">{submitting ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : "Add asset"}</Button>
+            </SheetFooter>
           </div>
-          <Fld label="Notes"><Textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} rows={3} /></Fld>
-          <SheetFooter><Button type="submit" disabled={submitting}>{submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add asset"}</Button></SheetFooter>
         </form>
       </SheetContent>
     </Sheet>

@@ -581,7 +581,7 @@ export default function DomainsPage() {
       {/* Add / Edit Sheet Drawer */}
       <Sheet open={formOpen} onOpenChange={setFormOpen}>
         <SheetContent className="flex flex-col h-full p-0 max-w-[500px] sm:max-w-[540px]">
-          <div className="py-4 px-6 border-b border-border/40 shrink-0">
+          <div className="py-3 px-6 border-b border-border/40 shrink-0">
             <SheetHeader>
               <SheetTitle>{editingDomain ? "Edit Domain Tracker" : "Add Domain Tracker"}</SheetTitle>
               <SheetDescription>
@@ -701,9 +701,9 @@ export default function DomainsPage() {
               </div>
             </div>
 
-            <div className="py-4 px-6 border-t border-border shrink-0 bg-card/50">
+            <div className="py-3 px-6 border-t border-border shrink-0 bg-card/50">
               <SheetFooter className="mt-0">
-                <Button type="submit" disabled={formSubmitting} className="w-full sm:w-auto cursor-pointer">
+                <Button type="submit" disabled={formSubmitting} className="w-full cursor-pointer">
                   {formSubmitting ? (
                     <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
                   ) : (

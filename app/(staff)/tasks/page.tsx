@@ -516,43 +516,54 @@ function NewTaskSheet({ projects, defaultProjectId, onCreated }: {
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild><Button><Plus className="h-4 w-4 mr-1.5" /> New task</Button></SheetTrigger>
-      <SheetContent className="overflow-y-auto">
-        <SheetHeader><SheetTitle>New task</SheetTitle><SheetDescription>Add work to a project board.</SheetDescription></SheetHeader>
-        <form onSubmit={submit} className="space-y-4 mt-6">
-          <Fld label="Title"><Input required value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} /></Fld>
-          <Fld label="Project">
-            <Select value={f.project_id} onValueChange={(v) => setF({ ...f, project_id: v })}>
-              <SelectTrigger><SelectValue placeholder="Select project" /></SelectTrigger>
-              <SelectContent>{projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
-            </Select>
-          </Fld>
-          <Fld label="Description"><Textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} rows={3} /></Fld>
-          <div className="grid grid-cols-2 gap-3">
-            <Fld label="Status">
-              <Select value={f.status} onValueChange={(v) => setF({ ...f, status: v as Status })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{STATUSES.map((s) => <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>)}</SelectContent>
+      <SheetContent className="flex flex-col h-full p-0 w-full sm:max-w-lg">
+        <div className="py-3 px-6 border-b border-border/40 shrink-0">
+          <SheetHeader>
+            <SheetTitle>New task</SheetTitle>
+            <SheetDescription>Add work to a project board.</SheetDescription>
+          </SheetHeader>
+        </div>
+
+        <form onSubmit={submit} className="flex flex-col flex-1 min-h-0">
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            <Fld label="Title"><Input required value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} /></Fld>
+            <Fld label="Project">
+              <Select value={f.project_id} onValueChange={(v) => setF({ ...f, project_id: v })}>
+                <SelectTrigger className="cursor-pointer"><SelectValue placeholder="Select project" /></SelectTrigger>
+                <SelectContent>{projects.map((p) => <SelectItem key={p.id} value={p.id} className="cursor-pointer">{p.name}</SelectItem>)}</SelectContent>
               </Select>
             </Fld>
-            <Fld label="Priority">
-              <Select value={f.priority} onValueChange={(v) => setF({ ...f, priority: v as Priority })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{["low", "normal", "high", "critical"].map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
-              </Select>
-            </Fld>
+            <Fld label="Description"><Textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} rows={3} /></Fld>
+            <div className="grid grid-cols-2 gap-3">
+              <Fld label="Status">
+                <Select value={f.status} onValueChange={(v) => setF({ ...f, status: v as Status })}>
+                  <SelectTrigger className="cursor-pointer"><SelectValue /></SelectTrigger>
+                  <SelectContent>{STATUSES.map((s) => <SelectItem key={s.id} value={s.id} className="cursor-pointer">{s.label}</SelectItem>)}</SelectContent>
+                </Select>
+              </Fld>
+              <Fld label="Priority">
+                <Select value={f.priority} onValueChange={(v) => setF({ ...f, priority: v as Priority })}>
+                  <SelectTrigger className="cursor-pointer"><SelectValue /></SelectTrigger>
+                  <SelectContent>{["low", "normal", "high", "critical"].map((p) => <SelectItem key={p} value={p} className="cursor-pointer">{p}</SelectItem>)}</SelectContent>
+                </Select>
+              </Fld>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Fld label="Due date">
+                <FlatDatePicker 
+                  date={f.due_date} 
+                  onChange={(d) => setF({ ...f, due_date: d })} 
+                />
+              </Fld>
+              <Fld label="Tags (comma sep)"><Input value={f.tags} onChange={(e) => setF({ ...f, tags: e.target.value })} placeholder="Frontend, API" /></Fld>
+            </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Fld label="Due date">
-              <FlatDatePicker 
-                date={f.due_date} 
-                onChange={(d) => setF({ ...f, due_date: d })} 
-              />
-            </Fld>
-            <Fld label="Tags (comma sep)"><Input value={f.tags} onChange={(e) => setF({ ...f, tags: e.target.value })} placeholder="Frontend, API" /></Fld>
+
+          <div className="py-3 px-6 border-t border-border shrink-0 bg-card/50">
+            <SheetFooter className="mt-0">
+              <Button type="submit" disabled={submitting} className="w-full cursor-pointer">{submitting ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : "Create task"}</Button>
+            </SheetFooter>
           </div>
-          <SheetFooter>
-            <Button type="submit" disabled={submitting}>{submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create task"}</Button>
-          </SheetFooter>
         </form>
       </SheetContent>
     </Sheet>

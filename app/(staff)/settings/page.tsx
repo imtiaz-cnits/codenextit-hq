@@ -39,16 +39,6 @@ const ALL_MODULES = (() => {
   for (const item of list) {
     if (!seen.has(item.module)) {
       seen.add(item.module);
-      
-      // Customize specific group modules for clear labeling in permissions panel
-      if (item.module === "finance") {
-        item.label = "Finance (Quotes/Invoices)";
-        item.icon = Receipt;
-      } else if (item.module === "accounts") {
-        item.label = "Accounts (Income/Expense/Investment/Due/Salary)";
-        item.icon = Banknote;
-      }
-      
       filtered.push(item);
     }
   }
@@ -63,21 +53,40 @@ export default function SettingsPage() {
         <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
         <p className="text-muted-foreground mt-1">Manage your profile, team and access roles.</p>
       </div>
-      <Tabs defaultValue="profile">
-        <TabsList className="bg-muted/40 p-1 rounded-xl cursor-pointer">
-          <TabsTrigger value="profile" className="cursor-pointer"><User className="h-3.5 w-3.5 mr-1.5" /> Profile</TabsTrigger>
-          {hasRole("super_admin") && <TabsTrigger value="users" className="cursor-pointer"><UserCog className="h-3.5 w-3.5 mr-1.5" /> Users List</TabsTrigger>}
-          {hasRole("super_admin") && <TabsTrigger value="roles" className="cursor-pointer"><Shield className="h-3.5 w-3.5 mr-1.5" /> Roles & Permissions</TabsTrigger>}
-          {hasRole("super_admin") && <TabsTrigger value="branding" className="cursor-pointer"><Palette className="h-3.5 w-3.5 mr-1.5" /> Branding</TabsTrigger>}
-          {hasRole("super_admin") && <TabsTrigger value="integrations" className="cursor-pointer"><Webhook className="h-3.5 w-3.5 mr-1.5" /> Integrations</TabsTrigger>}
-          <TabsTrigger value="workspace" className="cursor-pointer"><Shield className="h-3.5 w-3.5 mr-1.5" /> Workspace</TabsTrigger>
-        </TabsList>
-        <TabsContent value="profile" className="mt-4"><ProfilePanel /></TabsContent>
-        {hasRole("super_admin") && <TabsContent value="users" className="mt-4"><UsersPanel /></TabsContent>}
-        {hasRole("super_admin") && <TabsContent value="roles" className="mt-4"><RolesPanel /></TabsContent>}
-        {hasRole("super_admin") && <TabsContent value="branding" className="mt-4"><BrandingPanel /></TabsContent>}
-        {hasRole("super_admin") && <TabsContent value="integrations" className="mt-4"><IntegrationsPanel /></TabsContent>}
-        <TabsContent value="workspace" className="mt-4"><WorkspacePanel /></TabsContent>
+      <Tabs defaultValue="profile" className="space-y-6">
+        <div className="overflow-x-auto pb-2 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide">
+          <TabsList className={cn(
+            "inline-flex w-auto md:grid md:w-full md:max-w-[750px] p-1 h-auto bg-muted/50 rounded-xl whitespace-nowrap",
+            hasRole("super_admin") ? "md:grid-cols-5" : "md:grid-cols-2"
+          )}>
+            <TabsTrigger value="profile" className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer">
+              <User className="h-4 w-4" /> Profile
+            </TabsTrigger>
+            {hasRole("super_admin") && (
+              <TabsTrigger value="access" className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer">
+                <Shield className="h-4 w-4" /> Access Control
+              </TabsTrigger>
+            )}
+            {hasRole("super_admin") && (
+              <TabsTrigger value="branding" className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer">
+                <Palette className="h-4 w-4" /> Branding
+              </TabsTrigger>
+            )}
+            {hasRole("super_admin") && (
+              <TabsTrigger value="integrations" className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer">
+                <Webhook className="h-4 w-4" /> Integrations
+              </TabsTrigger>
+            )}
+            <TabsTrigger value="workspace" className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer">
+              <Shield className="h-4 w-4" /> Workspace
+            </TabsTrigger>
+          </TabsList>
+        </div>
+        <TabsContent value="profile" className="mt-4 outline-none"><ProfilePanel /></TabsContent>
+        {hasRole("super_admin") && <TabsContent value="access" className="mt-4 outline-none"><AccessControlPanel /></TabsContent>}
+        {hasRole("super_admin") && <TabsContent value="branding" className="mt-4 outline-none"><BrandingPanel /></TabsContent>}
+        {hasRole("super_admin") && <TabsContent value="integrations" className="mt-4 outline-none"><IntegrationsPanel /></TabsContent>}
+        <TabsContent value="workspace" className="mt-4 outline-none"><WorkspacePanel /></TabsContent>
       </Tabs>
     </div>
   );
@@ -525,6 +534,48 @@ function UsersPanel() {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+function AccessControlPanel() {
+  const [subTab, setSubTab] = useState<"users" | "roles">("users");
+
+  return (
+    <div className="space-y-6">
+      {/* Horizontal Segmented Switcher */}
+      <div className="flex w-full sm:max-w-md bg-card/45 border border-border/50 shadow-sm p-1.5 rounded-2xl">
+        <button
+          onClick={() => setSubTab("users")}
+          className={cn(
+            "flex items-center justify-center gap-2 flex-1 px-4 py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all duration-200 cursor-pointer",
+            subTab === "users"
+              ? "bg-primary text-primary-foreground shadow-sm font-bold"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
+          )}
+        >
+          <UserCog className="h-4 w-4" />
+          <span>Users List</span>
+        </button>
+
+        <button
+          onClick={() => setSubTab("roles")}
+          className={cn(
+            "flex items-center justify-center gap-2 flex-1 px-4 py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all duration-200 cursor-pointer",
+            subTab === "roles"
+              ? "bg-primary text-primary-foreground shadow-sm font-bold"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
+          )}
+        >
+          <Shield className="h-4 w-4" />
+          <span>Roles & Permissions</span>
+        </button>
+      </div>
+
+      {/* Full Width Active Content Panel */}
+      <div className="w-full">
+        {subTab === "users" ? <UsersPanel /> : <RolesPanel />}
+      </div>
+    </div>
   );
 }
 

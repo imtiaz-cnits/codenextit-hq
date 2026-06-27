@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { useAuth } from "../../lib/auth-context";
 import { initials } from "../../lib/format";
+import { cn } from "../../lib/utils";
 
 // Reuse STAFF_GROUPS navigation definition from AppShell
 import { STAFF_GROUPS } from "../shell/app-shell";
@@ -27,7 +28,7 @@ export function StaffSidebar({ serverUser }: { serverUser: any }) {
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
       <SidebarHeader className="h-14 justify-center border-b border-sidebar-border px-2 py-0">
-        <Link href="/dashboard" className="flex items-center gap-2 px-2 py-1.5">
+        <Link href="/dashboard" className={cn("flex items-center gap-2 py-1.5 rounded-lg transition-colors", collapsed ? "h-8 w-8 justify-center p-0" : "w-full px-2")}>
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg gradient-primary shadow-elegant">
             <Sparkles className="h-4 w-4 text-primary-foreground" />
           </div>
@@ -74,10 +75,10 @@ export function StaffSidebar({ serverUser }: { serverUser: any }) {
         })}
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-sidebar-border">
+      <SidebarFooter className="border-t border-sidebar-border px-2 py-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="flex w-full items-center gap-2 rounded-md p-2 hover:bg-sidebar-accent transition-colors cursor-pointer">
+            <button className={cn("flex items-center gap-2 rounded-md transition-colors cursor-pointer hover:bg-sidebar-accent", collapsed ? "h-8 w-8 justify-center p-0" : "w-full p-2")}>
               <Avatar className="h-8 w-8 shrink-0">
                 {userProfile?.avatar_url && <AvatarImage src={userProfile.avatar_url} className="object-cover" />}
                 <AvatarFallback className="bg-primary/15 text-primary text-xs">

@@ -20,6 +20,7 @@ import {
   ShieldAlert, Briefcase, Calendar, Banknote, Shield, Upload, Camera, X, Clock
 } from "lucide-react";
 import { FlatDatePicker } from "../../../components/ui/flat-date-picker";
+import { FlatTimePicker } from "../../../components/ui/flat-time-picker";
 import { initials, avatarColor, formatCurrency, formatDate } from "../../../lib/format";
 import { cn } from "../../../lib/utils";
 import { toast } from "sonner";
@@ -431,136 +432,138 @@ function EmployeeSheet({
           <Button><Plus className="h-4 w-4 mr-1.5" /> Add employee</Button>
         </SheetTrigger>
       )}
-      <SheetContent className="overflow-y-auto sm:max-w-[450px]">
-        <SheetHeader>
-          <SheetTitle>{mode === "create" ? "Add employee" : "Edit employee"}</SheetTitle>
-          <SheetDescription>
-            {mode === "create"
-              ? "Add a new team member to the directory."
-              : `Update information for ${initialData?.full_name}.`}
-          </SheetDescription>
-        </SheetHeader>
-        <form onSubmit={submit} className="space-y-4 mt-8">
-          <div className="flex flex-col items-center gap-4 mb-6">
-            <div className="relative group">
-              <Avatar className="h-24 w-24 border-4 border-muted shadow-lg">
-                {f.avatar_url && <AvatarImage src={f.avatar_url} className="object-cover" />}
-                <AvatarFallback className="text-2xl bg-primary/10 text-primary">
-                  <Camera className="h-8 w-8" />
-                </AvatarFallback>
-              </Avatar>
-              <label
-                className="absolute inset-0 flex items-center justify-center bg-black/40 text-white rounded-full opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity"
-                htmlFor="avatar-upload"
-              >
-                {uploading ? "..." : <Upload className="h-6 w-6" />}
-              </label>
-              <input
-                id="avatar-upload"
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleUpload}
-                disabled={uploading}
-              />
-              {f.avatar_url && (
-                <Button
-                  type="button"
-                  variant="destructive"
-                  size="icon"
-                  className="absolute -top-1 -right-1 h-6 w-6 rounded-full"
-                  onClick={() => setF({ ...f, avatar_url: "" })}
+      <SheetContent className="flex flex-col h-full p-0 w-full sm:max-w-[450px]">
+        <div className="py-3 px-6 border-b border-border/40 shrink-0">
+          <SheetHeader>
+            <SheetTitle>{mode === "create" ? "Add employee" : "Edit employee"}</SheetTitle>
+            <SheetDescription>
+              {mode === "create"
+                ? "Add a new team member to the directory."
+                : `Update information for ${initialData?.full_name}.`}
+            </SheetDescription>
+          </SheetHeader>
+        </div>
+
+        <form onSubmit={submit} className="flex flex-col flex-1 min-h-0">
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            <div className="flex flex-col items-center gap-4 mb-6">
+              <div className="relative group">
+                <Avatar className="h-24 w-24 border-4 border-muted shadow-lg">
+                  {f.avatar_url && <AvatarImage src={f.avatar_url} className="object-cover" />}
+                  <AvatarFallback className="text-2xl bg-primary/10 text-primary">
+                    <Camera className="h-8 w-8" />
+                  </AvatarFallback>
+                </Avatar>
+                <label
+                  className="absolute inset-0 flex items-center justify-center bg-black/40 text-white rounded-full opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity"
+                  htmlFor="avatar-upload"
                 >
-                  <X className="h-3 w-3" />
-                </Button>
-              )}
+                  {uploading ? "..." : <Upload className="h-6 w-6" />}
+                </label>
+                <input
+                  id="avatar-upload"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleUpload}
+                  disabled={uploading}
+                />
+                {f.avatar_url && (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="icon"
+                    className="absolute -top-1 -right-1 h-6 w-6 rounded-full"
+                    onClick={() => setF({ ...f, avatar_url: "" })}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
+              <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest">
+                {f.avatar_url ? "Profile Picture Set" : "Upload Profile Picture"}
+              </p>
             </div>
-            <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest">
-              {f.avatar_url ? "Profile Picture Set" : "Upload Profile Picture"}
-            </p>
-          </div>
 
-          <Fld label="Employee ID (Custom)">
-            <Input placeholder="e.g. CNDEV-101" value={f.employee_code} onChange={(e) => setF({ ...f, employee_code: e.target.value })} />
-          </Fld>
-          <Fld label="Full name">
-            <Input required value={f.full_name} onChange={(e) => setF({ ...f, full_name: e.target.value })} />
-          </Fld>
-          <div className="grid grid-cols-2 gap-4">
-            <Fld label="Email Address">
-              <Input type="email" required value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
+            <Fld label="Employee ID (Custom)">
+              <Input placeholder="e.g. CNDEV-101" value={f.employee_code} onChange={(e) => setF({ ...f, employee_code: e.target.value })} />
             </Fld>
-            <Fld label="Phone Number">
-              <Input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} />
+            <Fld label="Full name">
+              <Input required value={f.full_name} onChange={(e) => setF({ ...f, full_name: e.target.value })} />
             </Fld>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <Fld label="Designation">
-              <Input value={f.designation} onChange={(e) => setF({ ...f, designation: e.target.value })} />
-            </Fld>
-            <Fld label="Department">
-              <Select value={f.department} onValueChange={(v) => setF({ ...f, department: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {allDepts.map((d) => (
-                    <SelectItem key={d} value={d}>{d}</SelectItem>
-                  ))}
-                  <SelectItem value="create_new" className="font-semibold text-primary cursor-pointer border-t border-border mt-1">
-                    + Create New Department...
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </Fld>
-          </div>
-          {f.department === "create_new" && (
-            <div className="space-y-1.5 bg-primary/5 p-3 rounded-xl border border-primary/10">
-              <Label htmlFor="newDept" className="text-xs font-semibold text-primary">New Department Name *</Label>
-              <Input
-                id="newDept"
-                value={newDeptName}
-                onChange={e => setNewDeptName(e.target.value)}
-                placeholder="e.g. Marketing, HR, QA"
-                required
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <Fld label="Email Address">
+                <Input type="email" required value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
+              </Fld>
+              <Fld label="Phone Number">
+                <Input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} />
+              </Fld>
             </div>
-          )}
-          <div className="grid grid-cols-2 gap-4">
-            <Fld label="Blood Group">
-              <Input value={f.blood_group} onChange={(e) => setF({ ...f, blood_group: e.target.value })} />
-            </Fld>
-            <Fld label="Joining Date">
-              <FlatDatePicker date={f.joined_at} onChange={(v) => setF({ ...f, joined_at: v })} />
-            </Fld>
-          </div>
-          <Fld label="Emergency Contact Info">
-            <Input value={f.emergency_contact} onChange={(e) => setF({ ...f, emergency_contact: e.target.value })} />
-          </Fld>
-          <Fld label="Base Monthly Salary (BDT)">
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">৳</span>
-              <Input type="number" className="pl-7" value={f.base_salary} onChange={(e) => setF({ ...f, base_salary: e.target.value })} />
+            <div className="grid grid-cols-2 gap-4">
+              <Fld label="Designation">
+                <Input value={f.designation} onChange={(e) => setF({ ...f, designation: e.target.value })} />
+              </Fld>
+              <Fld label="Department">
+                <Select value={f.department} onValueChange={(v) => setF({ ...f, department: v })}>
+                  <SelectTrigger className="cursor-pointer"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {allDepts.map((d) => (
+                      <SelectItem key={d} value={d} className="cursor-pointer">{d}</SelectItem>
+                    ))}
+                    <SelectItem value="create_new" className="font-semibold text-primary cursor-pointer border-t border-border mt-1">
+                      + Create New Department...
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </Fld>
             </div>
-          </Fld>
-
-          <div className="grid grid-cols-2 gap-4 p-4 bg-primary/5 rounded-2xl border border-primary/10 mt-2">
-            <Fld label="Office Start">
+            {f.department === "create_new" && (
+              <div className="space-y-1.5 bg-primary/5 p-3 rounded-xl border border-primary/10">
+                <Label htmlFor="newDept" className="text-xs font-semibold text-primary">New Department Name *</Label>
+                <Input
+                  id="newDept"
+                  value={newDeptName}
+                  onChange={e => setNewDeptName(e.target.value)}
+                  placeholder="e.g. Marketing, HR, QA"
+                  required
+                />
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-4">
+              <Fld label="Blood Group">
+                <Input value={f.blood_group} onChange={(e) => setF({ ...f, blood_group: e.target.value })} />
+              </Fld>
+              <Fld label="Joining Date">
+                <FlatDatePicker date={f.joined_at} onChange={(v) => setF({ ...f, joined_at: v })} />
+              </Fld>
+            </div>
+            <Fld label="Emergency Contact Info">
+              <Input value={f.emergency_contact} onChange={(e) => setF({ ...f, emergency_contact: e.target.value })} />
+            </Fld>
+            <Fld label="Base Monthly Salary (BDT)">
               <div className="relative">
-                <Input type="time" value={f.office_start} onChange={(e) => setF({ ...f, office_start: e.target.value })} className="pl-9" />
-                <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary" />
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">৳</span>
+                <Input type="number" className="pl-7" value={f.base_salary} onChange={(e) => setF({ ...f, base_salary: e.target.value })} />
               </div>
             </Fld>
-            <Fld label="Office End">
-              <div className="relative">
-                <Input type="time" value={f.office_end} onChange={(e) => setF({ ...f, office_end: e.target.value })} className="pl-9" />
-                <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary" />
-              </div>
-            </Fld>
+
+            <div className="grid grid-cols-2 gap-4 p-4 bg-primary/5 rounded-2xl border border-primary/10 mt-2">
+              <Fld label="Office Start">
+                <FlatTimePicker value={f.office_start} onChange={(v) => setF({ ...f, office_start: v })} placeholder="09:00 AM" />
+              </Fld>
+              <Fld label="Office End">
+                <FlatTimePicker value={f.office_end} onChange={(v) => setF({ ...f, office_end: v })} placeholder="06:00 PM" />
+              </Fld>
+            </div>
           </div>
-          <SheetFooter className="pt-4">
-            <Button type="submit" className="w-full">
-              {mode === "create" ? "Add to Directory" : "Save Changes"}
-            </Button>
-          </SheetFooter>
+
+          <div className="py-3 px-6 border-t border-border shrink-0 bg-card/50">
+            <SheetFooter className="mt-0">
+              <Button type="submit" className="w-full cursor-pointer">
+                {mode === "create" ? "Add to Directory" : "Save Changes"}
+              </Button>
+            </SheetFooter>
+          </div>
         </form>
       </SheetContent>
     </Sheet>

@@ -14,7 +14,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Checkbox } from "../../../components/ui/checkbox";
 import { ScrollArea } from "../../../components/ui/scroll-area";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "../../../components/ui/dialog";
-import { Key, Server, Globe, Mail, Cpu, ShieldAlert, Eye, EyeOff, Copy, Check, Plus, Edit, Trash2, Search, Users, History, Loader2, ExternalLink, Shield, ShieldCheck, Folder, ChevronLeft, Maximize2, MoreVertical } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "../../../components/ui/alert-dialog";
+import { Key, Server, Globe, Mail, Cpu, ShieldAlert, Eye, EyeOff, Copy, Check, Plus, Edit, Trash2, Search, Users, History, Loader2, ExternalLink, Shield, ShieldCheck, Folder, ChevronLeft, Maximize2, MoreVertical, FileText, Paperclip } from "lucide-react";
 import { toast } from "sonner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../../components/ui/dropdown-menu";
 import { formatDate } from "../../../lib/format";
@@ -47,6 +48,8 @@ interface CredentialRow {
   has_password: boolean;
   permission_level: "view" | "edit";
   shared_with: SharedStaffMember[];
+  file_url: string | null;
+  file_name: string | null;
 }
 
 interface Client {
@@ -146,6 +149,18 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [sharing, setSharing] = useState<Record<string, { selected: boolean; level: "view" | "edit" }>>({});
 
+  // Attachment upload / download states
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null);
+
+  // Delete Confirmation Dialog states
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteType, setDeleteType] = useState<"folder" | "credential" | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [deleteTargetName, setDeleteTargetName] = useState<string | null>(null);
+
   // Folder actions state
   const [renameFolderOpen, setRenameFolderOpen] = useState(false);
   const [renameFolderId, setRenameFolderId] = useState("");
@@ -189,22 +204,43 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
     }
   };
 
-  const handleDeleteFolder = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to delete folder "${name}"? All credentials inside this folder will also be deleted.`)) return;
+  const handleDeleteFolder = (id: string, name: string) => {
+    setDeleteTargetId(id);
+    setDeleteTargetName(name);
+    setDeleteType("folder");
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTargetId || !deleteType) return;
     try {
-      const res = await fetchWithAuth(`/api/vault/folders?id=${id}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Failed to delete folder");
-      }
-      toast.success("Folder deleted successfully");
-      if (onRefreshClients) {
-        await onRefreshClients();
+      if (deleteType === "folder") {
+        const res = await fetchWithAuth(`/api/vault/folders?id=${deleteTargetId}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || "Failed to delete folder");
+        }
+        toast.success("Folder deleted successfully");
+        if (onRefreshClients) {
+          await onRefreshClients();
+        }
+      } else if (deleteType === "credential") {
+        const res = await fetchWithAuth(`/api/vault/credentials?id=${deleteTargetId}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) throw new Error("Failed to delete credential");
+        toast.success("Credential deleted successfully");
+        void loadCredentials();
       }
     } catch (err: any) {
       toast.error(err.message);
+    } finally {
+      setDeleteConfirmOpen(false);
+      setDeleteTargetId(null);
+      setDeleteTargetName(null);
+      setDeleteType(null);
     }
   };
 
@@ -342,7 +378,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
       const { data: roleData } = await supabase
         .from("user_roles" as any)
         .select("user_id")
-        .in("role", ["staff", "project_manager", "super_admin"]);
+        .in("role", ["staff", "project_manager", "super_admin", "admin"]);
 
       const userIds = [...new Set((roleData || []).map((r: any) => r.user_id as string))];
       if (userIds.length === 0) return;
@@ -384,6 +420,72 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
       setLoadingLogs(false);
     }
   }
+
+  // Handle file uploads to private vault_attachments bucket
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (ext !== "txt" && ext !== "pdf") {
+      toast.error("Only .txt and .pdf files are allowed");
+      return;
+    }
+
+    setUploadingFile(true);
+    try {
+      const fileExt = file.name.split(".").pop();
+      const randomPath = `${crypto.randomUUID()}.${fileExt}`;
+      const { error } = await supabase.storage
+        .from("vault_attachments")
+        .upload(randomPath, file, { cacheControl: "3600", upsert: false });
+
+      if (error) throw error;
+
+      setFileUrl(randomPath);
+      setFileName(file.name);
+      toast.success("File uploaded successfully!");
+    } catch (err: any) {
+      console.error("Storage upload error:", err);
+      toast.error(`File upload failed: ${err.message || err}`);
+    } finally {
+      setUploadingFile(false);
+    }
+  };
+
+  const handleRemoveFile = () => {
+    setFileUrl(null);
+    setFileName(null);
+  };
+
+  // Generate private signed URL to download attachment securely
+  const handleDownloadAttachment = async (urlStr: string, nameStr: string, credId: string) => {
+    setDownloadingFileId(credId);
+    try {
+      const { data, error } = await supabase.storage
+        .from("vault_attachments")
+        .createSignedUrl(urlStr, 60);
+
+      if (error) throw error;
+      if (data?.signedUrl) {
+        const a = document.createElement("a");
+        a.href = data.signedUrl;
+        a.download = nameStr;
+        a.target = "_blank";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        toast.success("Download started!");
+      } else {
+        throw new Error("Could not generate signed download link.");
+      }
+    } catch (err: any) {
+      console.error("Download error:", err);
+      toast.error(`Download failed: ${err.message}`);
+    } finally {
+      setDownloadingFileId(null);
+    }
+  };
 
   // Handle Decryption
   async function handleDecrypt(id: string, action: "view" | "copy") {
@@ -438,18 +540,11 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
   };
 
   // Delete Action
-  const handleDelete = async (id: string, title: string) => {
-    if (!confirm(`Are you sure you want to delete "${title}" credential?`)) return;
-    try {
-      const res = await fetchWithAuth(`/api/vault/credentials?id=${id}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error("Failed to delete credential");
-      toast.success("Credential deleted successfully");
-      void loadCredentials();
-    } catch (err: any) {
-      toast.error(err.message);
-    }
+  const handleDelete = (id: string, title: string) => {
+    setDeleteTargetId(id);
+    setDeleteTargetName(title);
+    setDeleteType("credential");
+    setDeleteConfirmOpen(true);
   };
 
   // Dynamic Categories gathered from DB + Default Categories
@@ -478,6 +573,9 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
     setFormPasswordVisible(false);
     setNotes("");
     setCustomFields([]);
+    setFileUrl(null);
+    setFileName(null);
+    setUploadingFile(false);
 
     // Clear sharing
     const initialSharing: Record<string, { selected: boolean; level: "view" | "edit" }> = {};
@@ -509,6 +607,9 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
     setFormPasswordVisible(false);
     setNotes(cred.notes || "");
     setCustomFields(cred.custom_fields || []);
+    setFileUrl(cred.file_url || null);
+    setFileName(cred.file_name || null);
+    setUploadingFile(false);
 
     // Prepare sharing values
     const currentSharing: Record<string, { selected: boolean; level: "view" | "edit" }> = {};
@@ -558,6 +659,8 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
       notes,
       custom_fields: validCustomFields,
       shared_staff,
+      file_url: fileUrl,
+      file_name: fileName,
     };
 
     try {
@@ -904,7 +1007,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
               const count = folderCounts[c.id] ?? 0;
               const gradient = FOLDER_GRADIENTS[index % FOLDER_GRADIENTS.length];
               const theme = FOLDER_COLORS[index % FOLDER_COLORS.length];
-              const hasEditPermission = isAdmin || c.permission_level === "edit";
+              const hasEditPermission = c.permission_level === "edit";
 
               return (
                 <Card
@@ -1192,7 +1295,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
       {/* Add / Edit Sheet Drawer */}
       <Sheet open={formOpen} onOpenChange={setFormOpen}>
         <SheetContent className="flex flex-col h-full p-0 max-w-[500px] sm:max-w-[540px]">
-          <div className="py-4 px-6 border-b border-border/40 shrink-0">
+          <div className="py-3 px-6 border-b border-border/40 shrink-0">
             <SheetHeader>
               <SheetTitle>{editingCred ? "Edit Secure Credential" : "Add Secure Credential"}</SheetTitle>
               <SheetDescription>
@@ -1249,7 +1352,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                     </SelectTrigger>
                     <SelectContent>
                       {clients
-                        .filter(c => isAdmin || c.permission_level === "edit")
+                        .filter(c => c.permission_level === "edit")
                         .map(c => (
                           <SelectItem key={c.id} value={c.id} className="cursor-pointer">
                             {c.company_name}
@@ -1327,6 +1430,54 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                   onChange={e => setNotes(e.target.value)}
                   placeholder="Any special access conditions, OTP backups, etc."
                 />
+              </div>
+
+              {/* File upload attachment */}
+              <div className="space-y-1.5 border-t border-border pt-4">
+                <Label htmlFor="file-upload" className="text-xs font-semibold flex items-center gap-1">
+                  <Paperclip className="h-3.5 w-3.5" /> Attachment (.txt, .pdf only)
+                </Label>
+                {fileName ? (
+                  <div className="flex items-center justify-between bg-muted/40 rounded-xl px-3 py-2 border border-border/30 text-sm">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <FileText className="h-4 w-4 text-primary shrink-0" />
+                      <span className="truncate text-foreground font-mono text-xs max-w-[280px]">{fileName}</span>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 text-destructive hover:bg-destructive/10 hover:text-destructive cursor-pointer shrink-0"
+                      onClick={handleRemoveFile}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="relative flex items-center justify-center border border-dashed border-border/60 hover:border-primary/50 rounded-xl p-4 cursor-pointer transition-colors bg-muted/10">
+                    <Input
+                      id="file-upload"
+                      type="file"
+                      accept=".txt,.pdf"
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      onChange={handleFileChange}
+                      disabled={uploadingFile}
+                    />
+                    <div className="flex flex-col items-center gap-1.5 text-muted-foreground text-xs">
+                      {uploadingFile ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                          <span>Uploading file...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="h-4 w-4 text-muted-foreground" />
+                          <span>Click to upload credentials file (.txt, .pdf)</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Custom fields form inputs list */}
@@ -1445,9 +1596,9 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
               )}
             </div>
 
-            <div className="py-4 px-6 border-t border-border shrink-0 bg-card/50">
+            <div className="py-3 px-6 border-t border-border shrink-0 bg-card/50">
               <SheetFooter className="mt-0">
-                <Button type="submit" disabled={formSubmitting} className="w-full sm:w-auto cursor-pointer">
+                <Button type="submit" disabled={formSubmitting} className="w-full cursor-pointer">
                   {formSubmitting ? (
                     <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
                   ) : (
@@ -1612,6 +1763,34 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                     <span className="text-xs text-muted-foreground font-semibold">Notes / Description</span>
                     <div className="text-xs text-foreground bg-accent/10 border border-border/20 p-3 rounded-xl italic leading-relaxed text-muted-foreground/90">
                       {quickViewCred.notes}
+                    </div>
+                  </div>
+                )}
+
+                {/* Attachment file */}
+                {quickViewCred.file_url && (
+                  <div className="space-y-1 border-t border-border/40 pt-3">
+                    <span className="text-xs text-muted-foreground font-semibold">Attachment</span>
+                    <div className="flex items-center justify-between bg-muted/40 rounded-xl px-3 py-2 border border-border/30 text-sm">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FileText className="h-4 w-4 text-primary shrink-0" />
+                        <span className="font-mono text-foreground text-xs truncate max-w-[280px]">
+                          {quickViewCred.file_name || "credential-file"}
+                         </span>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={downloadingFileId === quickViewCred.id}
+                        className="h-8 text-primary hover:text-primary/80 hover:bg-primary/5 cursor-pointer flex items-center gap-1 shrink-0"
+                        onClick={() => handleDownloadAttachment(quickViewCred.file_url!, quickViewCred.file_name!, quickViewCred.id)}
+                      >
+                        {downloadingFileId === quickViewCred.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          "Download"
+                        )}
+                      </Button>
                     </div>
                   </div>
                 )}
@@ -1860,6 +2039,38 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* Delete Confirmation Alert Dialog */}
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent className="max-w-[420px] bg-card/95 border border-border/60 rounded-3xl shadow-xl backdrop-blur-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5 text-destructive" />
+              {deleteType === "folder" ? "Delete Folder?" : "Delete Credential?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-sm leading-relaxed mt-2 text-muted-foreground">
+              {deleteType === "folder" ? (
+                <>
+                  Are you sure you want to delete the folder <span className="font-semibold text-foreground">"{deleteTargetName}"</span>? All credentials inside this folder will also be permanently deleted. This action cannot be undone.
+                </>
+              ) : (
+                <>
+                  Are you sure you want to delete the credential card <span className="font-semibold text-foreground">"{deleteTargetName}"</span>? This action cannot be undone.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-4 gap-2">
+            <AlertDialogCancel className="cursor-pointer rounded-xl">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 cursor-pointer rounded-xl"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

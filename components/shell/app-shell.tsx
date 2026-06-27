@@ -50,7 +50,7 @@ export const STAFF_GROUPS: { label: string; items: NavItem[] }[] = [
     label: "Store",
     items: [
       { to: "/vault", label: "Vault", icon: FolderLock, module: "vault" },
-      { to: "/notes", label: "Notes", icon: FileText, module: "vault" },
+      { to: "/notes", label: "Notes", icon: FileText, module: "notes" },
     ],
   },
   {
@@ -64,16 +64,17 @@ export const STAFF_GROUPS: { label: string; items: NavItem[] }[] = [
   {
     label: "Infrastructure",
     items: [
-      { to: "/infrastructure/generator", label: "Generator Logs", icon: Zap, module: "infrastructure" },
-      { to: "/domains", label: "Domain Tracker", icon: Globe, module: "vault" },
+      { to: "/infrastructure/generator", label: "Generator Logs", icon: Zap, module: "infrastructure_generator" },
+      { to: "/domains", label: "Domain Tracker", icon: Globe, module: "domain_tracker" },
+      { to: "/reminders", label: "Reminders & Renewals", icon: Bell, module: "reminders_renewals" },
     ],
   },
   {
     label: "Sales",
     items: [
-      { to: "/leads", label: "Leads Pipeline", icon: TrendingUp, module: "leads" },
+      { to: "/leads", label: "Leads Pipeline", icon: TrendingUp, module: "leads_pipeline" },
       { to: "/clients", label: "Clients", icon: Users, module: "clients" },
-      { to: "/crm/agreements", label: "Agreements", icon: FileSpreadsheet, module: "clients" },
+      { to: "/crm/agreements", label: "Agreements", icon: FileSpreadsheet, module: "agreements" },
     ],
   },
   {
@@ -86,11 +87,11 @@ export const STAFF_GROUPS: { label: string; items: NavItem[] }[] = [
   {
     label: "Finance",
     items: [
-      { to: "/finance/quotes", label: "Quotations", icon: FileText, module: "finance" },
-      { to: "/finance/invoices", label: "Invoices", icon: Receipt, module: "finance" },
-      { to: "/finance/transactions", label: "Transactions Ledger", icon: Wallet, module: "finance" },
+      { to: "/finance/quotes", label: "Quotations", icon: FileText, module: "finance_quotes" },
+      { to: "/finance/invoices", label: "Invoices", icon: Receipt, module: "finance_invoices" },
+      { to: "/finance/transactions", label: "Transactions Ledger", icon: Wallet, module: "finance_transactions" },
       { to: "/payroll", label: "Payroll", icon: Wallet, module: "payroll" },
-      { to: "/finance/reports", label: "Financial Reports", icon: TrendingUp, module: "finance" },
+      { to: "/finance/reports", label: "Financial Reports", icon: TrendingUp, module: "finance_reports" },
     ],
   },
   {
@@ -132,7 +133,7 @@ function AppSidebar({ variant }: { variant: "staff" | "client" }) {
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
       <SidebarHeader className="h-14 justify-center border-b border-sidebar-border px-2 py-0">
-        <Link href={variant === "staff" ? "/dashboard" : "/portal"} className="flex items-center gap-2 px-2 py-1.5">
+        <Link href={variant === "staff" ? "/dashboard" : "/portal"} className={cn("flex items-center gap-2 py-1.5 rounded-lg transition-colors", collapsed ? "h-8 w-8 justify-center p-0" : "w-full px-2")}>
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg gradient-primary shadow-elegant">
             <Sparkles className="h-4 w-4 text-primary-foreground" />
           </div>
@@ -202,7 +203,7 @@ function AppSidebar({ variant }: { variant: "staff" | "client" }) {
         )}
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-sidebar-border">
+      <SidebarFooter className="border-t border-sidebar-border px-2 py-2">
         <UserMenu collapsed={collapsed} />
       </SidebarFooter>
     </Sidebar>
@@ -217,7 +218,7 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="flex w-full items-center gap-2 rounded-md p-2 hover:bg-sidebar-accent transition-colors">
+        <button className={cn("flex items-center gap-2 rounded-md transition-colors cursor-pointer hover:bg-sidebar-accent", collapsed ? "h-8 w-8 justify-center p-0" : "w-full p-2")}>
           <Avatar className="h-8 w-8 shrink-0">
             {profile?.avatar_url && <AvatarImage src={profile.avatar_url} className="object-cover" />}
             <AvatarFallback className="bg-primary/15 text-primary text-xs">

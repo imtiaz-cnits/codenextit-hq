@@ -15,6 +15,16 @@ import { ArrowUpRight, ArrowDownRight, Plus, Trash2, Wallet, DollarSign, Calenda
 import { formatCurrency, formatDate } from "../../../../lib/format";
 import { toast } from "sonner";
 import { Skeleton } from "../../../../components/ui/skeleton";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../../../../components/ui/alert-dialog";
 
 interface Client {
   id: string;
@@ -75,6 +85,7 @@ export default function TransactionsPage() {
   const [loading, setLoading] = useState(true);
 
   // Filters
+  const [activeTab, setActiveTab] = useState("all");
   const [q, setQ] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | string>("all");
   const [categoryFilter, setCategoryFilter] = useState<"all" | string>("all");
@@ -94,6 +105,10 @@ export default function TransactionsPage() {
   const [invoiceId, setInvoiceId] = useState("none");
   const [employeeId, setEmployeeId] = useState("none");
   const [founderName, setFounderName] = useState<"Ismail" | "Imtiaz" | "none">("none");
+
+  // Delete Confirmation states
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
 
   useEffect(() => {
     void loadData();
@@ -137,15 +152,23 @@ export default function TransactionsPage() {
     }
   }
 
-  async function deleteTransaction(id: string) {
-    if (!confirm("Are you sure you want to delete this ledger entry?")) return;
+  const initiateDelete = (id: string) => {
+    setTransactionToDelete(id);
+    setDeleteConfirmOpen(true);
+  };
+
+  async function deleteTransaction() {
+    if (!transactionToDelete) return;
+    setDeleteConfirmOpen(false);
     try {
-      const { error } = await supabase.from("transactions" as any).delete().eq("id", id);
+      const { error } = await supabase.from("transactions" as any).delete().eq("id", transactionToDelete);
       if (error) throw error;
       toast.success("Transaction entry deleted successfully");
       void loadData();
     } catch (err: any) {
       toast.error(err.message || "Failed to delete transaction");
+    } finally {
+      setTransactionToDelete(null);
     }
   }
 
@@ -333,14 +356,29 @@ export default function TransactionsPage() {
       </div>
 
       {/* Main Tabs Layout */}
-      <Tabs defaultValue="all" className="space-y-4">
-        <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-          <TabsList className="bg-muted/60 border">
-            <TabsTrigger value="all" className="cursor-pointer">All Entries</TabsTrigger>
-            <TabsTrigger value="income" className="cursor-pointer" onClick={() => setTypeFilter("income")}>Income</TabsTrigger>
-            <TabsTrigger value="expense" className="cursor-pointer" onClick={() => setTypeFilter("expense")}>Expenses</TabsTrigger>
-            <TabsTrigger value="founders" className="cursor-pointer">Founders Equity</TabsTrigger>
-          </TabsList>
+      <Tabs value={activeTab} onValueChange={(val) => {
+        setActiveTab(val);
+        if (val === "all" || val === "income" || val === "expense") {
+          setTypeFilter(val);
+        }
+      }} className="space-y-6">
+        <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
+          <div className="overflow-x-auto pb-2 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide w-full lg:w-auto">
+            <TabsList className="inline-flex w-auto md:grid md:w-full md:max-w-[750px] p-1 h-auto bg-muted/50 rounded-xl whitespace-nowrap md:grid-cols-4">
+              <TabsTrigger value="all" className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all">
+                <FileText className="h-4 w-4" /> All Entries
+              </TabsTrigger>
+              <TabsTrigger value="income" className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all">
+                <ArrowUpRight className="h-4 w-4" /> Income
+              </TabsTrigger>
+              <TabsTrigger value="expense" className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all">
+                <ArrowDownRight className="h-4 w-4" /> Expenses
+              </TabsTrigger>
+              <TabsTrigger value="founders" className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all">
+                <User className="h-4 w-4" /> Founders Equity
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
           {/* Quick Filters */}
           <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
@@ -371,7 +409,7 @@ export default function TransactionsPage() {
         </div>
 
         {/* Tab 1: All Entries / General Table */}
-        <TabsContent value="all" className="space-y-4">
+        {activeTab !== "founders" && (
           <Card className="bg-card/45 border-border/50">
             <CardContent className="p-0 overflow-x-auto">
               {loading ? (
@@ -430,7 +468,7 @@ export default function TransactionsPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => deleteTransaction(tx.id)}
+                              onClick={() => initiateDelete(tx.id)}
                               className="h-7 w-7 text-destructive hover:bg-destructive/15 cursor-pointer"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -444,7 +482,7 @@ export default function TransactionsPage() {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
+        )}
 
         {/* Tab 2: Founders Equity Ledger View */}
         <TabsContent value="founders" className="space-y-6">
@@ -540,7 +578,7 @@ export default function TransactionsPage() {
       {/* Record Transaction Sheet Drawer */}
       <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
         <SheetContent className="overflow-y-auto sm:max-w-md flex flex-col h-full p-0">
-          <div className="py-4 px-6 border-b shrink-0">
+          <div className="py-3 px-6 border-b shrink-0">
             <SheetHeader>
               <SheetTitle>Record Ledger Transaction</SheetTitle>
               <SheetDescription>
@@ -715,9 +753,9 @@ export default function TransactionsPage() {
             </div>
 
             {/* Form actions */}
-            <div className="py-4 px-6 border-t shrink-0 bg-card/50">
+            <div className="py-3 px-6 border-t shrink-0 bg-card/50">
               <SheetFooter>
-                <Button type="submit" disabled={submitting} className="w-full sm:w-auto cursor-pointer">
+                <Button type="submit" disabled={submitting} className="w-full cursor-pointer">
                   {submitting ? (
                     <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
                   ) : (
@@ -729,6 +767,27 @@ export default function TransactionsPage() {
           </form>
         </SheetContent>
       </Sheet>
+
+      {/* Delete Confirmation Alert Dialog */}
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete this ledger entry from the centralized cash flow records.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="cursor-pointer">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={deleteTransaction}
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground cursor-pointer"
+            >
+              Delete Entry
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

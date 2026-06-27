@@ -40,22 +40,11 @@ async function checkHasFolderEditAccess(userId: string, clientId: string, isAdmi
 
   const { data: client } = await supabaseAdmin
     .from("clients")
-    .select("created_by")
+    .select("created_by, company_name")
     .eq("id", clientId)
     .maybeSingle();
 
   if (client?.created_by === userId) return true;
-
-  if (isAdmin) {
-    if (!client?.created_by) return true; // System folder
-
-    const { data: creatorRole } = await supabaseAdmin
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", client.created_by);
-    const isCreatorAdmin = creatorRole?.some((r: any) => r.role === "super_admin" || r.role === "admin") ?? false;
-    if (isCreatorAdmin) return true;
-  }
 
   return false;
 }
@@ -82,7 +71,7 @@ export async function GET(req: NextRequest) {
     // Fetch all folders
     const { data: clients } = await supabaseAdmin
       .from("clients")
-      .select("id, created_by");
+      .select("id, created_by, company_name");
 
     // Fetch folder_access for user
     const { data: folderAccess } = await (supabaseAdmin
@@ -111,10 +100,8 @@ export async function GET(req: NextRequest) {
     (clients || []).forEach((c: any) => {
       const isCreator = c.created_by === user.id;
       const hasExplicit = folderAccessMap.has(c.id);
-      const isSystemOrAdminCreated = !c.created_by || adminUserIds.has(c.created_by);
-      const isAdminAndSystem = isAdmin && isSystemOrAdminCreated;
 
-      if (isCreator || hasExplicit || isAdminAndSystem) {
+      if (isCreator || hasExplicit) {
         visibleFolderIds.add(c.id);
       }
     });
@@ -169,21 +156,14 @@ export async function GET(req: NextRequest) {
           const folder = (clients || []).find((f: any) => f.id === c.client_id);
           const hasExplicitFolderEdit = folderAccessMap.get(c.client_id) === "edit";
           const isFolderCreator = folder?.created_by === user.id;
-          const isAdminOfAdminFolder = isAdmin && isFolderCreatedByAdmin(folder ? folder.created_by : null);
 
-          if (hasExplicitFolderEdit || isFolderCreator || isAdminOfAdminFolder) {
+          if (hasExplicitFolderEdit || isFolderCreator) {
             hasEditPermission = true;
           }
         }
         if (!hasEditPermission && userAccess?.permission_level === "edit") {
           hasEditPermission = true;
         }
-      }
-
-      // But wait! Staff CANNOT edit/delete credentials created by admins!
-      const isCredCreatedByAdmin = !c.created_by || adminUserIds.has(c.created_by);
-      if (isCredCreatedByAdmin && !isAdmin) {
-        hasEditPermission = false;
       }
 
       const permission = hasEditPermission ? "edit" : "view";
@@ -202,7 +182,9 @@ export async function GET(req: NextRequest) {
         updated_at: c.updated_at,
         has_password: !!c.encrypted_password,
         permission_level: permission,
-        shared_with: access
+        shared_with: access,
+        file_url: c.file_url || null,
+        file_name: c.file_name || null
       };
     });
 
@@ -221,7 +203,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { title, category, client_id, url, username, password, notes, shared_staff, custom_fields } = body;
+    const { title, category, client_id, url, username, password, notes, shared_staff, custom_fields, file_url, file_name } = body;
 
     if (!title || !password) {
       return NextResponse.json({ error: "Title and password are required" }, { status: 400 });
@@ -250,7 +232,9 @@ export async function POST(req: NextRequest) {
         encrypted_password: encrypted,
         notes: notes || "",
         custom_fields: custom_fields || [],
-        created_by: user.id
+        created_by: user.id,
+        file_url: file_url || null,
+        file_name: file_name || null
       })
       .select("id")
       .single();
@@ -293,7 +277,7 @@ export async function PUT(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { id, title, category, client_id, url, username, password, notes, shared_staff, custom_fields } = body;
+    const { id, title, category, client_id, url, username, password, notes, shared_staff, custom_fields, file_url, file_name } = body;
 
     if (!id || !title) {
       return NextResponse.json({ error: "ID and Title are required" }, { status: 400 });
@@ -311,24 +295,6 @@ export async function PUT(req: NextRequest) {
     }
 
     const isAdmin = await checkIsSuperAdmin(user.id);
-    
-    // Fetch all user roles to identify admins
-    const { data: userRoles } = await supabaseAdmin
-      .from("user_roles")
-      .select("user_id, role");
-    const adminUserIds = new Set(
-      (userRoles || [])
-        .filter((r: any) => r.role === "super_admin" || r.role === "admin")
-        .map((r: any) => r.user_id)
-    );
-
-    const isCredCreatedByAdmin = !existingCred.created_by || adminUserIds.has(existingCred.created_by);
-
-    // Staff members cannot edit admin-created credentials
-    if (isCredCreatedByAdmin && !isAdmin) {
-      return NextResponse.json({ error: "Forbidden. Staff members cannot edit admin-created credentials." }, { status: 403 });
-    }
-
     const isCreator = existingCred.created_by === user.id;
     let canEdit = isCreator;
 
@@ -372,6 +338,8 @@ export async function PUT(req: NextRequest) {
       username: username || "",
       notes: notes || "",
       custom_fields: custom_fields || [],
+      file_url: file_url !== undefined ? file_url : null,
+      file_name: file_name !== undefined ? file_name : null,
       updated_at: new Date().toISOString()
     };
 
@@ -444,24 +412,6 @@ export async function DELETE(req: NextRequest) {
     }
 
     const isAdmin = await checkIsSuperAdmin(user.id);
-
-    // Fetch all user roles to identify admins
-    const { data: userRoles } = await supabaseAdmin
-      .from("user_roles")
-      .select("user_id, role");
-    const adminUserIds = new Set(
-      (userRoles || [])
-        .filter((r: any) => r.role === "super_admin" || r.role === "admin")
-        .map((r: any) => r.user_id)
-    );
-
-    const isCredCreatedByAdmin = !existingCred.created_by || adminUserIds.has(existingCred.created_by);
-
-    // Staff members cannot delete admin-created credentials
-    if (isCredCreatedByAdmin && !isAdmin) {
-      return NextResponse.json({ error: "Forbidden. Staff members cannot delete admin-created credentials." }, { status: 403 });
-    }
-
     const isCreator = existingCred.created_by === user.id;
     let canDelete = isCreator;
 

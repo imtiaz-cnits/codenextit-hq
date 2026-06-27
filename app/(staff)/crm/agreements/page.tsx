@@ -557,7 +557,7 @@ function AgreementSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="overflow-y-auto sm:max-w-xl flex flex-col h-full p-0">
-        <div className="py-4 px-6 border-b shrink-0">
+        <div className="py-3 px-6 border-b shrink-0">
           <SheetHeader>
             <SheetTitle>{editingAgreement ? "Edit Agreement" : "New Agreement"}</SheetTitle>
             <SheetDescription>
@@ -793,9 +793,9 @@ function AgreementSheet({
           </div>
 
           {/* Footer Save Actions */}
-          <div className="py-4 px-6 border-t shrink-0 bg-card/50">
+          <div className="py-3 px-6 border-t shrink-0 bg-card/50">
             <SheetFooter>
-              <Button type="submit" disabled={submitting} className="w-full sm:w-auto cursor-pointer">
+              <Button type="submit" disabled={submitting} className="w-full cursor-pointer">
                 {submitting ? (
                   <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
                 ) : (

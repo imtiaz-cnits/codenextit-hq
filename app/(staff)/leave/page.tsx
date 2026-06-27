@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../../../components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "../../../components/ui/popover";
-import { Plus, Check, X, Loader2, ChevronLeft, ChevronRight, RotateCcw, FileText, Download, Calendar as CalendarIcon, Eye, Trash2 } from "lucide-react";
+import { Plus, Check, X, Loader2, ChevronLeft, ChevronRight, RotateCcw, FileText, Download, Calendar as CalendarIcon, Eye, Trash2, Users, User } from "lucide-react";
 import { FlatDatePicker } from "../../../components/ui/flat-date-picker";
 import { FlatTimePicker } from "../../../components/ui/flat-time-picker";
 import { initials, avatarColor, formatDate } from "../../../lib/format";
@@ -239,13 +239,26 @@ export default function LeavePage() {
         <Stat label="Rejected" value={counts.rejected} tone="destructive" />
       </div>
 
-      <Tabs defaultValue={isSuperAdmin ? "staff" : "list"}>
+      <Tabs defaultValue={isSuperAdmin ? "staff" : "list"} className="space-y-6">
         <div className="overflow-x-auto pb-2 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide">
-          <TabsList className="bg-muted/50 p-1 h-auto rounded-xl inline-flex w-auto min-w-max border border-border/50">
-            {isSuperAdmin && <TabsTrigger value="staff" className="rounded-lg px-4 py-[8px] data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer">Staff Requests</TabsTrigger>}
-            <TabsTrigger value="list" className="rounded-lg px-4 py-[8px] data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer">My Requests</TabsTrigger>
-            <TabsTrigger value="calendar" className="rounded-lg px-4 py-[8px] data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer">Calendar</TabsTrigger>
-            <TabsTrigger value="reports" className="rounded-lg px-4 py-[8px] data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer">Reports</TabsTrigger>
+          <TabsList className={cn(
+            "inline-flex w-auto md:grid md:w-full md:max-w-[750px] p-1 h-auto bg-muted/50 rounded-xl whitespace-nowrap",
+            isSuperAdmin ? "md:grid-cols-4" : "md:grid-cols-3"
+          )}>
+            {isSuperAdmin && (
+              <TabsTrigger value="staff" className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all">
+                <Users className="h-4 w-4" /> Staff Requests
+              </TabsTrigger>
+            )}
+            <TabsTrigger value="list" className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all">
+              <User className="h-4 w-4" /> My Requests
+            </TabsTrigger>
+            <TabsTrigger value="calendar" className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all">
+              <CalendarIcon className="h-4 w-4" /> Calendar
+            </TabsTrigger>
+            <TabsTrigger value="reports" className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all">
+              <FileText className="h-4 w-4" /> Reports
+            </TabsTrigger>
           </TabsList>
         </div>
 
@@ -891,114 +904,129 @@ function NewLeaveSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetTrigger asChild><Button><Plus className="h-4 w-4 mr-1.5" /> New request</Button></SheetTrigger>
-      <SheetContent className="overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>New leave request</SheetTitle>
-          <SheetDescription>
-            {isSuperAdmin ? "Submit on behalf of an employee." : "Request time off for yourself."}
-          </SheetDescription>
-        </SheetHeader>
-        <form onSubmit={submit} className="space-y-4 mt-6">
-          {isSuperAdmin && (
-            <Fld label="Employee">
-              <Select
-                value={f.employee_id}
-                onValueChange={(v) => setF({ ...f, employee_id: v })}
-              >
-                <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
-                <SelectContent>{employees.map((e) => <SelectItem key={e.id} value={e.id}>{e.full_name}</SelectItem>)}</SelectContent>
-              </Select>
-            </Fld>
-          )}
-          <Fld label="Type">
-            <Select value={f.type} onValueChange={(v) => setF({ ...f, type: v as LeaveType })}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="sick">Sick</SelectItem>
-                <SelectItem value="casual">Casual</SelectItem>
-                <SelectItem value="annual">Annual</SelectItem>
-                <SelectItem value="unpaid">Unpaid</SelectItem>
-              </SelectContent>
-            </Select>
-          </Fld>
+      <SheetContent className="flex flex-col h-full p-0 w-full sm:max-w-lg">
+        <div className="py-3 px-6 border-b border-border/40 shrink-0">
+          <SheetHeader>
+            <SheetTitle>New leave request</SheetTitle>
+            <SheetDescription>
+              {isSuperAdmin ? "Submit on behalf of an employee." : "Request time off for yourself."}
+            </SheetDescription>
+          </SheetHeader>
+        </div>
 
-          {/* Leave Duration toggle: Full Day vs Half Day */}
-          <div className="space-y-2">
-            <Label className="text-xs">Leave Duration</Label>
-            <div className="grid grid-cols-2 gap-2 p-1 bg-muted/40 rounded-lg border">
-              <button
-                type="button"
-                onClick={() => setF({ ...f, is_half_day: false })}
-                className={cn(
-                  "h-9 rounded-md text-xs font-semibold transition-all cursor-pointer",
-                  !f.is_half_day ? "bg-background shadow-sm text-primary" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                Full Day(s)
-              </button>
-              <button
-                type="button"
-                onClick={() => setF({ ...f, is_half_day: true, to_date: f.from_date })}
-                className={cn(
-                  "h-9 rounded-md text-xs font-semibold transition-all cursor-pointer",
-                  f.is_half_day ? "bg-background shadow-sm text-primary" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                Half Day
-              </button>
-            </div>
-          </div>
-
-          {f.is_half_day ? (
-            <>
-              <Fld label="Date">
-                <FlatDatePicker
-                  date={f.from_date}
-                  onChange={d => setF({ ...f, from_date: d, to_date: d })}
-                  placeholder="Select date"
-                />
-              </Fld>
-              <Fld label="Half Period">
-                <Select value={f.half_day_period} onValueChange={(v) => setF({ ...f, half_day_period: v as HalfDayPeriod })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="first_half">First Half (Morning) — সকাল</SelectItem>
-                    <SelectItem value="second_half">Second Half (Afternoon) — বিকাল</SelectItem>
-                  </SelectContent>
+        <form onSubmit={submit} className="flex flex-col flex-1 min-h-0">
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            {isSuperAdmin && (
+              <Fld label="Employee">
+                <Select
+                  value={f.employee_id}
+                  onValueChange={(v) => setF({ ...f, employee_id: v })}
+                >
+                  <SelectTrigger className="cursor-pointer"><SelectValue placeholder="Select employee" /></SelectTrigger>
+                  <SelectContent>{employees.map((e) => <SelectItem key={e.id} value={e.id} className="cursor-pointer">{e.full_name}</SelectItem>)}</SelectContent>
                 </Select>
               </Fld>
-              <Fld label="Leave Start Time (optional)">
-                <FlatTimePicker
-                  value={f.start_time}
-                  onChange={v => setF({ ...f, start_time: v })}
-                  placeholder="e.g. 1:30 PM (when leaving early)"
-                />
-              </Fld>
-              <div className="text-[11px] text-muted-foreground bg-muted/30 rounded-lg p-2.5 border border-dashed">
-                <span className="font-semibold">ℹ️ Half-day leave</span> = 0.5 day deducted from leave balance. Use start time if leaving mid-day.
-              </div>
-            </>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Fld label="From">
-                <FlatDatePicker
-                  date={f.from_date}
-                  onChange={d => setF({ ...f, from_date: d })}
-                  placeholder="From"
-                />
-              </Fld>
-              <Fld label="To">
-                <FlatDatePicker
-                  date={f.to_date}
-                  onChange={d => setF({ ...f, to_date: d })}
-                  placeholder="To"
-                />
-              </Fld>
-            </div>
-          )}
+            )}
 
-          <Fld label="Reason"><Textarea value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} rows={3} /></Fld>
-          <SheetFooter><Button type="submit" disabled={submitting}>{submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Submit request"}</Button></SheetFooter>
+            <Fld label="Leave Type">
+              <Select
+                value={f.type}
+                onValueChange={(v) => setF({ ...f, type: v as LeaveType })}
+              >
+                <SelectTrigger className="cursor-pointer"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="casual" className="cursor-pointer">Casual Leave (নৈমিত্তিক ছুটি)</SelectItem>
+                  <SelectItem value="sick" className="cursor-pointer">Sick Leave (অসুস্থতা জনিত ছুটি)</SelectItem>
+                  <SelectItem value="annual" className="cursor-pointer">Annual Leave (বার্ষিক ছুটি)</SelectItem>
+                  <SelectItem value="unpaid" className="cursor-pointer">Unpaid Leave (বিনা বেতনে ছুটি)</SelectItem>
+                </SelectContent>
+              </Select>
+            </Fld>
+
+            <div className="space-y-2">
+              <Label className="text-xs">Leave Duration</Label>
+              <div className="grid grid-cols-2 gap-2 p-1 bg-muted/40 rounded-lg border">
+                <button
+                  type="button"
+                  onClick={() => setF({ ...f, is_half_day: false })}
+                  className={cn(
+                    "h-9 rounded-md text-xs font-semibold transition-all cursor-pointer",
+                    !f.is_half_day ? "bg-background shadow-sm text-primary" : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  Full Day(s)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setF({ ...f, is_half_day: true, to_date: f.from_date })}
+                  className={cn(
+                    "h-9 rounded-md text-xs font-semibold transition-all cursor-pointer",
+                    f.is_half_day ? "bg-background shadow-sm text-primary" : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  Half Day
+                </button>
+              </div>
+            </div>
+
+            {f.is_half_day ? (
+              <>
+                <Fld label="Date">
+                  <FlatDatePicker
+                    date={f.from_date}
+                    onChange={d => setF({ ...f, from_date: d, to_date: d })}
+                    placeholder="Select date"
+                  />
+                </Fld>
+                <Fld label="Half Period">
+                  <Select value={f.half_day_period} onValueChange={(v) => setF({ ...f, half_day_period: v as HalfDayPeriod })}>
+                    <SelectTrigger className="cursor-pointer"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="first_half" className="cursor-pointer">First Half (Morning) — সকাল</SelectItem>
+                      <SelectItem value="second_half" className="cursor-pointer">Second Half (Afternoon) — বিকাল</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Fld>
+                <Fld label="Leave Start Time (optional)">
+                  <FlatTimePicker
+                    value={f.start_time}
+                    onChange={v => setF({ ...f, start_time: v })}
+                    placeholder="e.g. 1:30 PM (when leaving early)"
+                  />
+                </Fld>
+                <div className="text-[11px] text-muted-foreground bg-muted/30 rounded-lg p-2.5 border border-dashed">
+                  <span className="font-semibold">ℹ️ Half-day leave</span> = 0.5 day deducted from leave balance. Use start time if leaving mid-day.
+                </div>
+              </>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Fld label="From">
+                  <FlatDatePicker
+                    date={f.from_date}
+                    onChange={d => setF({ ...f, from_date: d })}
+                    placeholder="From"
+                  />
+                </Fld>
+                <Fld label="To">
+                  <FlatDatePicker
+                    date={f.to_date}
+                    onChange={d => setF({ ...f, to_date: d })}
+                    placeholder="To"
+                  />
+                </Fld>
+              </div>
+            )}
+
+            <Fld label="Reason"><Textarea value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} rows={3} /></Fld>
+          </div>
+
+          <div className="py-3 px-6 border-t border-border shrink-0 bg-card/50">
+            <SheetFooter className="mt-0">
+              <Button type="submit" disabled={submitting} className="w-full cursor-pointer">
+                {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : "Submit request"}
+              </Button>
+            </SheetFooter>
+          </div>
         </form>
       </SheetContent>
     </Sheet>

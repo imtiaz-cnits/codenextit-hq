@@ -193,6 +193,13 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "ID, domain name, and renewal date are required" }, { status: 400 });
     }
 
+    // Select current record to verify if renewal_date changed
+    const { data: currentDomain } = await (supabaseAdmin
+      .from("client_domains" as any) as any)
+      .select("renewal_date, price, registrar, domain_name, client_id")
+      .eq("id", id)
+      .single();
+
     const { data, error } = await (supabaseAdmin
       .from("client_domains" as any) as any)
       .update({
@@ -212,7 +219,40 @@ export async function PUT(req: NextRequest) {
 
     if (error) throw error;
 
+    // Check if renewal_date was changed/extended
+    if (currentDomain && (currentDomain as any).renewal_date !== renewal_date) {
+      // 1. Sync with recurring_reminders
+      // Sync by domain_id
+      await (supabaseAdmin
+        .from("recurring_reminders" as any) as any)
+        .update({ due_date: renewal_date, updated_at: new Date().toISOString() })
+        .eq("domain_id", id);
+      
+      // Sync by matching name
+      await (supabaseAdmin
+        .from("recurring_reminders" as any) as any)
+        .update({ due_date: renewal_date, updated_at: new Date().toISOString() })
+        .eq("category", "domain")
+        .ilike("name", `%${domain_name}%`);
+
+      // 2. Insert expense entry in transactions table
+      const costAmount = price ? parseFloat(price) : ((currentDomain as any).price ? Number((currentDomain as any).price) : 0);
+      await (supabaseAdmin
+        .from("transactions" as any) as any)
+        .insert({
+          type: "expense",
+          amount: costAmount,
+          currency: "USD",
+          category: "domain_renewal",
+          description: `Domain Renewal: ${domain_name}. Registrar: ${registrar || (currentDomain as any).registrar || "—"}.`,
+          date: new Date().toISOString().split("T")[0],
+          client_id: client_id || (currentDomain as any).client_id || null,
+          recorded_by: user.id
+        });
+    }
+
     return NextResponse.json(data);
+
   } catch (error: any) {
     console.error("PUT domain error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

@@ -54,7 +54,10 @@ export async function GET(req: NextRequest) {
     if (!existingInternal) {
       await supabaseAdmin
         .from("clients")
-        .insert({ company_name: "Internal Settings" });
+        .insert({ 
+          company_name: "Internal Settings",
+          created_by: user.id
+        });
     }
 
     // Fetch all folders
@@ -86,49 +89,15 @@ export async function GET(req: NextRequest) {
       .eq("user_id", user.id);
     const folderAccessMap = new Map<string, string>((folderAccess || []).map((fa: any) => [fa.client_id as string, fa.permission_level as string]));
 
-    // Fetch credentials user created
-    const { data: createdCreds } = await (supabaseAdmin
-      .from("credentials" as any) as any)
-      .select("client_id")
-      .eq("created_by", user.id);
-
-    // Fetch credentials shared with user
-    const { data: sharedCreds } = await (supabaseAdmin
-      .from("credential_access" as any) as any)
-      .select("credential_id")
-      .eq("staff_id", user.id);
-
-    const sharedCredIds = (sharedCreds || []).map((sc: any) => sc.credential_id);
-    let sharedCredFolderIds: string[] = [];
-    if (sharedCredIds.length > 0) {
-      const { data: sharedCredsDetails } = await (supabaseAdmin
-        .from("credentials" as any) as any)
-        .select("client_id")
-        .in("id", sharedCredIds);
-      sharedCredFolderIds = (sharedCredsDetails || []).map((c: any) => c.client_id).filter(Boolean);
-    }
-
-    const visibleCredentialFolderIds = new Set([
-      ...(createdCreds || []).map((c: any) => c.client_id).filter(Boolean),
-      ...sharedCredFolderIds
-    ]);
-
     // Visibility rules:
     // A folder 'c' is visible if:
     // 1. User is creator of the folder.
     // 2. User has explicit folder_access record.
-    // 3. User is admin AND folder was created by an admin or system folder (created_by is null).
-    // 4. User has access to at least one credential inside that folder (partial folder share visibility).
     const visibleFolders = (allClients || []).filter((c: any) => {
       const isCreator = c.created_by === user.id;
       const hasExplicit = folderAccessMap.has(c.id);
-      const hasCredentialAccess = visibleCredentialFolderIds.has(c.id);
 
-      if (isCreator || hasExplicit || hasCredentialAccess) {
-        return true;
-      }
-
-      if (isAdmin && isFolderCreatedByAdmin(c.created_by)) {
+      if (isCreator || hasExplicit) {
         return true;
       }
 
@@ -142,8 +111,6 @@ export async function GET(req: NextRequest) {
         permission = "edit";
       } else if (folderAccessMap.has(c.id)) {
         permission = folderAccessMap.get(c.id) || "view";
-      } else if (isAdmin && isFolderCreatedByAdmin(c.created_by)) {
-        permission = "edit";
       }
 
       return {
@@ -216,7 +183,18 @@ export async function PUT(req: NextRequest) {
     }
 
     const isAdmin = await checkIsSuperAdmin(user.id);
-    let canRename = isAdmin;
+    const { data: client } = await supabaseAdmin
+      .from("clients")
+      .select("created_by, company_name")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (client?.company_name === "Internal Settings") {
+      return NextResponse.json({ error: "Forbidden. System folder cannot be renamed." }, { status: 403 });
+    }
+
+    const isCreator = client?.created_by === user.id;
+    let canRename = isCreator || (isAdmin && !client?.created_by);
 
     if (!canRename) {
       const { data: fAccess } = await (supabaseAdmin
@@ -264,7 +242,18 @@ export async function DELETE(req: NextRequest) {
     }
 
     const isAdmin = await checkIsSuperAdmin(user.id);
-    let canDelete = isAdmin;
+    const { data: client } = await supabaseAdmin
+      .from("clients")
+      .select("created_by, company_name")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (client?.company_name === "Internal Settings") {
+      return NextResponse.json({ error: "Forbidden. System folder cannot be deleted." }, { status: 403 });
+    }
+
+    const isCreator = client?.created_by === user.id;
+    let canDelete = isCreator || (isAdmin && !client?.created_by);
 
     if (!canDelete) {
       const { data: fAccess } = await (supabaseAdmin

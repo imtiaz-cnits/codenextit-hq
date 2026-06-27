@@ -310,41 +310,49 @@ function NewLeadSheet({ open, onOpenChange, onCreated }: { open: boolean; onOpen
       <SheetTrigger asChild>
         <Button><Plus className="h-4 w-4 mr-1.5" /> New lead</Button>
       </SheetTrigger>
-      <SheetContent className="overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>New lead</SheetTitle>
-          <SheetDescription>Capture a fresh opportunity in your pipeline.</SheetDescription>
-        </SheetHeader>
-        <form onSubmit={submit} className="space-y-4 mt-6">
-          <Field label="Title"><Input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. E-commerce rebuild" /></Field>
-          <Field label="Company"><Input required value={form.company_name} onChange={(e) => setForm({ ...form, company_name: e.target.value })} /></Field>
-          <Field label="Contact person"><Input value={form.contact_person} onChange={(e) => setForm({ ...form, contact_person: e.target.value })} /></Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Email"><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
-            <Field label="Phone"><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
+      <SheetContent className="flex flex-col h-full p-0 w-full sm:max-w-lg">
+        <div className="py-3 px-6 border-b border-border/40 shrink-0">
+          <SheetHeader>
+            <SheetTitle>New lead</SheetTitle>
+            <SheetDescription>Capture a fresh opportunity in your pipeline.</SheetDescription>
+          </SheetHeader>
+        </div>
+
+        <form onSubmit={submit} className="flex flex-col flex-1 min-h-0">
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            <Field label="Title"><Input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. E-commerce rebuild" /></Field>
+            <Field label="Company"><Input required value={form.company_name} onChange={(e) => setForm({ ...form, company_name: e.target.value })} /></Field>
+            <Field label="Contact person"><Input value={form.contact_person} onChange={(e) => setForm({ ...form, contact_person: e.target.value })} /></Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Email"><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
+              <Field label="Phone"><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Estimated value"><Input type="number" value={form.estimated_value} onChange={(e) => setForm({ ...form, estimated_value: e.target.value })} /></Field>
+              <Field label="Currency">
+                <Select value={form.currency} onValueChange={(v) => setForm({ ...form, currency: v as "BDT" | "USD" })}>
+                  <SelectTrigger className="cursor-pointer"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="BDT" className="cursor-pointer">BDT</SelectItem><SelectItem value="USD" className="cursor-pointer">USD</SelectItem></SelectContent>
+                </Select>
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Stage">
+                <Select value={form.stage} onValueChange={(v) => setForm({ ...form, stage: v as LeadStage })}>
+                  <SelectTrigger className="cursor-pointer"><SelectValue /></SelectTrigger>
+                  <SelectContent>{STAGES.map((s) => <SelectItem key={s.id} value={s.id} className="cursor-pointer">{s.label}</SelectItem>)}</SelectContent>
+                </Select>
+              </Field>
+              <Field label="Source"><Input value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })} placeholder="Referral, LinkedIn..." /></Field>
+            </div>
+            <Field label="Notes"><Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} /></Field>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Estimated value"><Input type="number" value={form.estimated_value} onChange={(e) => setForm({ ...form, estimated_value: e.target.value })} /></Field>
-            <Field label="Currency">
-              <Select value={form.currency} onValueChange={(v) => setForm({ ...form, currency: v as "BDT" | "USD" })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="BDT">BDT</SelectItem><SelectItem value="USD">USD</SelectItem></SelectContent>
-              </Select>
-            </Field>
+
+          <div className="py-3 px-6 border-t border-border shrink-0 bg-card/50">
+            <SheetFooter className="mt-0">
+              <Button type="submit" disabled={submitting} className="w-full cursor-pointer">{submitting ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : "Create lead"}</Button>
+            </SheetFooter>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Stage">
-              <Select value={form.stage} onValueChange={(v) => setForm({ ...form, stage: v as LeadStage })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{STAGES.map((s) => <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>)}</SelectContent>
-              </Select>
-            </Field>
-            <Field label="Source"><Input value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })} placeholder="Referral, LinkedIn..." /></Field>
-          </div>
-          <Field label="Notes"><Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} /></Field>
-          <SheetFooter>
-            <Button type="submit" disabled={submitting}>{submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create lead"}</Button>
-          </SheetFooter>
         </form>
       </SheetContent>
     </Sheet>

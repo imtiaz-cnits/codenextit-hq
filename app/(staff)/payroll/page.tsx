@@ -335,58 +335,65 @@ function NewPayslipSheet({ month, employees, onDone }: { month: string; employee
           <Plus className="h-4 w-4 mr-1.5" /> Add Payslip
         </Button>
       </SheetTrigger>
-      <SheetContent className="overflow-y-auto sm:max-w-md">
-        <SheetHeader>
-          <SheetTitle>Add Payslip · {month}</SheetTitle>
-          <SheetDescription>Create manual salary sheet for an employee.</SheetDescription>
-        </SheetHeader>
-        <form onSubmit={submit} className="space-y-4 mt-6">
-          <Fld label="Employee">
-            <Select value={employeeId} onValueChange={(v) => {
-              const e = employees.find((x) => x.id === v);
-              setEmployeeId(v);
-              setBaseSalary(String(e?.base_salary ?? 0));
-            }}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>{employees.map((e) => <SelectItem key={e.id} value={e.id}>{e.full_name}</SelectItem>)}</SelectContent>
-            </Select>
-          </Fld>
-          
-          <Fld label="Base Salary (BDT)">
-            <Input type="number" value={baseSalary} onChange={(e) => setBaseSalary(e.target.value)} />
-          </Fld>
-          
-          <h4 className="text-xs font-bold text-primary border-t pt-3 uppercase tracking-wider">Allowances</h4>
-          
-          <div className="grid grid-cols-2 gap-3">
-            <Fld label="Transport (BDT)">
-              <Input type="number" value={transport} onChange={(e) => setTransport(e.target.value)} />
+      <SheetContent className="flex flex-col h-full p-0 w-full sm:max-w-md">
+        <div className="py-3 px-6 border-b border-border/40 shrink-0">
+          <SheetHeader>
+            <SheetTitle>Add Payslip · {month}</SheetTitle>
+            <SheetDescription>Create manual salary sheet for an employee.</SheetDescription>
+          </SheetHeader>
+        </div>
+
+        <form onSubmit={submit} className="flex flex-col flex-1 min-h-0">
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            <Fld label="Employee">
+              <Select value={employeeId} onValueChange={(v) => {
+                const e = employees.find((x) => x.id === v);
+                setEmployeeId(v);
+                setBaseSalary(String(e?.base_salary ?? 0));
+              }}>
+                <SelectTrigger className="cursor-pointer"><SelectValue /></SelectTrigger>
+                <SelectContent>{employees.map((e) => <SelectItem key={e.id} value={e.id} className="cursor-pointer">{e.full_name}</SelectItem>)}</SelectContent>
+              </Select>
             </Fld>
-            <Fld label="Medical (BDT)">
-              <Input type="number" value={medical} onChange={(e) => setMedical(e.target.value)} />
+            
+            <Fld label="Base Salary (BDT)">
+              <Input type="number" value={baseSalary} onChange={(e) => setBaseSalary(e.target.value)} />
+            </Fld>
+            
+            <h4 className="text-xs font-bold text-primary border-t pt-3 uppercase tracking-wider">Allowances</h4>
+            
+            <div className="grid grid-cols-2 gap-3">
+              <Fld label="Transport (BDT)">
+                <Input type="number" value={transport} onChange={(e) => setTransport(e.target.value)} />
+              </Fld>
+              <Fld label="Medical (BDT)">
+                <Input type="number" value={medical} onChange={(e) => setMedical(e.target.value)} />
+              </Fld>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Fld label="Mobile (BDT)">
+                <Input type="number" value={mobile} onChange={(e) => setMobile(e.target.value)} />
+              </Fld>
+              <Fld label="Other Allowance (BDT)">
+                <Input type="number" value={other} onChange={(e) => setOther(e.target.value)} />
+              </Fld>
+            </div>
+
+            <h4 className="text-xs font-bold text-destructive border-t pt-3 uppercase tracking-wider">Deductions</h4>
+            
+            <Fld label="Deductions (BDT)">
+              <Input type="number" value={deductions} onChange={(e) => setDeductions(e.target.value)} placeholder="Loan repayments, advance salary etc." />
             </Fld>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <Fld label="Mobile (BDT)">
-              <Input type="number" value={mobile} onChange={(e) => setMobile(e.target.value)} />
-            </Fld>
-            <Fld label="Other Allowance (BDT)">
-              <Input type="number" value={other} onChange={(e) => setOther(e.target.value)} />
-            </Fld>
+          <div className="py-3 px-6 border-t border-border shrink-0 bg-card/50">
+            <SheetFooter className="mt-0">
+              <Button type="submit" className="w-full cursor-pointer" disabled={busy}>
+                {busy ? "Saving..." : "Save payslip"}
+              </Button>
+            </SheetFooter>
           </div>
-
-          <h4 className="text-xs font-bold text-destructive border-t pt-3 uppercase tracking-wider">Deductions</h4>
-          
-          <Fld label="Deductions (BDT)">
-            <Input type="number" value={deductions} onChange={(e) => setDeductions(e.target.value)} placeholder="Loan repayments, advance salary etc." />
-          </Fld>
-
-          <SheetFooter className="border-t pt-4">
-            <Button type="submit" className="w-full cursor-pointer" disabled={busy}>
-              {busy ? "Saving..." : "Save payslip"}
-            </Button>
-          </SheetFooter>
         </form>
       </SheetContent>
     </Sheet>

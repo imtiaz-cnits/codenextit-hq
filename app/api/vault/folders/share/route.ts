@@ -41,7 +41,14 @@ export async function GET(req: NextRequest) {
     }
 
     const isAdmin = await checkIsSuperAdmin(user.id);
-    let canViewShare = isAdmin;
+    const { data: client } = await supabaseAdmin
+      .from("clients")
+      .select("created_by")
+      .eq("id", clientId)
+      .maybeSingle();
+
+    const isCreator = client?.created_by === user.id;
+    let canViewShare = isCreator || (isAdmin && !client?.created_by);
 
     if (!canViewShare) {
       const { data: fAccess } = await (supabaseAdmin
@@ -86,7 +93,14 @@ export async function POST(req: NextRequest) {
     }
 
     const isAdmin = await checkIsSuperAdmin(user.id);
-    let canShare = isAdmin;
+    const { data: client } = await supabaseAdmin
+      .from("clients")
+      .select("created_by")
+      .eq("id", client_id)
+      .maybeSingle();
+
+    const isCreator = client?.created_by === user.id;
+    let canShare = isCreator || (isAdmin && !client?.created_by);
 
     if (!canShare) {
       const { data: fAccess } = await (supabaseAdmin
