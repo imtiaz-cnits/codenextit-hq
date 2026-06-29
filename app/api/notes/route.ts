@@ -497,5 +497,71 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const user = await getAuthUser(req);
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const isStaff = await checkIsStaff(user.id);
+    if (!isStaff) {
+      return NextResponse.json({ error: "Forbidden. Staff access required." }, { status: 403 });
+    }
+
+    const body = await req.json();
+    const { id, is_pinned, is_favorite } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: "ID is required" }, { status: 400 });
+    }
+
+    // Verify user has access to the note
+    const { data: note, error: findErr } = await (supabaseAdmin
+      .from("notes" as any) as any)
+      .select("created_by, folder_id")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (findErr || !note) {
+      return NextResponse.json({ error: "Note not found" }, { status: 404 });
+    }
+
+    const isAdmin = await checkIsSuperAdmin(user.id);
+    const isCreator = note.created_by === user.id;
+
+    // Check if shared with user
+    const { data: noteAccess } = await (supabaseAdmin
+      .from("note_access" as any) as any)
+      .select("permission_level")
+      .eq("note_id", id)
+      .eq("staff_id", user.id)
+      .maybeSingle();
+
+    const hasAccess = isAdmin || isCreator || !!noteAccess;
+
+    if (!hasAccess) {
+      return NextResponse.json({ error: "Forbidden. You do not have access to this note." }, { status: 403 });
+    }
+
+    const updateData: any = {};
+    if (is_pinned !== undefined) updateData.is_pinned = is_pinned;
+    if (is_favorite !== undefined) updateData.is_favorite = is_favorite;
+
+    const { error: updateErr } = await (supabaseAdmin
+      .from("notes" as any) as any)
+      .update(updateData)
+      .eq("id", id);
+
+    if (updateErr) throw updateErr;
+
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    console.error("PATCH note error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
 // Trigger Next.js compilation re-evaluation: rebuild event
 

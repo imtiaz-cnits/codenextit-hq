@@ -378,4 +378,74 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const user = await getAuthUser(req);
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const isStaff = await checkIsStaff(user.id);
+    if (!isStaff) {
+      return NextResponse.json({ error: "Forbidden. Staff access required." }, { status: 403 });
+    }
+
+    const body = await req.json();
+    const { id, is_pinned, is_favorite } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: "ID is required" }, { status: 400 });
+    }
+
+    // Get current folder
+    const { data: existingFolder } = await (supabaseAdmin
+      .from("note_folders" as any) as any)
+      .select("created_by")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (!existingFolder) {
+      return NextResponse.json({ error: "Folder not found" }, { status: 404 });
+    }
+
+    const isAdmin = await checkIsSuperAdmin(user.id);
+
+    // Verify folder access
+    let hasAccess = existingFolder.created_by === user.id || isAdmin;
+    if (!hasAccess) {
+      const { data: folderAccess } = await (supabaseAdmin
+        .from("note_folder_access" as any) as any)
+        .select("permission_level")
+        .eq("folder_id", id)
+        .eq("staff_id", user.id)
+        .maybeSingle();
+
+      if (folderAccess) {
+        hasAccess = true;
+      }
+    }
+
+    if (!hasAccess) {
+      return NextResponse.json({ error: "Forbidden. You do not have access to this folder." }, { status: 403 });
+    }
+
+    const updateData: any = {};
+    if (is_pinned !== undefined) updateData.is_pinned = is_pinned;
+    if (is_favorite !== undefined) updateData.is_favorite = is_favorite;
+
+    const { error: updateErr } = await (supabaseAdmin
+      .from("note_folders" as any) as any)
+      .update(updateData)
+      .eq("id", id);
+
+    if (updateErr) throw updateErr;
+
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    console.error("PATCH folder error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
 // Trigger Next.js compilation re-evaluation: rebuild event

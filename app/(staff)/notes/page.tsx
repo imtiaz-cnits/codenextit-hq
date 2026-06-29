@@ -20,7 +20,8 @@ import {
   Share2, Users, Bold, Italic, Underline, List, ListOrdered, AlignLeft, AlignCenter,
   AlignRight, Heading1, Heading2, Heading3, Palette, Eraser, Check, Cloud, CloudOff, Lock,
   ChevronRight, HardDrive, Type, FolderPlus, Paintbrush, Table2, Baseline, MoreVertical, SlidersHorizontal,
-  Mic, AudioLines, Maximize2, ListTodo, Undo2, Redo2, Printer, Link, MessageSquarePlus, Image, AlignJustify, Outdent, Indent, Minus, ArrowUpDown, Highlighter, X
+  Mic, AudioLines, Maximize2, ListTodo, Undo2, Redo2, Printer, Link, MessageSquarePlus, Image, AlignJustify, Outdent, Indent, Minus, ArrowUpDown, Highlighter, X,
+  Star, Pin
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDate } from "../../../lib/format";
@@ -60,6 +61,8 @@ interface NoteRow {
   permission_level: "view" | "edit";
   shared_with: SharedStaffMember[];
   audio_url: string | null;
+  is_pinned?: boolean;
+  is_favorite?: boolean;
 }
 
 interface ClientRow {
@@ -77,6 +80,8 @@ interface NoteFolder {
   created_at: string;
   updated_at: string;
   shared_with?: SharedStaffMember[];
+  is_pinned?: boolean;
+  is_favorite?: boolean;
 }
 
 interface TreeNode {
@@ -1437,6 +1442,17 @@ export default function NotesPage() {
     const handleEditorClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
 
+      // Handle collapsible heading toggle click in left gutter
+      if (target && ["H1", "H2", "H3"].includes(target.tagName)) {
+        const rect = target.getBoundingClientRect();
+        if (e.clientX >= rect.left - 24 && e.clientX <= rect.left) {
+          e.preventDefault();
+          e.stopPropagation();
+          toggleHeadingCollapse(target);
+          return;
+        }
+      }
+
       // Handle zoom button click inside editor
       const viewBtn = target.closest(".image-view-btn");
       if (viewBtn) {
@@ -2603,6 +2619,128 @@ export default function NotesPage() {
     }
   };
 
+  const toggleHeadingCollapse = (heading: HTMLElement) => {
+    const isCollapsed = heading.classList.toggle("is-collapsed");
+    
+    let next = heading.nextElementSibling as HTMLElement | null;
+    const headingLevel = parseInt(heading.tagName.substring(1));
+    let skipUntilLevel = 0;
+    
+    while (next) {
+      if (["H1", "H2", "H3"].includes(next.tagName)) {
+        const nextLevel = parseInt(next.tagName.substring(1));
+        if (nextLevel <= headingLevel) {
+          break;
+        }
+        
+        if (!isCollapsed) {
+          if (skipUntilLevel > 0 && nextLevel <= skipUntilLevel) {
+            skipUntilLevel = 0;
+          }
+          if (next.classList.contains("is-collapsed")) {
+            skipUntilLevel = nextLevel;
+          }
+        }
+      }
+      
+      if (isCollapsed) {
+        next.classList.add("collapsed-hidden");
+      } else {
+        if (skipUntilLevel === 0) {
+          next.classList.remove("collapsed-hidden");
+        }
+      }
+      
+      next = next.nextElementSibling as HTMLElement | null;
+    }
+    
+    handleEditorInput();
+  };
+
+  const handleToggleFolderPin = async (folder: NoteFolder) => {
+    try {
+      const res = await fetchWithAuth("/api/notes/folders", {
+        method: "PATCH",
+        body: JSON.stringify({
+          id: folder.id,
+          is_pinned: !folder.is_pinned
+        })
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to update folder pin status");
+      }
+      toast.success(folder.is_pinned ? "Folder unpinned" : "Folder pinned to top");
+      void loadNoteFolders();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Failed to update folder pin status");
+    }
+  };
+
+  const handleToggleFolderFavorite = async (folder: NoteFolder) => {
+    try {
+      const res = await fetchWithAuth("/api/notes/folders", {
+        method: "PATCH",
+        body: JSON.stringify({
+          id: folder.id,
+          is_favorite: !folder.is_favorite
+        })
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to update folder favorite status");
+      }
+      toast.success(folder.is_favorite ? "Folder removed from favorites" : "Folder added to favorites");
+      void loadNoteFolders();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Failed to update folder favorite status");
+    }
+  };
+
+  const handleToggleNotePin = async (note: NoteRow) => {
+    try {
+      const res = await fetchWithAuth("/api/notes", {
+        method: "PATCH",
+        body: JSON.stringify({
+          id: note.id,
+          is_pinned: !note.is_pinned
+        })
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to update note pin status");
+      }
+      toast.success(note.is_pinned ? "Note unpinned" : "Note pinned to top");
+      void loadNotes();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Failed to update note pin status");
+    }
+  };
+
+  const handleToggleNoteFavorite = async (note: NoteRow) => {
+    try {
+      const res = await fetchWithAuth("/api/notes", {
+        method: "PATCH",
+        body: JSON.stringify({
+          id: note.id,
+          is_favorite: !note.is_favorite
+        })
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to update note favorite status");
+      }
+      toast.success(note.is_favorite ? "Note removed from favorites" : "Note added to favorites");
+      void loadNotes();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Failed to update note favorite status");
+    }
+  };
+
   const handleEditorInput = () => {
     if (!currentNote || currentNote.permission_level !== "edit") return;
     setSaveStatus("unsaved");
@@ -3749,6 +3887,14 @@ export default function NotesPage() {
     }
   };
 
+  const pinnedFolders = useMemo(() => {
+    return folders.filter(f => f.is_pinned || f.is_favorite);
+  }, [folders]);
+
+  const pinnedNotes = useMemo(() => {
+    return notes.filter(n => n.is_pinned || n.is_favorite);
+  }, [notes]);
+
   // Filter custom folders list for main dashboard view based on clientFilter selection, parent_id, and search query
   const filteredFolders = useMemo(() => {
     return folders.filter(f => {
@@ -4198,7 +4344,7 @@ export default function NotesPage() {
                       return (
                         <Card
                           key={sf.id}
-                          className="group flex items-center justify-between p-3 rounded-xl border border-border/60 hover:border-primary/40 bg-card hover:bg-muted/10 transition-all duration-200 !shadow-none"
+                          className="group relative flex items-center justify-between p-3 rounded-xl border border-border/60 hover:border-primary/40 bg-card hover:bg-muted/10 transition-all duration-200 !shadow-none overflow-hidden"
                         >
                           <div
                             onClick={() => {
@@ -4210,9 +4356,11 @@ export default function NotesPage() {
                             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:bg-primary/20 transition-colors">
                               <Folder className="h-4.5 w-4.5" />
                             </div>
-                            <div className="flex flex-col min-w-0">
-                              <span className="font-semibold text-sm truncate group-hover:text-primary transition-colors">
-                                {sf.name}
+                            <div className="flex flex-col min-w-0 pr-8">
+                              <span className="font-semibold text-sm truncate group-hover:text-primary transition-colors flex items-center gap-1.5">
+                                <span className="truncate">{sf.name}</span>
+                                {sf.is_favorite && <Star className="h-3 w-3 text-yellow-500 fill-yellow-500 shrink-0" />}
+                                {sf.is_pinned && <Pin className="h-3 w-3 text-primary fill-primary shrink-0" />}
                               </span>
                               <span className="text-[10px] text-muted-foreground font-medium truncate">
                                 {associatedClient ? associatedClient.company_name : "Personal / Internal"} • {getSubFolderNoteCount(sf.id)} notes
@@ -4221,7 +4369,32 @@ export default function NotesPage() {
                           </div>
 
                           {/* Desktop controls */}
-                          <div className="hidden md:flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                          <div className="hidden md:flex items-center gap-0.5 absolute right-2 top-1/2 -translate-y-1/2 bg-card/95 dark:bg-card/95 border border-border/40 pl-2 pr-1 py-1 rounded-xl opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-all duration-200 shadow-lg z-10">
+                            {/* Pin / Star Quick Toggles */}
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className={cn(
+                                "h-7 w-7 rounded-lg hover:bg-muted cursor-pointer text-muted-foreground/60 hover:text-yellow-500"
+                              )}
+                              onClick={() => handleToggleFolderFavorite(sf)}
+                              title={sf.is_favorite ? "Remove from Favorites" : "Add to Favorites"}
+                            >
+                              <Star className={cn("h-3.5 w-3.5", sf.is_favorite && "fill-yellow-500 text-yellow-500")} />
+                            </Button>
+
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className={cn(
+                                "h-7 w-7 rounded-lg hover:bg-muted cursor-pointer text-muted-foreground/60 hover:text-primary"
+                              )}
+                              onClick={() => handleToggleFolderPin(sf)}
+                              title={sf.is_pinned ? "Unpin Folder" : "Pin Folder to Top"}
+                            >
+                              <Pin className={cn("h-3.5 w-3.5", sf.is_pinned && "fill-primary text-primary")} />
+                            </Button>
+
                             <Button
                               size="icon"
                               variant="ghost"
@@ -4277,7 +4450,20 @@ export default function NotesPage() {
                                   <MoreVertical className="h-4 w-4" />
                                 </Button>
                               </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-[140px] rounded-xl p-1 shadow-lg bg-card border border-border/60 z-30">
+                              <DropdownMenuContent align="end" className="w-[160px] rounded-xl p-1 shadow-lg bg-card border border-border/60 z-30">
+                                <DropdownMenuItem
+                                  onClick={() => handleToggleFolderPin(sf)}
+                                  className="text-xs cursor-pointer rounded-lg focus:bg-muted/80 flex items-center gap-2"
+                                >
+                                  <Pin className="h-3.5 w-3.5" /> {sf.is_pinned ? "Unpin Folder" : "Pin Folder"}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleToggleFolderFavorite(sf)}
+                                  className="text-xs cursor-pointer rounded-lg focus:bg-muted/80 flex items-center gap-2"
+                                >
+                                  <Star className="h-3.5 w-3.5" /> {sf.is_favorite ? "Unfavorite Folder" : "Favorite Folder"}
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator className="my-1 border-t border-border/40" />
                                 <DropdownMenuItem
                                   onClick={() => handleOpenFolderSharing(sf)}
                                   className="text-xs cursor-pointer rounded-lg focus:bg-muted/80 flex items-center gap-2"
@@ -4332,7 +4518,7 @@ export default function NotesPage() {
                   </Card>
                 ) : (
                   <>
-                    <NotesGrid notesList={filteredNotes.slice(0, visibleNotesCount)} handleOpenEditor={handleOpenEditor} handleDeleteDocument={handleDeleteDocument} isAdmin={isAdmin} activeStaff={activeStaff} profileId={profile?.id} foldersList={folders} onMoveNote={handleOpenMoveNote} />
+                    <NotesGrid notesList={filteredNotes.slice(0, visibleNotesCount)} handleOpenEditor={handleOpenEditor} handleDeleteDocument={handleDeleteDocument} isAdmin={isAdmin} activeStaff={activeStaff} profileId={profile?.id} foldersList={folders} onMoveNote={handleOpenMoveNote} onTogglePin={handleToggleNotePin} onToggleFavorite={handleToggleNoteFavorite} />
                     {filteredNotes.length > visibleNotesCount && (
                       <div className="flex justify-center pt-4">
                         <Button
@@ -4351,6 +4537,97 @@ export default function NotesPage() {
           ) : activeFolderId === null ? (
             // Dashboard Mode: Custom Folders + Folder-less Notes
             <div className="space-y-8">
+              {/* Pinned & Favorites Section */}
+              {(pinnedFolders.length > 0 || pinnedNotes.length > 0) && (
+                <Card className="bg-card/45 border-border/50 shadow-sm p-4 md:p-6 space-y-6 rounded-2xl">
+                  <div className="flex items-center gap-2">
+                    <Star className="h-4.5 w-4.5 text-yellow-500 fill-yellow-500" />
+                    <h2 className="text-sm font-bold text-foreground uppercase tracking-wider">Favorites & Pinned</h2>
+                  </div>
+
+                  <div className="space-y-6">
+                    {/* Pinned Folders Grid */}
+                    {pinnedFolders.length > 0 && (
+                      <div className="space-y-3">
+                        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Folders</h3>
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                          {pinnedFolders.map(sf => {
+                            const associatedClient = sf.client_id ? clients.find(cl => cl.id === sf.client_id) : null;
+                            return (
+                              <Card
+                                key={sf.id}
+                                className="group relative flex items-center justify-between p-3 rounded-xl bg-card/65 border border-border/50 hover:shadow-md transition-all duration-200 overflow-hidden"
+                              >
+                                <div
+                                  onClick={() => setActiveFolderId(sf.id)}
+                                  className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
+                                >
+                                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:bg-primary/20 transition-colors">
+                                    <Folder className="h-4.5 w-4.5" />
+                                  </div>
+                                  <div className="flex flex-col min-w-0 pr-8">
+                                    <span className="font-semibold text-sm truncate group-hover:text-primary transition-colors flex items-center gap-1.5">
+                                      <span className="truncate">{sf.name}</span>
+                                      {sf.is_favorite && <Star className="h-3 w-3 text-yellow-500 fill-yellow-500 shrink-0" />}
+                                      {sf.is_pinned && <Pin className="h-3 w-3 text-primary fill-primary shrink-0" />}
+                                    </span>
+                                    <span className="text-[10px] text-muted-foreground font-medium truncate">
+                                      {associatedClient ? associatedClient.company_name : "Personal / Internal"} • {getSubFolderNoteCount(sf.id)} notes
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="hidden md:flex items-center gap-0.5 absolute right-2 top-1/2 -translate-y-1/2 bg-card/95 dark:bg-card/95 border border-border/40 pl-2 pr-1 py-1 rounded-xl opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-all duration-200 shadow-lg z-10">
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-7 w-7 rounded-lg hover:bg-muted cursor-pointer text-yellow-500"
+                                    onClick={() => handleToggleFolderFavorite(sf)}
+                                    title={sf.is_favorite ? "Remove from Favorites" : "Add to Favorites"}
+                                  >
+                                    <Star className={cn("h-3.5 w-3.5", sf.is_favorite && "fill-yellow-500 text-yellow-500")} />
+                                  </Button>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className={cn(
+                                      "h-7 w-7 rounded-lg hover:bg-muted cursor-pointer text-primary"
+                                    )}
+                                    onClick={() => handleToggleFolderPin(sf)}
+                                    title={sf.is_pinned ? "Unpin Folder" : "Pin Folder to Top"}
+                                  >
+                                    <Pin className={cn("h-3.5 w-3.5", sf.is_pinned && "fill-primary text-primary")} />
+                                  </Button>
+                                </div>
+                              </Card>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Pinned Notes Grid */}
+                    {pinnedNotes.length > 0 && (
+                      <div className="space-y-3">
+                        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Documents</h3>
+                        <NotesGrid 
+                          notesList={pinnedNotes} 
+                          handleOpenEditor={handleOpenEditor} 
+                          handleDeleteDocument={handleDeleteDocument} 
+                          isAdmin={isAdmin} 
+                          activeStaff={activeStaff} 
+                          profileId={profile?.id} 
+                          foldersList={folders} 
+                          onMoveNote={handleOpenMoveNote}
+                          onTogglePin={handleToggleNotePin}
+                          onToggleFavorite={handleToggleNoteFavorite}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              )}
+
               {/* Custom note folders grid */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -4377,7 +4654,7 @@ export default function NotesPage() {
                       return (
                         <Card
                           key={sf.id}
-                          className="group flex items-center justify-between p-3 rounded-xl border border-border/60 hover:border-primary/40 bg-card hover:bg-muted/10 transition-all duration-200 !shadow-none"
+                          className="group relative flex items-center justify-between p-3 rounded-xl border border-border/60 hover:border-primary/40 bg-card hover:bg-muted/10 transition-all duration-200 !shadow-none overflow-hidden"
                         >
                           <div
                             onClick={() => setActiveFolderId(sf.id)}
@@ -4386,9 +4663,11 @@ export default function NotesPage() {
                             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:bg-primary/20 transition-colors">
                               <Folder className="h-4.5 w-4.5" />
                             </div>
-                            <div className="flex flex-col min-w-0">
-                              <span className="font-semibold text-sm truncate group-hover:text-primary transition-colors">
-                                {sf.name}
+                            <div className="flex flex-col min-w-0 pr-8">
+                              <span className="font-semibold text-sm truncate group-hover:text-primary transition-colors flex items-center gap-1.5">
+                                <span className="truncate">{sf.name}</span>
+                                {sf.is_favorite && <Star className="h-3 w-3 text-yellow-500 fill-yellow-500 shrink-0" />}
+                                {sf.is_pinned && <Pin className="h-3 w-3 text-primary fill-primary shrink-0" />}
                               </span>
                               <span className="text-[10px] text-muted-foreground font-medium truncate">
                                 {associatedClient ? associatedClient.company_name : "Personal / Internal"} • {getSubFolderNoteCount(sf.id)} notes
@@ -4398,7 +4677,32 @@ export default function NotesPage() {
 
                           {/* Folder action controls */}
                           {/* Desktop controls */}
-                          <div className="hidden md:flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                          <div className="hidden md:flex items-center gap-0.5 absolute right-2 top-1/2 -translate-y-1/2 bg-card/95 dark:bg-card/95 border border-border/40 pl-2 pr-1 py-1 rounded-xl opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-all duration-200 shadow-lg z-10">
+                            {/* Pin / Star Quick Toggles */}
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className={cn(
+                                "h-7 w-7 rounded-lg hover:bg-muted cursor-pointer text-muted-foreground/60 hover:text-yellow-500"
+                              )}
+                              onClick={() => handleToggleFolderFavorite(sf)}
+                              title={sf.is_favorite ? "Remove from Favorites" : "Add to Favorites"}
+                            >
+                              <Star className={cn("h-3.5 w-3.5", sf.is_favorite && "fill-yellow-500 text-yellow-500")} />
+                            </Button>
+
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className={cn(
+                                "h-7 w-7 rounded-lg hover:bg-muted cursor-pointer text-muted-foreground/60 hover:text-primary"
+                              )}
+                              onClick={() => handleToggleFolderPin(sf)}
+                              title={sf.is_pinned ? "Unpin Folder" : "Pin Folder to Top"}
+                            >
+                              <Pin className={cn("h-3.5 w-3.5", sf.is_pinned && "fill-primary text-primary")} />
+                            </Button>
+
                             <Button
                               size="icon"
                               variant="ghost"
@@ -4441,7 +4745,7 @@ export default function NotesPage() {
                             </Button>
                           </div>
 
-                          {/* Mobile controls (Compact dropdown) */}
+                          {/* Mobile controls */}
                           <div className="md:hidden flex items-center shrink-0">
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
@@ -4454,7 +4758,20 @@ export default function NotesPage() {
                                   <MoreVertical className="h-4 w-4" />
                                 </Button>
                               </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-[140px] rounded-xl p-1 shadow-lg bg-card border border-border/60 z-30">
+                              <DropdownMenuContent align="end" className="w-[160px] rounded-xl p-1 shadow-lg bg-card border border-border/60 z-30">
+                                <DropdownMenuItem
+                                  onClick={() => handleToggleFolderPin(sf)}
+                                  className="text-xs cursor-pointer rounded-lg focus:bg-muted/80 flex items-center gap-2"
+                                >
+                                  <Pin className="h-3.5 w-3.5" /> {sf.is_pinned ? "Unpin Folder" : "Pin Folder"}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleToggleFolderFavorite(sf)}
+                                  className="text-xs cursor-pointer rounded-lg focus:bg-muted/80 flex items-center gap-2"
+                                >
+                                  <Star className="h-3.5 w-3.5" /> {sf.is_favorite ? "Unfavorite Folder" : "Favorite Folder"}
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator className="my-1 border-t border-border/40" />
                                 <DropdownMenuItem
                                   onClick={() => handleOpenFolderSharing(sf)}
                                   className="text-xs cursor-pointer rounded-lg focus:bg-muted/80 flex items-center gap-2"
@@ -4509,7 +4826,7 @@ export default function NotesPage() {
                   </Card>
                 ) : (
                   <>
-                    <NotesGrid notesList={filteredNotes.slice(0, visibleNotesCount)} handleOpenEditor={handleOpenEditor} handleDeleteDocument={handleDeleteDocument} isAdmin={isAdmin} activeStaff={activeStaff} profileId={profile?.id} foldersList={folders} onMoveNote={handleOpenMoveNote} />
+                    <NotesGrid notesList={filteredNotes.slice(0, visibleNotesCount)} handleOpenEditor={handleOpenEditor} handleDeleteDocument={handleDeleteDocument} isAdmin={isAdmin} activeStaff={activeStaff} profileId={profile?.id} foldersList={folders} onMoveNote={handleOpenMoveNote} onTogglePin={handleToggleNotePin} onToggleFavorite={handleToggleNoteFavorite} />
                     {filteredNotes.length > visibleNotesCount && (
                       <div className="flex justify-center pt-4">
                         <Button
@@ -4575,7 +4892,7 @@ export default function NotesPage() {
                           return (
                             <Card
                               key={sf.id}
-                              className="group flex items-center justify-between p-3 rounded-xl border border-border/60 hover:border-primary/40 bg-card hover:bg-muted/10 transition-all duration-200 !shadow-none"
+                              className="group relative flex items-center justify-between p-3 rounded-xl border border-border/60 hover:border-primary/40 bg-card hover:bg-muted/10 transition-all duration-200 !shadow-none overflow-hidden"
                             >
                               <div
                                 onClick={() => setActiveFolderId(sf.id)}
@@ -4584,9 +4901,11 @@ export default function NotesPage() {
                                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:bg-primary/20 transition-colors">
                                   <Folder className="h-4.5 w-4.5" />
                                 </div>
-                                <div className="flex flex-col min-w-0">
-                                  <span className="font-semibold text-sm truncate group-hover:text-primary transition-colors">
-                                    {sf.name}
+                                <div className="flex flex-col min-w-0 pr-8">
+                                  <span className="font-semibold text-sm truncate group-hover:text-primary transition-colors flex items-center gap-1.5">
+                                    <span className="truncate">{sf.name}</span>
+                                    {sf.is_favorite && <Star className="h-3 w-3 text-yellow-500 fill-yellow-500 shrink-0" />}
+                                    {sf.is_pinned && <Pin className="h-3 w-3 text-primary fill-primary shrink-0" />}
                                   </span>
                                   <span className="text-[10px] text-muted-foreground font-medium truncate">
                                     {associatedClient ? associatedClient.company_name : "Personal / Internal"} • {getSubFolderNoteCount(sf.id)} notes
@@ -4595,7 +4914,32 @@ export default function NotesPage() {
                               </div>
 
                               {/* Desktop controls */}
-                              <div className="hidden md:flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                              <div className="hidden md:flex items-center gap-0.5 absolute right-2 top-1/2 -translate-y-1/2 bg-card/95 dark:bg-card/95 border border-border/40 pl-2 pr-1 py-1 rounded-xl opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-all duration-200 shadow-lg z-10">
+                                {/* Pin / Star Quick Toggles */}
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className={cn(
+                                    "h-7 w-7 rounded-lg hover:bg-muted cursor-pointer text-muted-foreground/60 hover:text-yellow-500"
+                                  )}
+                                  onClick={() => handleToggleFolderFavorite(sf)}
+                                  title={sf.is_favorite ? "Remove from Favorites" : "Add to Favorites"}
+                                >
+                                  <Star className={cn("h-3.5 w-3.5", sf.is_favorite && "fill-yellow-500 text-yellow-500")} />
+                                </Button>
+
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className={cn(
+                                    "h-7 w-7 rounded-lg hover:bg-muted cursor-pointer text-muted-foreground/60 hover:text-primary"
+                                  )}
+                                  onClick={() => handleToggleFolderPin(sf)}
+                                  title={sf.is_pinned ? "Unpin Folder" : "Pin Folder to Top"}
+                                >
+                                  <Pin className={cn("h-3.5 w-3.5", sf.is_pinned && "fill-primary text-primary")} />
+                                </Button>
+
                                 <Button
                                   size="icon"
                                   variant="ghost"
@@ -4651,7 +4995,20 @@ export default function NotesPage() {
                                       <MoreVertical className="h-4 w-4" />
                                     </Button>
                                   </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end" className="w-[140px] rounded-xl p-1 shadow-lg bg-card border border-border/60 z-30">
+                                  <DropdownMenuContent align="end" className="w-[160px] rounded-xl p-1 shadow-lg bg-card border border-border/60 z-30">
+                                    <DropdownMenuItem
+                                      onClick={() => handleToggleFolderPin(sf)}
+                                      className="text-xs cursor-pointer rounded-lg focus:bg-muted/80 flex items-center gap-2"
+                                    >
+                                      <Pin className="h-3.5 w-3.5" /> {sf.is_pinned ? "Unpin Folder" : "Pin Folder"}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => handleToggleFolderFavorite(sf)}
+                                      className="text-xs cursor-pointer rounded-lg focus:bg-muted/80 flex items-center gap-2"
+                                    >
+                                      <Star className="h-3.5 w-3.5" /> {sf.is_favorite ? "Unfavorite Folder" : "Favorite Folder"}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator className="my-1 border-t border-border/40" />
                                     <DropdownMenuItem
                                       onClick={() => handleOpenFolderSharing(sf)}
                                       className="text-xs cursor-pointer rounded-lg focus:bg-muted/80 flex items-center gap-2"
@@ -4695,7 +5052,7 @@ export default function NotesPage() {
                   {filteredNotes.length > 0 && (
                     <div className="space-y-3">
                       <h2 className="text-sm font-bold text-muted-foreground/80 uppercase tracking-wider">Documents ({filteredNotes.length})</h2>
-                      <NotesGrid notesList={filteredNotes.slice(0, visibleNotesCount)} handleOpenEditor={handleOpenEditor} handleDeleteDocument={handleDeleteDocument} isAdmin={isAdmin} activeStaff={activeStaff} profileId={profile?.id} foldersList={folders} onMoveNote={handleOpenMoveNote} />
+                      <NotesGrid notesList={filteredNotes.slice(0, visibleNotesCount)} handleOpenEditor={handleOpenEditor} handleDeleteDocument={handleDeleteDocument} isAdmin={isAdmin} activeStaff={activeStaff} profileId={profile?.id} foldersList={folders} onMoveNote={handleOpenMoveNote} onTogglePin={handleToggleNotePin} onToggleFavorite={handleToggleNoteFavorite} />
                       {filteredNotes.length > visibleNotesCount && (
                         <div className="flex justify-center pt-4">
                           <Button
@@ -7710,9 +8067,11 @@ interface NotesGridProps {
   profileId: string | undefined;
   foldersList?: NoteFolder[];
   onMoveNote?: (id: string, currentFolderId: string | null) => void;
+  onTogglePin?: (note: NoteRow) => void;
+  onToggleFavorite?: (note: NoteRow) => void;
 }
 
-function NotesGrid({ notesList, handleOpenEditor, handleDeleteDocument, isAdmin, activeStaff, profileId, foldersList, onMoveNote }: NotesGridProps) {
+function NotesGrid({ notesList, handleOpenEditor, handleDeleteDocument, isAdmin, activeStaff, profileId, foldersList, onMoveNote, onTogglePin, onToggleFavorite }: NotesGridProps) {
   return (
     <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7">
       {notesList.map(n => {
@@ -7730,6 +8089,48 @@ function NotesGrid({ notesList, handleOpenEditor, handleDeleteDocument, isAdmin,
                 <FileText className="h-4.5 w-4.5" />
               </div>
 
+              <div className="flex-1" />
+
+              {/* Pin & Favorite quick toggles (visible on hover, or permanently if active) */}
+              <div className="flex items-center gap-0.5">
+                {onToggleFavorite && (
+                  <button
+                    onClick={e => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onToggleFavorite(n);
+                    }}
+                    className={cn(
+                      "h-7 w-7 rounded-lg hover:bg-muted cursor-pointer flex items-center justify-center transition-all text-muted-foreground/60 hover:text-yellow-500",
+                      n.is_favorite 
+                        ? "text-yellow-500 opacity-100" 
+                        : "opacity-0 group-hover:opacity-100"
+                    )}
+                    title={n.is_favorite ? "Remove from favorites" : "Add to favorites"}
+                  >
+                    <Star className={cn("h-3.5 w-3.5", n.is_favorite && "fill-yellow-500 text-yellow-500")} />
+                  </button>
+                )}
+                {onTogglePin && (
+                  <button
+                    onClick={e => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onTogglePin(n);
+                    }}
+                    className={cn(
+                      "h-7 w-7 rounded-lg hover:bg-muted cursor-pointer flex items-center justify-center transition-all text-muted-foreground/60 hover:text-primary",
+                      n.is_pinned 
+                        ? "text-primary opacity-100" 
+                        : "opacity-0 group-hover:opacity-100"
+                    )}
+                    title={n.is_pinned ? "Unpin note" : "Pin note to top"}
+                  >
+                    <Pin className={cn("h-3.5 w-3.5", n.is_pinned && "fill-primary text-primary")} />
+                  </button>
+                )}
+              </div>
+
               {(isOwned || isAdmin) && (
                 <div onClick={e => e.stopPropagation()} className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 shrink-0">
                   <DropdownMenu>
@@ -7743,7 +8144,24 @@ function NotesGrid({ notesList, handleOpenEditor, handleDeleteDocument, isAdmin,
                         <MoreVertical className="h-3.5 w-3.5" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-[140px] rounded-xl p-1 shadow-lg bg-card border border-border/60 z-30">
+                    <DropdownMenuContent align="end" className="w-[160px] rounded-xl p-1 shadow-lg bg-card border border-border/60 z-30">
+                      {onTogglePin && (
+                        <DropdownMenuItem
+                          onClick={() => onTogglePin(n)}
+                          className="text-xs cursor-pointer rounded-lg focus:bg-muted/80 flex items-center gap-2"
+                        >
+                          <Pin className="h-3.5 w-3.5" /> {n.is_pinned ? "Unpin Note" : "Pin Note"}
+                        </DropdownMenuItem>
+                      )}
+                      {onToggleFavorite && (
+                        <DropdownMenuItem
+                          onClick={() => onToggleFavorite(n)}
+                          className="text-xs cursor-pointer rounded-lg focus:bg-muted/80 flex items-center gap-2"
+                        >
+                          <Star className="h-3.5 w-3.5" /> {n.is_favorite ? "Unfavorite Note" : "Favorite Note"}
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuSeparator className="my-1 border-t border-border/40" />
                       {onMoveNote && (
                         <DropdownMenuItem
                           onClick={() => onMoveNote(n.id, n.folder_id)}

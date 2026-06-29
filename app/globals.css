@@ -332,3 +332,51 @@ li[data-type="taskItem"][data-checked="true"] > .task-content {
 .format-painter-cursor * {
   cursor: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyOCIgaGVpZ2h0PSIyOCIgdmlld0JveD0iMCAwIDI4IDI4IiBmaWxsPSJub25lIj48cGF0aCBkPSJNMTIuNSAxNS41IEwyNC41IDMuNSIgc3Ryb2tlPSIjNDc1NTY5IiBzdHJva2Utd2lkdGg9IjIuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PHBhdGggZD0iTTEwLjUgMTMuNSBMMTQuNSAxNy41IiBzdHJva2U9IiM5NGEzYjgiIHN0cm9rZS13aWR0aD0iNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PHBhdGggZD0iTTIgMjYgQzQgMjIgOCAxOCAxMS41IDE0LjUgTDEzLjUgMTYuNSBDMTAgMjAgNiAyNCAyIDI2IFoiIGZpbGw9IiM3YzNhZWQiLz48cGF0aCBkPSJNMiAyNiBDMi41IDI0LjUgNCAyMyA1LjUgMjIuNSBMNS41IDI1LjUgWiIgZmlsbD0iI2E4NTVmNyIvPjwvc3ZnPg==") 2 26, pointer !important;
 }
+
+/* Collapsible headings inside custom contenteditable editor */
+.editor-content h1,
+.editor-content h2,
+.editor-content h3 {
+  position: relative;
+}
+
+.editor-content h1::before,
+.editor-content h2::before,
+.editor-content h3::before {
+  content: "▼";
+  position: absolute;
+  left: -22px;
+  top: 50%;
+  transform: translateY(-50%) rotate(0deg);
+  font-size: 10px;
+  color: var(--color-muted-foreground);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  user-select: none;
+}
+
+.editor-content h1:hover::before,
+.editor-content h2:hover::before,
+.editor-content h3:hover::before {
+  opacity: 0.6;
+}
+
+.editor-content h1::before:hover,
+.editor-content h2::before:hover,
+.editor-content h3::before:hover {
+  opacity: 1 !important;
+}
+
+.editor-content h1.is-collapsed::before,
+.editor-content h2.is-collapsed::before,
+.editor-content h3.is-collapsed::before {
+  transform: translateY(-50%) rotate(-90deg);
+  opacity: 0.8;
+  color: var(--color-primary);
+}
+
+.collapsed-hidden {
+  display: none !important;
+}
+
