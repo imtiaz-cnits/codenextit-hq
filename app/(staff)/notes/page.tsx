@@ -2169,7 +2169,7 @@ export default function NotesPage() {
       const { data: roleData } = await supabase
         .from("user_roles" as any)
         .select("user_id")
-        .in("role", ["staff", "project_manager", "super_admin"]);
+        .in("role", ["staff", "project_manager", "admin", "super_admin"]);
 
       const userIds = [...new Set((roleData || []).map((r: any) => r.user_id as string))];
       if (userIds.length === 0) return;
