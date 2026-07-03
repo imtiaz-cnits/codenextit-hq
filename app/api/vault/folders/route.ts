@@ -89,15 +89,46 @@ export async function GET(req: NextRequest) {
       .eq("user_id", user.id);
     const folderAccessMap = new Map<string, string>((folderAccess || []).map((fa: any) => [fa.client_id as string, fa.permission_level as string]));
 
+    // Fetch credential access for current user to find which folders contain credentials shared with this user
+    const { data: userCredentialAccess } = await (supabaseAdmin
+      .from("credential_access" as any) as any)
+      .select("credential_id")
+      .eq("staff_id", user.id);
+    const sharedCredIds = (userCredentialAccess || []).map((ca: any) => ca.credential_id);
+
+    // Fetch client_id of credentials that are created by the user or shared with the user
+    let userRelatedCreds: any[] = [];
+    if (sharedCredIds.length > 0) {
+      const { data } = await (supabaseAdmin
+        .from("credentials" as any) as any)
+        .select("client_id")
+        .or(`created_by.eq.${user.id},id.in.(${sharedCredIds.join(",")})`)
+        .not("client_id", "is", null);
+      userRelatedCreds = data || [];
+    } else {
+      const { data } = await (supabaseAdmin
+        .from("credentials" as any) as any)
+        .select("client_id")
+        .eq("created_by", user.id)
+        .not("client_id", "is", null);
+      userRelatedCreds = data || [];
+    }
+
+    const foldersWithRelatedCreds = new Set<string>(
+      userRelatedCreds.map((rc: any) => rc.client_id).filter(Boolean)
+    );
+
     // Visibility rules:
     // A folder 'c' is visible if:
     // 1. User is creator of the folder.
     // 2. User has explicit folder_access record.
+    // 3. User has access to at least one credential inside the folder.
     const visibleFolders = (allClients || []).filter((c: any) => {
       const isCreator = c.created_by === user.id;
       const hasExplicit = folderAccessMap.has(c.id);
+      const hasRelatedCreds = foldersWithRelatedCreds.has(c.id);
 
-      if (isCreator || hasExplicit) {
+      if (isCreator || hasExplicit || hasRelatedCreds) {
         return true;
       }
 
