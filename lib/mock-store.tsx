@@ -26,6 +26,7 @@ export interface Employee {
   office_start?: string;
   office_end?: string;
   status?: "active" | "disabled";
+  attendance_enabled?: boolean;
 }
 
 export interface AttendanceEntry {

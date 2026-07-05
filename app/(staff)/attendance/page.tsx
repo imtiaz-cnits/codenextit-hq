@@ -17,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { Input } from "../../../components/ui/input";
+import { Checkbox } from "../../../components/ui/checkbox";
 import { FlatDatePicker } from "../../../components/ui/flat-date-picker";
 import {
   Clock, LogIn, LogOut, FileDown, FileSpreadsheet,
@@ -57,8 +58,8 @@ export default function AttendancePage() {
 
   const currentUserEmp = employees.find(e => e.profile_id === user?.id) ||
     employees.find(e => e.email === user?.email);
-  const activeEmployees = employees.filter(e => e.status !== "disabled");
-  const displayEmployees = isSuperAdmin ? activeEmployees : (currentUserEmp && currentUserEmp.status !== "disabled" ? [currentUserEmp] : []);
+  const activeEmployees = employees.filter(e => e.status !== "disabled" && e.attendance_enabled !== false);
+  const displayEmployees = isSuperAdmin ? activeEmployees : (currentUserEmp && currentUserEmp.status !== "disabled" && currentUserEmp.attendance_enabled !== false ? [currentUserEmp] : []);
 
   const [activeTab, setActiveTab] = useState("roster");
   const today = toLocalDateString();
@@ -1377,9 +1378,9 @@ export default function AttendancePage() {
             <Card className="border-none shadow-md overflow-hidden md:col-span-2">
               <CardHeader className="bg-primary/5 border-b">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Smartphone className="h-4 w-4 text-primary" /> Device Management
+                  <Smartphone className="h-4 w-4 text-primary" /> Attendance & Device Management
                 </CardTitle>
-                <CardDescription>Reset registered devices for staff members.</CardDescription>
+                <CardDescription>Configure attendance visibility and reset registered devices for staff members.</CardDescription>
               </CardHeader>
               <CardContent className="p-0">
                 {/* Desktop Table View */}
@@ -1387,6 +1388,7 @@ export default function AttendancePage() {
                   <Table>
                     <TableHeader className="bg-muted/30"><TableRow>
                       <TableHead className="font-bold text-xs">Employee</TableHead>
+                      <TableHead className="font-bold text-xs">Attendance Access</TableHead>
                       <TableHead className="font-bold text-xs">Registered Device</TableHead>
                       <TableHead className="text-right font-bold text-xs">Action</TableHead>
                     </TableRow></TableHeader>
@@ -1394,6 +1396,21 @@ export default function AttendancePage() {
                       {employees.map(e => (
                         <TableRow key={e.id} className="hover:bg-muted/5 transition-colors">
                           <TableCell className="font-medium text-sm">{e.full_name}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Checkbox
+                                checked={e.attendance_enabled !== false}
+                                onCheckedChange={(checked: boolean | "indeterminate") => {
+                                  updateEmployee(e.id, { attendance_enabled: checked === true });
+                                  toast.success(`Attendance access for ${e.full_name} updated successfully.`);
+                                }}
+                                className="cursor-pointer"
+                              />
+                              <span className="text-xs">
+                                {e.attendance_enabled !== false ? "Enabled" : "Disabled / Hidden"}
+                              </span>
+                            </div>
+                          </TableCell>
                           <TableCell className="font-mono text-[10px] text-muted-foreground">{e.registered_device_id ? e.registered_device_id.slice(0, 24) + "..." : "No device bound"}</TableCell>
                           <TableCell className="text-right">
                             {e.registered_device_id ? (
@@ -1424,6 +1441,19 @@ export default function AttendancePage() {
                                 {e.registered_device_id || "No device bound"}
                               </p>
                             </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0 bg-muted/40 px-2.5 py-1.5 rounded-lg border border-border/40">
+                            <Checkbox
+                              checked={e.attendance_enabled !== false}
+                              onCheckedChange={(checked: boolean | "indeterminate") => {
+                                updateEmployee(e.id, { attendance_enabled: checked === true });
+                                toast.success(`Attendance access for ${e.full_name} updated successfully.`);
+                              }}
+                              className="cursor-pointer animate-none"
+                            />
+                            <span className="text-[11px] font-medium text-foreground">
+                              {e.attendance_enabled !== false ? "Active" : "Hidden"}
+                            </span>
                           </div>
                         </div>
 
