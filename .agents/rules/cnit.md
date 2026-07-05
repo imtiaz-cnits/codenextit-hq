@@ -42,7 +42,13 @@ You are working on "CodeNext IT HQ" - a highly secure, modern Agency OS (ERP + C
       - **Fixed Footer:** Wrap `<SheetFooter>` inside a container with styling: `<div className="py-3 px-6 border-t border-border shrink-0 bg-card/50">` (reduced padding).
       - **Form Action Button:** The submit/action button inside the footer must always be full-width: `<Button type="submit" className="w-full ...">` (always `w-full` instead of `w-full sm:w-auto`).
       - **Form Fields Width & Alignment:** Do not crowd multiple inputs on a single line (avoid `grid-cols-3` or higher for inputs, unless they are simple unified items like cost/currency). Use `grid-cols-1` or `grid-cols-2` for spacing, ensuring all fields are wide enough and easily readable.
-   - **Bangla Font & Currency Sign "৳" Consistency:** Noto Sans Bengali must be configured as the fallback font family across all primary font stacks (sans, secondary, mono) in `app/globals.css` (`var(--font-bengali)`). This ensures that any Bangla text or the BDT Taka sign "৳" rendered anywhere in the application automatically and consistently defaults to Noto Sans Bengali.
+    - **Bangla Font & Currency Sign "৳" Consistency:** Noto Sans Bengali must be configured as the fallback font family across all primary font stacks (sans, secondary, mono) in `app/globals.css` (`var(--font-bengali)`). This ensures that any Bangla text or the BDT Taka sign "৳" rendered anywhere in the application automatically and consistently defaults to Noto Sans Bengali.
+    - **Dynamic Select Creation Option (Dropdown "+ Create New Category..." Pattern):**
+      - For Select dropdown inputs where users should be allowed to enter a custom option dynamically:
+        - Include a special `<SelectItem value="create_new" className="font-semibold text-primary cursor-pointer border-t border-border mt-1">+ Create New Category...</SelectItem>` (or custom label e.g., `+ Create New Option...`) at the bottom of `<SelectContent>`.
+        - Gather dynamic user-entered custom options using `useMemo` from the loaded data list (by filtering out predefined default options). This ensures new items are collected dynamically in memory without adding extra database schemas.
+        - When `value === "create_new"`, conditionally render an input field: `<div className="space-y-1.5 bg-primary/5 p-3 rounded-xl border border-primary/10">` containing the text input for the new item.
+        - On form submission, convert the user-entered string to a trimmed lowercase slug (e.g. `finalCategory = newCategoryName.trim().toLowerCase().replace(/\s+/g, "_")`) and save it to the database. The UI's display text will map back to spacing automatically (e.g., using `.replace("_", " ")` with `capitalize` style).
 
 3. ARCHITECTURE & FOLDER STRUCTURE:
    - Respect the route groups: `app/(staff)` for internal ERP/CRM and `app/(client)` for the client portal.

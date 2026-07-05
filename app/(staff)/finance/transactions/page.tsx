@@ -99,6 +99,7 @@ export default function TransactionsPage() {
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState<"BDT" | "USD">("BDT");
   const [category, setCategory] = useState("snacks");
+  const [newCategoryName, setNewCategoryName] = useState("");
   const [description, setDescription] = useState("");
   const [date, setDate] = useState("");
   const [clientId, setClientId] = useState("none");
@@ -183,6 +184,7 @@ export default function TransactionsPage() {
     } else if (type === "founder_repayment") {
       setCategory("founder_repayment");
     }
+    setNewCategoryName("");
   }, [type]);
 
   async function handleCreateTransaction(e: React.FormEvent) {
@@ -195,11 +197,20 @@ export default function TransactionsPage() {
     setSubmitting(true);
     const { data: { user } } = await supabase.auth.getUser();
 
+    let finalCategory = category;
+    if (category === "create_new") {
+      if (!newCategoryName.trim()) {
+        setSubmitting(false);
+        return toast.error("Please specify a category name");
+      }
+      finalCategory = newCategoryName.trim().toLowerCase().replace(/\s+/g, "_");
+    }
+
     const payload = {
       type,
       amount: parseFloat(amount),
       currency,
-      category,
+      category: finalCategory,
       description: description.trim() || null,
       date: date || new Date().toISOString().split("T")[0],
       client_id: clientId === "none" ? null : clientId,
@@ -223,6 +234,7 @@ export default function TransactionsPage() {
       setInvoiceId("none");
       setEmployeeId("none");
       setFounderName("none");
+      setNewCategoryName("");
       
       void loadData();
     } catch (err: any) {
@@ -279,6 +291,21 @@ export default function TransactionsPage() {
   // Unique categories list for filters
   const uniqueCategories = useMemo(() => {
     return Array.from(new Set(transactions.map((tx) => tx.category)));
+  }, [transactions]);
+
+  // Dynamic custom categories gathered from DB transactions
+  const customExpenseCategories = useMemo(() => {
+    const defaultVals = ["snacks", "office_rent", "utility", "software_license", "domain_renewal", "salary", "marketing", "equipment", "travel", "other"];
+    const saved = transactions
+      .filter(tx => tx.type === "expense" && tx.category && !defaultVals.includes(tx.category));
+    return Array.from(new Set(saved.map(tx => tx.category)));
+  }, [transactions]);
+
+  const customIncomeCategories = useMemo(() => {
+    const defaultVals = ["project_income", "retainer", "training_fees", "other"];
+    const saved = transactions
+      .filter(tx => tx.type === "income" && tx.category && !defaultVals.includes(tx.category));
+    return Array.from(new Set(saved.map(tx => tx.category)));
   }, [transactions]);
 
   // Founder individual calculations
@@ -653,6 +680,14 @@ export default function TransactionsPage() {
                       <SelectItem value="equipment">Office Equipment / Hardware</SelectItem>
                       <SelectItem value="travel">Travel Expenses</SelectItem>
                       <SelectItem value="other">Other Expense Category</SelectItem>
+                      {customExpenseCategories.map((c) => (
+                        <SelectItem key={c} value={c} className="capitalize">
+                          {c.replace("_", " ")}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="create_new" className="font-semibold text-primary cursor-pointer border-t border-border mt-1">
+                        + Create New Category...
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 ) : type === "income" ? (
@@ -665,6 +700,14 @@ export default function TransactionsPage() {
                       <SelectItem value="retainer">Monthly Retainer Inflow</SelectItem>
                       <SelectItem value="training_fees">Training Fees</SelectItem>
                       <SelectItem value="other">Other Service Income</SelectItem>
+                      {customIncomeCategories.map((c) => (
+                        <SelectItem key={c} value={c} className="capitalize">
+                          {c.replace("_", " ")}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="create_new" className="font-semibold text-primary cursor-pointer border-t border-border mt-1">
+                        + Create New Category...
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 ) : (
@@ -676,6 +719,19 @@ export default function TransactionsPage() {
                   />
                 )}
               </div>
+
+              {category === "create_new" && (
+                <div className="space-y-1.5 bg-primary/5 p-3 rounded-xl border border-primary/10">
+                  <Label htmlFor="newCategory" className="text-xs font-semibold text-primary">New Category Name *</Label>
+                  <Input
+                    id="newCategory"
+                    value={newCategoryName}
+                    onChange={e => setNewCategoryName(e.target.value)}
+                    placeholder="e.g. Office Supplies, Server Cost"
+                    required
+                  />
+                </div>
+              )}
 
               {/* Date selection */}
               <div className="space-y-1.5">
