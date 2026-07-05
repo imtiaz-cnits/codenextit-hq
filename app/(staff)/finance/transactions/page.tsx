@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "../../../../components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../../components/ui/tabs";
 import { Textarea } from "../../../../components/ui/textarea";
+import { FlatDatePicker } from "../../../../components/ui/flat-date-picker";
 import { ArrowUpRight, ArrowDownRight, Plus, Trash2, Wallet, DollarSign, Calendar, Search, Loader2, User, FileText, CheckCircle2, TrendingUp } from "lucide-react";
 import { formatCurrency, formatDate } from "../../../../lib/format";
 import { toast } from "sonner";
@@ -735,12 +736,12 @@ export default function TransactionsPage() {
 
               {/* Date selection */}
               <div className="space-y-1.5">
-                <Label htmlFor="txDate" className="text-xs font-semibold">Transaction Date</Label>
-                <Input
-                  id="txDate"
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
+                <Label className="text-xs font-semibold">Transaction Date</Label>
+                <FlatDatePicker
+                  date={date}
+                  onChange={setDate}
+                  placeholder="Select transaction date"
+                  className="cursor-pointer"
                 />
               </div>
 
