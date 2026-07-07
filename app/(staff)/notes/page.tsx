@@ -21,7 +21,7 @@ import {
   AlignRight, Heading1, Heading2, Heading3, Palette, Eraser, Check, Cloud, CloudOff, Lock,
   ChevronRight, HardDrive, Type, FolderPlus, Paintbrush, Table2, Baseline, MoreVertical, SlidersHorizontal,
   Mic, AudioLines, Maximize2, ListTodo, Undo2, Redo2, Printer, Link, MessageSquarePlus, Image, AlignJustify, Outdent, Indent, Minus, ArrowUpDown, Highlighter, X,
-  Star, Pin
+  Star, Pin, Key, Copy, Eye, EyeOff
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDate } from "../../../lib/format";
@@ -394,6 +394,20 @@ export default function NotesPage() {
   const [moveTargetFolderId, setMoveTargetFolderId] = useState<string>("none");
   const [movingItem, setMovingItem] = useState(false);
 
+  // Vault link integration states
+  const [credentials, setCredentials] = useState<any[]>([]);
+  const [loadingCredentials, setLoadingCredentials] = useState(false);
+  const [isVaultLinkModalOpen, setIsVaultLinkModalOpen] = useState(false);
+  const [vaultSearchQuery, setVaultSearchQuery] = useState("");
+  
+  // Vault viewing states
+  const [isVaultViewModalOpen, setIsVaultViewModalOpen] = useState(false);
+  const [selectedVaultId, setSelectedVaultId] = useState<string | null>(null);
+  const [decryptedPassword, setDecryptedPassword] = useState<string | null>(null);
+  const [loadingDecrypt, setLoadingDecrypt] = useState(false);
+  const [copiedPass, setCopiedPass] = useState(false);
+  const [revealPassword, setRevealPassword] = useState(false);
+
   // Editor state
   const [currentNote, setCurrentNote] = useState<NoteRow | null>(null);
   const [openNotes, setOpenNotes] = useState<NoteRow[]>([]);
@@ -519,6 +533,34 @@ export default function NotesPage() {
       const playBtn = target.closest(".voice-note-play-btn");
       const slider = target.closest(".voice-note-slider-container");
       const deleteBtn = target.closest(".voice-note-delete-btn");
+      const vaultDeleteBtn = target.closest(".vault-card-delete-btn");
+      const vaultCard = target.closest(".vault-card");
+
+      if (vaultDeleteBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (confirm("Are you sure you want to delete this vault link?")) {
+          const card = vaultDeleteBtn.closest(".vault-card");
+          if (card) {
+            card.remove();
+            handleEditorInput();
+          }
+        }
+        return;
+      }
+
+      if (vaultCard) {
+        e.preventDefault();
+        e.stopPropagation();
+        const credentialId = vaultCard.getAttribute("data-credential-id");
+        if (credentialId) {
+          setSelectedVaultId(credentialId);
+          setRevealPassword(false);
+          setDecryptedPassword(null);
+          setIsVaultViewModalOpen(true);
+        }
+        return;
+      }
 
       if (deleteBtn) {
         e.preventDefault();
@@ -752,6 +794,69 @@ export default function NotesPage() {
       range.setEndAfter(br);
       sel.removeAllRanges();
       sel.addRange(range);
+    } else {
+      editorRef.current.appendChild(container);
+      const br = document.createElement("p");
+      br.innerHTML = "<br>";
+      editorRef.current.appendChild(br);
+    }
+
+    handleEditorInput();
+    saveSelection();
+  };
+
+  const insertVaultLinkBlock = (id: string, title: string, category: string) => {
+    if (!editorRef.current) return;
+
+    editorRef.current.focus();
+    restoreSelection();
+
+    const container = document.createElement("div");
+    container.className = "vault-card my-4 p-4 rounded-xl border border-border bg-card/65 backdrop-blur-sm shadow-sm max-w-sm relative select-none flex items-center gap-3 group";
+    container.setAttribute("contenteditable", "false");
+    container.setAttribute("data-credential-id", id);
+    container.setAttribute("data-type", "vault-link");
+
+    container.innerHTML = `
+      <button class="vault-card-delete-btn absolute top-2.5 right-2.5 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all cursor-pointer select-none" contenteditable="false" title="Delete Link">
+        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+      <div class="h-9 w-9 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600 shrink-0">
+        <svg class="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>
+      </div>
+      <div class="min-w-0 flex-1 pr-5">
+        <div class="text-xs font-semibold text-foreground truncate">${title}</div>
+        <div class="text-[10px] text-muted-foreground truncate capitalize">${category.replace("_", " ")}</div>
+      </div>
+      <button class="vault-card-view-btn text-[10px] text-primary font-semibold hover:underline shrink-0 bg-transparent border-0 cursor-pointer self-end pb-0.5">
+        View Key
+      </button>
+    `;
+
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(container);
+
+      // Add a line break after the block for easier typing
+      const br = document.createElement("p");
+      br.innerHTML = "<br>";
+      container.after(br);
+
+      range.setStartAfter(br);
+      range.setEndAfter(br);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } else if (activeBlockRef.current) {
+      const parent = activeBlockRef.current.parentNode;
+      if (parent) {
+        parent.replaceChild(container, activeBlockRef.current);
+        const br = document.createElement("p");
+        br.innerHTML = "<br>";
+        container.after(br);
+        br.focus();
+      }
     } else {
       editorRef.current.appendChild(container);
       const br = document.createElement("p");
@@ -1619,7 +1724,7 @@ export default function NotesPage() {
     };
   }, [currentNote]);
 
-  const handleFloatingMenuOption = async (option: "voice" | "dictate" | "image" | "text" | "todo" | "table") => {
+  const handleFloatingMenuOption = async (option: "voice" | "dictate" | "image" | "text" | "todo" | "table" | "vault") => {
     isPopoverOpenRef.current = false;
     setIsPopoverOpen(false);
     setFloatingMenuCoords(null);
@@ -1645,6 +1750,9 @@ export default function NotesPage() {
           restoreSelection();
         }, 50);
       }
+    } else if (option === "vault") {
+      setIsVaultLinkModalOpen(true);
+      void loadCredentials();
     } else if (option === "image") {
       imageFileInputRef.current?.click();
     } else if (option === "text") {
@@ -2045,6 +2153,7 @@ export default function NotesPage() {
     void loadClients();
     void loadNoteFolders();
     void loadActiveStaff();
+    void loadCredentials();
   }, []);
 
   // Restore editor view on reload if noteId is in URL
@@ -2153,6 +2262,38 @@ export default function NotesPage() {
     }
   }
 
+  async function loadCredentials() {
+    setLoadingCredentials(true);
+    try {
+      const res = await fetchWithAuth("/api/vault/credentials");
+      if (!res.ok) throw new Error("Failed to load credentials");
+      const data = await res.json();
+      setCredentials(data || []);
+    } catch (err) {
+      console.error("Error loading credentials:", err);
+    } finally {
+      setLoadingCredentials(false);
+    }
+  }
+
+  async function handleDecrypt(id: string, action: "view" | "copy") {
+    try {
+      const res = await fetchWithAuth("/api/vault/credentials/decrypt", {
+        method: "POST",
+        body: JSON.stringify({ id, action }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to decrypt password");
+      }
+      const data = await res.json();
+      return data.password as string;
+    } catch (err: any) {
+      toast.error(err.message);
+      return null;
+    }
+  }
+
   async function loadNoteFolders() {
     try {
       const res = await fetchWithAuth("/api/notes/folders");
@@ -2202,7 +2343,8 @@ export default function NotesPage() {
         loadNotes(),
         loadClients(),
         loadNoteFolders(),
-        loadActiveStaff()
+        loadActiveStaff(),
+        loadCredentials()
       ]);
       toast.success("Notes dashboard updated successfully", { id: refreshToast });
     } catch (err) {
@@ -6417,6 +6559,20 @@ export default function NotesPage() {
                             e.preventDefault();
                             saveSelection();
                           }}
+                          onClick={() => handleFloatingMenuOption("vault")}
+                          className="flex items-center gap-2.5 px-3 py-2 text-xs text-left font-medium text-foreground hover:bg-muted rounded-lg cursor-pointer transition-colors"
+                        >
+                          <Key className="h-4 w-4 text-amber-500" />
+                          <div>
+                            <div className="font-semibold font-sans">Vault Link</div>
+                            <div className="text-[10px] text-muted-foreground font-normal font-sans">Insert credential preview card</div>
+                          </div>
+                        </button>
+                        <button
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                          }}
                           onClick={() => handleFloatingMenuOption("text")}
                           className="flex items-center gap-2.5 px-3 py-2 text-xs text-left font-medium text-foreground hover:bg-muted rounded-lg cursor-pointer transition-colors"
                         >
@@ -7984,6 +8140,277 @@ export default function NotesPage() {
               )}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* LINK VAULT DIALOG */}
+      <Dialog open={isVaultLinkModalOpen} onOpenChange={setIsVaultLinkModalOpen}>
+        <DialogContent className="max-w-[480px] max-h-[85vh] flex flex-col bg-card/95 border border-border/60 rounded-3xl shadow-xl backdrop-blur-md">
+          <DialogHeader className="shrink-0">
+            <DialogTitle className="flex items-center gap-2">
+              <Key className="h-5 w-5 text-amber-500" /> Link Vault Credential
+            </DialogTitle>
+            <DialogDescription>
+              Select a secure credential from your Vault to embed as a shortcut in this note.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="relative my-3 shrink-0">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              value={vaultSearchQuery}
+              onChange={e => setVaultSearchQuery(e.target.value)}
+              placeholder="Search credentials by title, category, or username..."
+              className="pl-9 h-10 rounded-xl bg-muted/10 border-border/50"
+            />
+          </div>
+
+          <ScrollArea className="flex-1 my-2 border border-border/40 rounded-2xl p-2 bg-muted/20">
+            {loadingCredentials ? (
+              <div className="flex flex-col items-center justify-center py-10 text-muted-foreground gap-2">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                <span className="text-xs">Loading vault items...</span>
+              </div>
+            ) : (() => {
+              const filtered = credentials.filter(c => {
+                const query = vaultSearchQuery.toLowerCase();
+                return (
+                  c.title?.toLowerCase().includes(query) ||
+                  c.category?.toLowerCase().includes(query) ||
+                  c.username?.toLowerCase().includes(query)
+                );
+              });
+
+              if (filtered.length === 0) {
+                return (
+                  <div className="text-center py-8 text-xs text-muted-foreground italic">
+                    No matching credentials found in Vault.
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-1.5 p-1">
+                  {filtered.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => {
+                        insertVaultLinkBlock(c.id, c.title, c.category || "General");
+                        setIsVaultLinkModalOpen(false);
+                        setVaultSearchQuery("");
+                      }}
+                      className="w-full text-left p-3 rounded-xl hover:bg-muted/40 transition-colors border border-transparent hover:border-border/40 flex items-center justify-between gap-3 cursor-pointer group"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-semibold text-foreground truncate group-hover:text-primary transition-colors">{c.title}</div>
+                        <div className="text-[10px] text-muted-foreground mt-0.5 truncate">
+                          {c.username ? `${c.username} • ` : ""}{c.category?.replace("_", " ")}
+                        </div>
+                      </div>
+                      <Plus className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
+          </ScrollArea>
+
+          <DialogFooter className="shrink-0 pt-2 border-t border-border/20">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsVaultLinkModalOpen(false);
+                setVaultSearchQuery("");
+              }}
+              className="cursor-pointer rounded-xl"
+            >
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* VIEW VAULT DIALOG */}
+      <Dialog open={isVaultViewModalOpen} onOpenChange={setIsVaultViewModalOpen}>
+        <DialogContent className="max-w-[450px] bg-card/95 border border-border/60 rounded-3xl shadow-xl backdrop-blur-md p-6">
+          {(() => {
+            const item = credentials.find(c => c.id === selectedVaultId);
+            if (!item) {
+              return (
+                <div className="text-center py-6 text-sm text-muted-foreground">
+                  Credential item could not be found or loaded.
+                </div>
+              );
+            }
+
+            return (
+              <div className="space-y-4">
+                <DialogHeader className="p-0">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600 shrink-0">
+                      <Key className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0 flex-1 text-left">
+                      <DialogTitle className="text-base font-bold truncate">{item.title}</DialogTitle>
+                      <DialogDescription className="text-xs capitalize truncate">
+                        {item.category?.replace("_", " ")}
+                      </DialogDescription>
+                    </div>
+                  </div>
+                </DialogHeader>
+
+                <div className="space-y-3 pt-2">
+                  {/* Link field */}
+                  {item.url && (
+                    <div className="space-y-1">
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Login Link</span>
+                      <a
+                        href={item.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-primary hover:underline flex items-center gap-1.5 break-all font-medium"
+                      >
+                        {item.url} <ExternalLink className="h-3 w-3 shrink-0" />
+                      </a>
+                    </div>
+                  )}
+
+                  {/* Username field */}
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Username</span>
+                    <div className="flex items-center justify-between bg-muted/40 border border-border/30 rounded-xl p-2.5">
+                      <span className="font-mono text-xs text-foreground truncate select-all">{item.username || "—"}</span>
+                      {item.username && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6 hover:bg-muted/80 shrink-0 cursor-pointer"
+                          onClick={async () => {
+                            await navigator.clipboard.writeText(item.username);
+                            toast.success("Username copied!");
+                          }}
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Password field */}
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Password</span>
+                    <div className="flex items-center justify-between bg-muted/40 border border-border/30 rounded-xl p-2.5">
+                      <span className="font-mono text-xs text-foreground font-semibold tracking-wider select-all">
+                        {revealPassword ? (decryptedPassword || "Loading...") : "••••••••"}
+                      </span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6 hover:bg-muted/80 cursor-pointer"
+                          onClick={async () => {
+                            if (revealPassword) {
+                              setRevealPassword(false);
+                            } else {
+                              setRevealPassword(true);
+                              if (!decryptedPassword) {
+                                setLoadingDecrypt(true);
+                                const pass = await handleDecrypt(item.id, "view");
+                                setDecryptedPassword(pass);
+                                setLoadingDecrypt(false);
+                              }
+                            }
+                          }}
+                          disabled={loadingDecrypt}
+                        >
+                          {revealPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6 hover:bg-muted/80 cursor-pointer"
+                          onClick={async () => {
+                            let pass = decryptedPassword;
+                            if (!pass) {
+                              setLoadingDecrypt(true);
+                              pass = await handleDecrypt(item.id, "copy");
+                              setDecryptedPassword(pass);
+                              setLoadingDecrypt(false);
+                            }
+                            if (pass) {
+                              await navigator.clipboard.writeText(pass);
+                              setCopiedPass(true);
+                              toast.success("Password copied!");
+                              setTimeout(() => setCopiedPass(false), 2000);
+                            }
+                          }}
+                          disabled={loadingDecrypt}
+                        >
+                          {copiedPass ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Notes / Remarks */}
+                  {item.notes && (
+                    <div className="space-y-1">
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Remarks / Instructions</span>
+                      <div className="bg-muted/30 border border-border/30 rounded-xl p-3 text-xs text-foreground/90 max-h-[100px] overflow-y-auto whitespace-pre-wrap">
+                        {item.notes}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Custom Fields */}
+                  {item.custom_fields && Array.isArray(item.custom_fields) && item.custom_fields.length > 0 && (
+                    <div className="space-y-2.5 pt-1">
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Custom Security Fields</span>
+                      <div className="space-y-1.5">
+                        {item.custom_fields.map((f: any, i: number) => (
+                          <div key={i} className="flex justify-between items-center text-xs bg-muted/20 border border-border/30 rounded-xl p-2.5">
+                            <span className="text-muted-foreground font-medium">{f.name || f.label}</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono text-foreground font-medium select-all">{f.value}</span>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-6 w-6 hover:bg-muted/80 cursor-pointer"
+                                onClick={async () => {
+                                  await navigator.clipboard.writeText(f.value);
+                                  toast.success(`${f.name || f.label} copied!`);
+                                }}
+                              >
+                                <Copy className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-2 flex justify-between gap-3">
+                  <a
+                    href={`/vault?credential_id=${item.id}`}
+                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline font-semibold"
+                  >
+                    Manage in Vault <ExternalLink className="h-3 w-3" />
+                  </a>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsVaultViewModalOpen(false)}
+                    className="cursor-pointer rounded-xl h-8 text-xs px-4"
+                  >
+                    Close
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
