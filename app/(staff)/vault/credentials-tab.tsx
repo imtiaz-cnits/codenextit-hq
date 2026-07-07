@@ -1955,16 +1955,16 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
 
               <Tabs defaultValue="details" className="w-full flex-1 flex flex-col min-h-0">
                 {/* Premium responsive tab style wrapper following Generator Log page */}
-                <div className="overflow-x-auto pb-1.5 px-4 border-b border-border/40 shrink-0 bg-muted/20 scrollbar-hide flex justify-center pt-1">
+                <div className="overflow-x-auto pb-1.5 px-4 shrink-0 bg-transparent scrollbar-hide flex justify-center pt-2">
                   <TabsList className={cn(
-                    "inline-flex w-full max-w-[380px] p-1 h-auto bg-muted/50 rounded-xl whitespace-nowrap my-1",
+                    "inline-flex w-auto md:grid md:w-full md:max-w-[360px] p-1 h-auto bg-muted/50 rounded-xl whitespace-nowrap",
                     quickViewCred.permission_level === "edit" ? "md:grid-cols-2" : "md:grid-cols-1"
                   )}>
                     <TabsTrigger
                       value="details"
                       className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all text-xs inline-flex items-center justify-center"
                     >
-                      <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+                      <ShieldCheck className="h-4 w-4 shrink-0" />
                       Credentials Detail
                     </TabsTrigger>
                     {quickViewCred.permission_level === "edit" ? (
@@ -1972,7 +1972,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                         value="manage"
                         className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all text-xs inline-flex items-center justify-center"
                       >
-                        <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" />
+                        <SlidersHorizontal className="h-4 w-4 shrink-0" />
                         Access & Settings
                       </TabsTrigger>
                     ) : (
