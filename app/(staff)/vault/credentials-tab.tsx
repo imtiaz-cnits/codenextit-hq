@@ -560,7 +560,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
   const handleOpenQuickView = (c: CredentialRow) => {
     setQuickViewCred(c);
     setQuickViewMoveFolderId(c.client_id || "none");
-    
+
     // Prepare initial sharing state
     const initialSharing: Record<string, { selected: boolean; level: "view" | "edit" }> = {};
     activeStaff.forEach(s => {
@@ -571,7 +571,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
       };
     });
     setQuickViewSharing(initialSharing);
-    
+
     setQuickViewOpen(true);
   };
 
@@ -580,7 +580,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
     setSubmittingQuickViewMove(true);
     try {
       const targetFolderId = quickViewMoveFolderId === "none" ? null : quickViewMoveFolderId;
-      
+
       const shared_staff = quickViewCred.shared_with.map(w => ({
         staff_id: w.staff_id,
         permission_level: w.permission_level
@@ -609,7 +609,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
       }
 
       toast.success("Credential moved successfully");
-      
+
       // Update local quick view copy
       const updatedCred = { ...quickViewCred, client_id: targetFolderId };
       setQuickViewCred(updatedCred);
@@ -657,7 +657,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
       }
 
       toast.success("Sharing updated successfully");
-      
+
       // Update local quick view copy
       const updatedSharedStaff = shared_staff.map(s => {
         const profile = activeStaff.find(as => as.id === s.staff_id);
@@ -936,15 +936,30 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
     return clients.find(c => c.id === id)?.company_name || "—";
   };
 
-  const getFaviconUrl = (urlStr: string | null) => {
+  const getMainDomain = (urlStr: string | null) => {
     try {
       if (!urlStr) return null;
       const cleanUrl = urlStr.startsWith("http") ? urlStr : `https://${urlStr}`;
       const hostname = new URL(cleanUrl).hostname;
-      return `https://www.google.com/s2/favicons?domain=${hostname}&sz=32`;
+      const parts = hostname.split(".");
+      if (parts.length >= 2) {
+        const last = parts[parts.length - 1];
+        const prev = parts[parts.length - 2];
+        if (parts.length >= 3 && ["com", "co", "org", "net", "edu", "gov"].includes(prev)) {
+          return parts.slice(-3).join(".");
+        }
+        return parts.slice(-2).join(".");
+      }
+      return hostname;
     } catch {
       return null;
     }
+  };
+
+  const getFaviconUrl = (urlStr: string | null) => {
+    const domain = getMainDomain(urlStr);
+    if (!domain) return null;
+    return `https://logo.clearbit.com/${domain}`;
   };
 
   const getCategoryInfo = (catVal: string) => {
@@ -1955,7 +1970,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
 
               <Tabs defaultValue="details" className="w-full flex-1 flex flex-col min-h-0">
                 {/* Premium responsive tab style wrapper following Generator Log page */}
-                <div className="overflow-x-auto pb-1.5 px-4 shrink-0 bg-transparent scrollbar-hide flex justify-center pt-2">
+                <div className="overflow-x-auto pb-1.5 px-4 shrink-0 bg-transparent scrollbar-hide flex justify-center pt-0">
                   <TabsList className={cn(
                     "inline-flex w-auto md:grid md:w-full md:max-w-[360px] p-1 h-auto bg-muted/50 rounded-xl whitespace-nowrap",
                     quickViewCred.permission_level === "edit" ? "md:grid-cols-2" : "md:grid-cols-1"
@@ -2115,7 +2130,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                             <FileText className="h-4 w-4 text-primary shrink-0" />
                             <span className="font-mono text-foreground text-xs truncate max-w-[280px]">
                               {quickViewCred.file_name || "credential-file"}
-                             </span>
+                            </span>
                           </div>
                           <Button
                             size="sm"
@@ -2138,7 +2153,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                   {quickViewCred.permission_level === "edit" && (
                     <TabsContent value="manage" className="mt-0 space-y-2.5 outline-none">
                       {/* Move to Folder */}
-                      <div className="space-y-1 bg-muted/20 border border-border/30 rounded-xl p-2.5">
+                      <div className="space-y-1 bg-muted/20 border border-border/30 rounded-xl p-2.5 pt-1">
                         <Label className="text-xs font-semibold text-muted-foreground">Move to Folder</Label>
                         <div className="flex gap-2 mt-0.5">
                           <Select
@@ -2173,7 +2188,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                       </div>
 
                       {/* Sharing with Staff */}
-                      <div className="space-y-1 bg-muted/20 border border-border/30 rounded-xl p-2.5">
+                      <div className="space-y-1 bg-muted/20 border border-border/30 rounded-xl p-2.5 pt-1">
                         <Label className="text-xs font-semibold text-muted-foreground">Sharing Settings</Label>
                         <div className="bg-background border border-border/40 rounded-xl p-2.5 space-y-1.5 max-h-[140px] overflow-y-auto mt-0.5">
                           {activeStaff.length === 0 ? (
