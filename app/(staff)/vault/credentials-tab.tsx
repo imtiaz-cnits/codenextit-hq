@@ -157,6 +157,15 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
   const [quickViewCred, setQuickViewCred] = useState<CredentialRow | null>(null);
   const [quickViewOpen, setQuickViewOpen] = useState(false);
 
+  // Quick View Sharing & Move states
+  const [quickViewMoveFolderId, setQuickViewMoveFolderId] = useState<string>("none");
+  const [submittingQuickViewMove, setSubmittingQuickViewMove] = useState(false);
+  const [quickViewSharing, setQuickViewSharing] = useState<Record<string, { selected: boolean; level: "view" | "edit" }>>({});
+  const [submittingQuickViewShare, setSubmittingQuickViewShare] = useState(false);
+
+  // Card image errors
+  const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
+
   // Form values
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState<string>("other");
@@ -532,6 +541,142 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
     }
   };
 
+  const getInitialsBg = (name: string) => {
+    const hash = name.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const gradients = [
+      "from-blue-500/80 to-indigo-600/80",
+      "from-purple-500/80 to-pink-600/80",
+      "from-emerald-500/80 to-teal-600/80",
+      "from-amber-500/80 to-orange-600/80",
+      "from-rose-500/80 to-red-600/80",
+      "from-cyan-500/80 to-blue-600/80",
+      "from-violet-500/80 to-purple-600/80"
+    ];
+    return gradients[hash % gradients.length];
+  };
+
+  const handleOpenQuickView = (c: CredentialRow) => {
+    setQuickViewCred(c);
+    setQuickViewMoveFolderId(c.client_id || "none");
+    
+    // Prepare initial sharing state
+    const initialSharing: Record<string, { selected: boolean; level: "view" | "edit" }> = {};
+    activeStaff.forEach(s => {
+      const match = c.shared_with.find(w => w.staff_id === s.id);
+      initialSharing[s.id] = {
+        selected: !!match,
+        level: match ? match.permission_level : "view",
+      };
+    });
+    setQuickViewSharing(initialSharing);
+    
+    setQuickViewOpen(true);
+  };
+
+  const handleQuickViewMoveSubmit = async () => {
+    if (!quickViewCred) return;
+    setSubmittingQuickViewMove(true);
+    try {
+      const targetFolderId = quickViewMoveFolderId === "none" ? null : quickViewMoveFolderId;
+      
+      const shared_staff = quickViewCred.shared_with.map(w => ({
+        staff_id: w.staff_id,
+        permission_level: w.permission_level
+      }));
+
+      const res = await fetchWithAuth("/api/vault/credentials", {
+        method: "PUT",
+        body: JSON.stringify({
+          id: quickViewCred.id,
+          title: quickViewCred.title,
+          category: quickViewCred.category,
+          client_id: targetFolderId,
+          url: quickViewCred.url,
+          username: quickViewCred.username,
+          notes: quickViewCred.notes,
+          custom_fields: quickViewCred.custom_fields,
+          shared_staff,
+          file_url: quickViewCred.file_url,
+          file_name: quickViewCred.file_name
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to move credential");
+      }
+
+      toast.success("Credential moved successfully");
+      
+      // Update local quick view copy
+      const updatedCred = { ...quickViewCred, client_id: targetFolderId };
+      setQuickViewCred(updatedCred);
+
+      // Reload
+      void loadCredentials();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setSubmittingQuickViewMove(false);
+    }
+  };
+
+  const handleQuickViewShareSubmit = async () => {
+    if (!quickViewCred) return;
+    setSubmittingQuickViewShare(true);
+    try {
+      const shared_staff = Object.entries(quickViewSharing)
+        .filter(([_, val]) => val.selected)
+        .map(([staff_id, val]) => ({
+          staff_id,
+          permission_level: val.level
+        }));
+
+      const res = await fetchWithAuth("/api/vault/credentials", {
+        method: "PUT",
+        body: JSON.stringify({
+          id: quickViewCred.id,
+          title: quickViewCred.title,
+          category: quickViewCred.category,
+          client_id: quickViewCred.client_id,
+          url: quickViewCred.url,
+          username: quickViewCred.username,
+          notes: quickViewCred.notes,
+          custom_fields: quickViewCred.custom_fields,
+          shared_staff,
+          file_url: quickViewCred.file_url,
+          file_name: quickViewCred.file_name
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to update sharing");
+      }
+
+      toast.success("Sharing updated successfully");
+      
+      // Update local quick view copy
+      const updatedSharedStaff = shared_staff.map(s => {
+        const profile = activeStaff.find(as => as.id === s.staff_id);
+        return {
+          staff_id: s.staff_id,
+          full_name: profile?.full_name || "Staff",
+          permission_level: s.permission_level
+        };
+      });
+      const updatedCred = { ...quickViewCred, shared_with: updatedSharedStaff };
+      setQuickViewCred(updatedCred);
+
+      // Reload
+      void loadCredentials();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setSubmittingQuickViewShare(false);
+    }
+  };
+
   // Handle Decryption
   async function handleDecrypt(id: string, action: "view" | "copy") {
     try {
@@ -903,17 +1048,19 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                   <CardHeader className="pb-3 flex flex-row items-start justify-between space-y-0">
                     <div className="flex items-center gap-3">
                       <div className="h-10 w-10 rounded-xl bg-accent flex items-center justify-center overflow-hidden border border-border shrink-0">
-                        {favUrl ? (
+                        {favUrl && !imageErrors[c.id] ? (
                           <img
                             src={favUrl}
                             alt="logo"
                             className="h-6 w-6 object-contain"
-                            onError={e => {
-                              (e.target as HTMLImageElement).style.display = "none";
+                            onError={() => {
+                              setImageErrors(prev => ({ ...prev, [c.id]: true }));
                             }}
                           />
                         ) : (
-                          <CatIcon className="h-5 w-5 text-muted-foreground" />
+                          <div className={`h-full w-full bg-gradient-to-br ${getInitialsBg(c.title)} flex items-center justify-center font-bold text-sm text-white select-none`}>
+                            {c.title.charAt(0).toUpperCase()}
+                          </div>
                         )}
                       </div>
                       <div>
@@ -1001,6 +1148,21 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                           {clientName(c.client_id)}
                         </Badge>
                       </div>
+                      {c.shared_with && c.shared_with.length > 0 && (
+                        <div className="flex items-center flex-wrap gap-1">
+                          <span className="text-[10px] text-muted-foreground/80 font-medium">Shared:</span>
+                          {c.shared_with.map((s, idx) => (
+                            <Badge
+                              key={s.staff_id}
+                              variant="secondary"
+                              className="text-[9px] px-1 py-0 bg-muted/40 hover:bg-muted text-muted-foreground/90 font-normal border-border/30 rounded-md"
+                              title={`${s.full_name} (${s.permission_level})`}
+                            >
+                              {s.full_name.split(" ")[0]}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-2 pt-2.5 border-t border-border/40">
@@ -1008,10 +1170,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                         size="sm"
                         variant="ghost"
                         className="h-8 px-2 text-xs text-primary hover:text-primary hover:bg-primary/5 cursor-pointer mr-auto"
-                        onClick={() => {
-                          setQuickViewCred(c);
-                          setQuickViewOpen(true);
-                        }}
+                        onClick={() => handleOpenQuickView(c)}
                       >
                         <Maximize2 className="h-3.5 w-3.5 mr-1" /> Quick View
                       </Button>
@@ -1239,17 +1398,19 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                     <CardHeader className="pb-3 flex flex-row items-start justify-between space-y-0">
                       <div className="flex items-center gap-3">
                         <div className="h-10 w-10 rounded-xl bg-accent flex items-center justify-center overflow-hidden border border-border shrink-0">
-                          {favUrl ? (
+                          {favUrl && !imageErrors[c.id] ? (
                             <img
                               src={favUrl}
                               alt="logo"
                               className="h-6 w-6 object-contain"
-                              onError={e => {
-                                (e.target as HTMLImageElement).style.display = "none";
+                              onError={() => {
+                                setImageErrors(prev => ({ ...prev, [c.id]: true }));
                               }}
                             />
                           ) : (
-                            <CatIcon className="h-5 w-5 text-muted-foreground" />
+                            <div className={`h-full w-full bg-gradient-to-br ${getInitialsBg(c.title)} flex items-center justify-center font-bold text-sm text-white select-none`}>
+                              {c.title.charAt(0).toUpperCase()}
+                            </div>
                           )}
                         </div>
                         <div>
@@ -1372,6 +1533,21 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                             </Badge>
                           )}
                         </div>
+                        {c.shared_with && c.shared_with.length > 0 && (
+                          <div className="flex items-center flex-wrap gap-1">
+                            <span className="text-[10px] text-muted-foreground/80 font-medium">Shared:</span>
+                            {c.shared_with.map((s, idx) => (
+                              <Badge
+                                key={s.staff_id}
+                                variant="secondary"
+                                className="text-[9px] px-1 py-0 bg-muted/40 hover:bg-muted text-muted-foreground/90 font-normal border-border/30 rounded-md"
+                                title={`${s.full_name} (${s.permission_level})`}
+                              >
+                                {s.full_name.split(" ")[0]}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-2 pt-2.5 border-t border-border/40">
@@ -1379,10 +1555,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                           size="sm"
                           variant="ghost"
                           className="h-8 px-2 text-xs text-primary hover:text-primary hover:bg-primary/5 cursor-pointer mr-auto"
-                          onClick={() => {
-                            setQuickViewCred(c);
-                            setQuickViewOpen(true);
-                          }}
+                          onClick={() => handleOpenQuickView(c)}
                         >
                           <Maximize2 className="h-3.5 w-3.5 mr-1" /> Quick View
                         </Button>
@@ -1743,17 +1916,19 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
               <DialogHeader className="pb-3 border-b border-border/40">
                 <DialogTitle className="flex items-center gap-3 text-lg font-bold">
                   <div className="h-9 w-9 rounded-xl bg-accent flex items-center justify-center overflow-hidden border border-border shrink-0">
-                    {getFaviconUrl(quickViewCred.url) ? (
+                    {getFaviconUrl(quickViewCred.url) && !imageErrors[quickViewCred.id] ? (
                       <img
                         src={getFaviconUrl(quickViewCred.url) || ""}
                         alt="site logo"
                         className="h-6 w-6 object-contain"
-                        onError={e => {
-                          (e.target as HTMLImageElement).style.display = "none";
+                        onError={() => {
+                          setImageErrors(prev => ({ ...prev, [quickViewCred.id]: true }));
                         }}
                       />
                     ) : (
-                      (getCategoryInfo(quickViewCred.category)).icon({ className: "h-5 w-5 text-muted-foreground" })
+                      <div className={`h-full w-full bg-gradient-to-br ${getInitialsBg(quickViewCred.title)} flex items-center justify-center font-bold text-xs text-white select-none`}>
+                        {quickViewCred.title.charAt(0).toUpperCase()}
+                      </div>
                     )}
                   </div>
                   <div className="flex flex-col items-start gap-0.5">
@@ -1913,6 +2088,112 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         ) : (
                           "Download"
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Sharing and Folder Movement Controls (Only if edit permissions exist) */}
+                {quickViewCred.permission_level === "edit" && (
+                  <div className="space-y-4 border-t border-border/40 pt-4">
+                    {/* Move to Folder */}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold text-muted-foreground">Move to Folder</Label>
+                      <div className="flex gap-2">
+                        <Select
+                          value={quickViewMoveFolderId || "none"}
+                          onValueChange={setQuickViewMoveFolderId}
+                        >
+                          <SelectTrigger className="flex-1 bg-muted/10 border border-border/40 rounded-xl cursor-pointer">
+                            <SelectValue placeholder="Select Folder" />
+                          </SelectTrigger>
+                          <SelectContent className="max-h-[200px] overflow-y-auto">
+                            <SelectItem value="none">None (Personal Credentials)</SelectItem>
+                            {clients.map(c => (
+                              <SelectItem key={c.id} value={c.id} className="cursor-pointer">
+                                {c.company_name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          size="sm"
+                          onClick={handleQuickViewMoveSubmit}
+                          disabled={submittingQuickViewMove}
+                          className="rounded-xl h-10 shrink-0 cursor-pointer"
+                        >
+                          {submittingQuickViewMove ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            "Move"
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Sharing with Staff */}
+                    <div className="space-y-2">
+                      <Label className="text-xs font-semibold text-muted-foreground">Sharing Settings</Label>
+                      <div className="bg-muted/10 border border-border/40 rounded-2xl p-3 space-y-2.5 max-h-[160px] overflow-y-auto">
+                        {activeStaff.length === 0 ? (
+                          <div className="text-[10px] text-muted-foreground italic text-center py-2">
+                            No other staff profiles found to share with.
+                          </div>
+                        ) : (
+                          activeStaff.map(s => {
+                            const val = quickViewSharing[s.id] || { selected: false, level: "view" };
+                            return (
+                              <div key={s.id} className="flex items-center justify-between gap-3 text-xs">
+                                <div className="flex items-center gap-2">
+                                  <Checkbox
+                                    id={`qv-share-${s.id}`}
+                                    checked={val.selected}
+                                    onCheckedChange={checked => {
+                                      setQuickViewSharing(prev => ({
+                                        ...prev,
+                                        [s.id]: { ...val, selected: !!checked }
+                                      }));
+                                    }}
+                                  />
+                                  <Label htmlFor={`qv-share-${s.id}`} className="cursor-pointer select-none">
+                                    {s.full_name}
+                                  </Label>
+                                </div>
+                                {val.selected && (
+                                  <Select
+                                    value={val.level}
+                                    onValueChange={lvl => {
+                                      setQuickViewSharing(prev => ({
+                                        ...prev,
+                                        [s.id]: { ...val, level: lvl as any }
+                                      }));
+                                    }}
+                                  >
+                                    <SelectTrigger className="w-[80px] h-7 text-[10px] cursor-pointer">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="view" className="text-[10px] cursor-pointer">View</SelectItem>
+                                      <SelectItem value="edit" className="text-[10px] cursor-pointer">Edit</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                )}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={handleQuickViewShareSubmit}
+                        disabled={submittingQuickViewShare}
+                        className="w-full rounded-xl cursor-pointer"
+                      >
+                        {submittingQuickViewShare ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                        ) : (
+                          "Save Sharing Settings"
                         )}
                       </Button>
                     </div>
