@@ -10,6 +10,7 @@ interface Client {
   id: string;
   company_name: string;
   permission_level?: "view" | "edit";
+  parent_id?: string | null;
 }
 
 export default function VaultPage() {

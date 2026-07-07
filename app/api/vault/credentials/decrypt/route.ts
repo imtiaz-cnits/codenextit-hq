@@ -27,7 +27,7 @@ async function checkIsSuperAdmin(userId: string): Promise<boolean> {
   return data?.some((r: any) => r.role === "super_admin" || r.role === "admin") ?? false;
 }
 
-// Helper to check if user has access to a folder
+// Helper to check if user has access to a folder (recursively checks parents)
 async function checkHasFolderAccess(userId: string, clientId: string, isAdmin: boolean): Promise<boolean> {
   const { data: folderAccess } = await (supabaseAdmin
     .from("folder_access" as any) as any)
@@ -40,11 +40,16 @@ async function checkHasFolderAccess(userId: string, clientId: string, isAdmin: b
 
   const { data: client } = await supabaseAdmin
     .from("clients")
-    .select("created_by, company_name")
+    .select("created_by, parent_id")
     .eq("id", clientId)
     .maybeSingle();
 
   if (client?.created_by === userId) return true;
+
+  // If there is a parent, check parent recursively
+  if (client?.parent_id) {
+    return checkHasFolderAccess(userId, client.parent_id, isAdmin);
+  }
 
   return false;
 }

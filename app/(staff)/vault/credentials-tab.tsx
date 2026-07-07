@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { supabase } from "../../../integrations/supabase/client";
 import { useAuth } from "../../../lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
@@ -56,6 +56,7 @@ interface Client {
   id: string;
   company_name: string;
   permission_level?: "view" | "edit";
+  parent_id?: string | null;
 }
 
 interface Profile {
@@ -111,6 +112,25 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
   // Folder navigation state: null = Folders Grid view, "internal" = Internal credentials, client_id = client folder
   const [activeFolder, setActiveFolder] = useState<null | "internal" | string>(null);
 
+  // Folder ancestry calculation for breadcrumbs
+  const folderAncestry = useMemo(() => {
+    if (!activeFolder || activeFolder === "internal") return [];
+    const path: Client[] = [];
+    let curr: Client | undefined = clients.find(c => c.id === activeFolder);
+    while (curr) {
+      path.unshift(curr);
+      const pid: string | null | undefined = curr.parent_id;
+      curr = pid ? clients.find(c => c.id === pid) : undefined;
+    }
+    return path;
+  }, [activeFolder, clients]);
+
+  // Filter subfolders of the active folder
+  const subfolders = useMemo(() => {
+    if (!activeFolder || activeFolder === "internal") return [];
+    return clients.filter(c => c.parent_id === activeFolder);
+  }, [clients, activeFolder]);
+
   // Folder creation state
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
@@ -165,7 +185,24 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
   const [renameFolderOpen, setRenameFolderOpen] = useState(false);
   const [renameFolderId, setRenameFolderId] = useState("");
   const [renameFolderName, setRenameFolderName] = useState("");
+  const [renameFolderParentId, setRenameFolderParentId] = useState<string>("none");
   const [renamingFolder, setRenamingFolder] = useState(false);
+
+  // Checks if childId is a descendant of parentId
+  const isDescendant = useCallback((childId: string, parentId: string) => {
+    let curr: Client | undefined = clients.find(c => c.id === childId);
+    while (curr) {
+      if (curr.parent_id === parentId) return true;
+      const pid: string | null | undefined = curr.parent_id;
+      curr = pid ? clients.find(c => c.id === pid) : undefined;
+    }
+    return false;
+  }, [clients]);
+
+  // List of other folders that aren't this folder itself or its descendants
+  const validParentFolders = useMemo(() => {
+    return clients.filter(c => c.id !== renameFolderId && !isDescendant(c.id, renameFolderId));
+  }, [clients, renameFolderId, isDescendant]);
 
   const [shareFolderOpen, setShareFolderOpen] = useState(false);
   const [shareFolderId, setShareFolderId] = useState("");
@@ -176,6 +213,8 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
   const handleOpenRenameFolder = (id: string, name: string) => {
     setRenameFolderId(id);
     setRenameFolderName(name);
+    const folder = clients.find(c => c.id === id);
+    setRenameFolderParentId(folder?.parent_id || "none");
     setRenameFolderOpen(true);
   };
 
@@ -184,15 +223,20 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
     if (!renameFolderName.trim()) return toast.error("Folder name is required");
     setRenamingFolder(true);
     try {
+      const parentId = renameFolderParentId === "none" ? null : renameFolderParentId;
       const res = await fetchWithAuth("/api/vault/folders", {
         method: "PUT",
-        body: JSON.stringify({ id: renameFolderId, company_name: renameFolderName.trim() }),
+        body: JSON.stringify({
+          id: renameFolderId,
+          company_name: renameFolderName.trim(),
+          parent_id: parentId
+        }),
       });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.error || "Failed to rename folder");
       }
-      toast.success("Folder renamed successfully");
+      toast.success("Folder updated successfully");
       setRenameFolderOpen(false);
       if (onRefreshClients) {
         await onRefreshClients();
@@ -352,9 +396,10 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
     if (!newFolderName.trim()) return toast.error("Folder name is required");
     setCreatingFolder(true);
     try {
+      const parentId = (activeFolder && activeFolder !== "internal") ? activeFolder : null;
       const res = await fetchWithAuth("/api/vault/folders", {
         method: "POST",
-        body: JSON.stringify({ company_name: newFolderName.trim() }),
+        body: JSON.stringify({ company_name: newFolderName.trim(), parent_id: parentId }),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -1003,7 +1048,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
           <h2 className="text-sm font-semibold text-muted-foreground">Select a Folder to view credentials</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6">
             {/* Clients folder cards */}
-            {clients.map((c, index) => {
+            {clients.filter(c => !c.parent_id).map((c, index) => {
               const count = folderCounts[c.id] ?? 0;
               const gradient = FOLDER_GRADIENTS[index % FOLDER_GRADIENTS.length];
               const theme = FOLDER_COLORS[index % FOLDER_COLORS.length];
@@ -1063,18 +1108,38 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
               variant="outline"
               size="icon"
               onClick={() => {
-                setActiveFolder(null);
-                setSelectedCategory("all");
+                const folder = clients.find(c => c.id === activeFolder);
+                if (folder?.parent_id) {
+                  setActiveFolder(folder.parent_id);
+                } else {
+                  setActiveFolder(null);
+                  setSelectedCategory("all");
+                }
               }}
               className="h-8.5 w-8.5 rounded-xl cursor-pointer"
             >
               <ChevronLeft className="h-5 w-5" />
             </Button>
             <div>
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
-                <span>Vault</span>
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium flex-wrap">
+                <span className="hover:underline cursor-pointer" onClick={() => { setActiveFolder(null); setSelectedCategory("all"); }}>Vault</span>
                 <span>/</span>
-                <span className="hover:underline cursor-pointer" onClick={() => setActiveFolder(null)}>Folders</span>
+                <span className="hover:underline cursor-pointer" onClick={() => { setActiveFolder(null); setSelectedCategory("all"); }}>Folders</span>
+                {folderAncestry.map((f, i) => (
+                  <span key={f.id} className="flex items-center gap-1.5">
+                    <span>/</span>
+                    <span
+                      className={`hover:underline cursor-pointer ${i === folderAncestry.length - 1 ? "text-foreground font-semibold" : ""}`}
+                      onClick={() => {
+                        if (i < folderAncestry.length - 1) {
+                          setActiveFolder(f.id);
+                        }
+                      }}
+                    >
+                      {f.company_name}
+                    </span>
+                  </span>
+                ))}
               </div>
               <h2 className="text-xl font-bold tracking-tight text-foreground mt-0.5">
                 {activeFolder === "internal" ? "Personal Credentials" : clientName(activeFolder)}
@@ -1084,6 +1149,65 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
               {filteredCredentials.length} items
             </Badge>
           </div>
+
+          {/* Subfolders Grid */}
+          {subfolders.length > 0 && (
+            <div className="space-y-3 pb-2 border-b border-border/40">
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Subfolders</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+                {subfolders.map((c, index) => {
+                  const count = folderCounts[c.id] ?? 0;
+                  const gradient = FOLDER_GRADIENTS[index % FOLDER_GRADIENTS.length];
+                  const theme = FOLDER_COLORS[index % FOLDER_COLORS.length];
+                  const hasEditPermission = c.permission_level === "edit";
+
+                  return (
+                    <Card
+                      key={c.id}
+                      onClick={() => setActiveFolder(c.id)}
+                      className={`group cursor-pointer border bg-gradient-to-br ${gradient} transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 relative`}
+                    >
+                      {hasEditPermission && (
+                        <div className="absolute top-3 right-3 z-10" onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-muted rounded-full">
+                                <MoreVertical className="h-3.5 w-3.5 text-muted-foreground" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleOpenShareFolder(c.id, c.company_name)} className="cursor-pointer">
+                                <Users className="h-4 w-4 mr-2" /> Share Folder
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleOpenRenameFolder(c.id, c.company_name)} className="cursor-pointer">
+                                <Edit className="h-4 w-4 mr-2" /> Rename Folder
+                              </DropdownMenuItem>
+                              {hasEditPermission && (
+                                <DropdownMenuItem onClick={() => handleDeleteFolder(c.id, c.company_name)} className="text-destructive cursor-pointer hover:bg-destructive/10">
+                                  <Trash2 className="h-4 w-4 mr-2" /> Delete Folder
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      )}
+                      <CardContent className="p-4 flex flex-row items-center gap-3">
+                        <div className={`h-9 w-9 rounded-xl ${theme.bg} flex items-center justify-center border ${theme.border} shrink-0`}>
+                          <Folder className={`h-4.5 w-4.5 ${theme.text}`} />
+                        </div>
+                        <div className="min-w-0 flex-1 pr-4">
+                          <h4 className="font-semibold text-sm text-foreground truncate">{c.company_name}</h4>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            {count} items
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Cards Grid belonging to the active folder */}
           {loading ? (
@@ -1876,6 +2000,23 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                 required
                 className="col-span-3"
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="renameFolderParent" className="text-xs">Parent Folder (Optional)</Label>
+              <Select value={renameFolderParentId} onValueChange={setRenameFolderParentId}>
+                <SelectTrigger id="renameFolderParent" className="cursor-pointer">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none" className="cursor-pointer">None (Root Folder)</SelectItem>
+                  {validParentFolders.map(c => (
+                    <SelectItem key={c.id} value={c.id} className="cursor-pointer">
+                      {c.company_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button

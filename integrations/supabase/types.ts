@@ -70,6 +70,7 @@ export type Database = {
           updated_at: string
           vat_bin: string | null
           created_by: string | null
+          parent_id: string | null
         }
         Insert: {
           address?: string | null
@@ -85,6 +86,7 @@ export type Database = {
           updated_at?: string
           vat_bin?: string | null
           created_by?: string | null
+          parent_id?: string | null
         }
         Update: {
           address?: string | null
@@ -100,6 +102,7 @@ export type Database = {
           updated_at?: string
           vat_bin?: string | null
           created_by?: string | null
+          parent_id?: string | null
         }
         Relationships: []
       }

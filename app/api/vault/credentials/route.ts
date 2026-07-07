@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
     // Fetch all folders
     const { data: clients } = await supabaseAdmin
       .from("clients")
-      .select("id, created_by, company_name");
+      .select("id, created_by, company_name, parent_id");
 
     // Fetch folder_access for user
     const { data: folderAccess } = await (supabaseAdmin
@@ -95,16 +95,29 @@ export async function GET(req: NextRequest) {
       return adminUserIds.has(createdById);
     };
 
-    // Filter visible folder IDs for this user
-    const visibleFolderIds = new Set<string>();
+    // Filter visible folder IDs for this user (explicit access)
+    const explicitFolderIds = new Set<string>();
     (clients || []).forEach((c: any) => {
       const isCreator = c.created_by === user.id;
       const hasExplicit = folderAccessMap.has(c.id);
 
       if (isCreator || hasExplicit) {
-        visibleFolderIds.add(c.id);
+        explicitFolderIds.add(c.id);
       }
     });
+
+    // Expand downwards only (Descendants get access)
+    const visibleFolderIds = new Set<string>(explicitFolderIds);
+    let addedNew = true;
+    while (addedNew) {
+      addedNew = false;
+      (clients || []).forEach((c: any) => {
+        if (c.parent_id && visibleFolderIds.has(c.parent_id) && !visibleFolderIds.has(c.id)) {
+          visibleFolderIds.add(c.id);
+          addedNew = true;
+        }
+      });
+    }
 
     // Fetch credentials
     const { data: allCredentials, error: credErr } = await (supabaseAdmin

@@ -63,7 +63,7 @@ export async function GET(req: NextRequest) {
     // Fetch all folders
     const { data: allClients, error: clientsErr } = await supabaseAdmin
       .from("clients")
-      .select("id, company_name, created_by")
+      .select("id, company_name, created_by, parent_id")
       .order("company_name");
     if (clientsErr) throw clientsErr;
 
@@ -118,22 +118,45 @@ export async function GET(req: NextRequest) {
       userRelatedCreds.map((rc: any) => rc.client_id).filter(Boolean)
     );
 
-    // Visibility rules:
-    // A folder 'c' is visible if:
-    // 1. User is creator of the folder.
-    // 2. User has explicit folder_access record.
-    // 3. User has access to at least one credential inside the folder.
-    const visibleFolders = (allClients || []).filter((c: any) => {
+    // 1. Build initial visible folder IDs (explicitly owned, shared, or containing shared credentials)
+    const initVisibleIds = new Set<string>();
+    for (const c of allClients || []) {
       const isCreator = c.created_by === user.id;
       const hasExplicit = folderAccessMap.has(c.id);
       const hasRelatedCreds = foldersWithRelatedCreds.has(c.id);
 
       if (isCreator || hasExplicit || hasRelatedCreds) {
-        return true;
+        initVisibleIds.add(c.id);
       }
+    }
 
-      return false;
-    });
+    // 2. Expand downwards (Descendants): If a parent folder is visible, all its descendants are visible.
+    const resolvedVisibleIds = new Set<string>(initVisibleIds);
+    let addedNew = true;
+    while (addedNew) {
+      addedNew = false;
+      for (const c of allClients || []) {
+        if (c.parent_id && resolvedVisibleIds.has(c.parent_id) && !resolvedVisibleIds.has(c.id)) {
+          resolvedVisibleIds.add(c.id);
+          addedNew = true;
+        }
+      }
+    }
+
+    // 3. Expand upwards (Ancestors): If a child folder is visible, all its ancestors must be visible to navigate.
+    addedNew = true;
+    while (addedNew) {
+      addedNew = false;
+      for (const c of allClients || []) {
+        if (resolvedVisibleIds.has(c.id) && c.parent_id && !resolvedVisibleIds.has(c.parent_id)) {
+          resolvedVisibleIds.add(c.parent_id);
+          addedNew = true;
+        }
+      }
+    }
+
+    // Filter visible folders
+    const visibleFolders = (allClients || []).filter((c: any) => resolvedVisibleIds.has(c.id));
 
     const foldersWithPermission = visibleFolders.map((c: any) => {
       let permission = "view";
@@ -147,7 +170,8 @@ export async function GET(req: NextRequest) {
       return {
         id: c.id,
         company_name: c.company_name,
-        permission_level: permission
+        permission_level: permission,
+        parent_id: c.parent_id
       };
     });
 
@@ -170,7 +194,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Forbidden. Only staff members can create folders." }, { status: 403 });
     }
 
-    const { company_name } = await req.json();
+    const { company_name, parent_id } = await req.json();
     if (!company_name?.trim()) {
       return NextResponse.json({ error: "Folder name is required" }, { status: 400 });
     }
@@ -179,9 +203,10 @@ export async function POST(req: NextRequest) {
       .from("clients")
       .insert({ 
         company_name: company_name.trim(),
-        created_by: user.id
+        created_by: user.id,
+        parent_id: parent_id || null
       })
-      .select("id, company_name")
+      .select("id, company_name, parent_id")
       .single();
     if (error) throw error;
 
@@ -208,9 +233,27 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { id, company_name } = await req.json();
+    const { id, company_name, parent_id } = await req.json();
     if (!id || !company_name?.trim()) {
       return NextResponse.json({ error: "ID and Folder name are required" }, { status: 400 });
+    }
+
+    // Validate parent_id to prevent cyclic reference cycles
+    if (parent_id) {
+      if (parent_id === id) {
+        return NextResponse.json({ error: "Forbidden. A folder cannot be its own parent." }, { status: 400 });
+      }
+
+      // Read all folders to construct the hierarchy tree
+      const { data: allFolders } = await supabaseAdmin.from("clients").select("id, parent_id");
+      const folderMap = new Map((allFolders || []).map((f: any) => [f.id, f.parent_id]));
+      let currentParent = parent_id;
+      while (currentParent) {
+        if (currentParent === id) {
+          return NextResponse.json({ error: "Forbidden. Cannot move a folder into one of its own subfolders." }, { status: 400 });
+        }
+        currentParent = folderMap.get(currentParent) || null;
+      }
     }
 
     const isAdmin = await checkIsSuperAdmin(user.id);
@@ -243,11 +286,16 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "Forbidden. You do not have edit permission for this folder." }, { status: 403 });
     }
 
+    const updateFields: any = { company_name: company_name.trim() };
+    if (parent_id !== undefined) {
+      updateFields.parent_id = parent_id || null;
+    }
+
     const { data, error } = await supabaseAdmin
       .from("clients")
-      .update({ company_name: company_name.trim() })
+      .update(updateFields)
       .eq("id", id)
-      .select("id, company_name")
+      .select("id, company_name, parent_id")
       .single();
     if (error) throw error;
 
