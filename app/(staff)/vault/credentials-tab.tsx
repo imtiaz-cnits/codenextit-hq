@@ -19,6 +19,7 @@ import { Key, Server, Globe, Mail, Cpu, ShieldAlert, Eye, EyeOff, Copy, Check, P
 import { toast } from "sonner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../../components/ui/dropdown-menu";
 import { formatDate } from "../../../lib/format";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui/tabs";
 
 type CredentialCategory = "hosting" | "social_media" | "email" | "cpanel" | "admin_panel" | "other" | string;
 
@@ -1910,10 +1911,10 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
 
       {/* Quick View Dialog Modal */}
       <Dialog open={quickViewOpen} onOpenChange={setQuickViewOpen}>
-        <DialogContent className="max-w-[500px] bg-card/95 border border-border/60 rounded-3xl shadow-xl backdrop-blur-md">
+        <DialogContent className="max-w-[500px] bg-card/95 border border-border/60 rounded-3xl shadow-xl backdrop-blur-md p-0 flex flex-col max-h-[85vh] overflow-hidden">
           {quickViewCred && (
             <>
-              <DialogHeader className="pb-3 border-b border-border/40">
+              <DialogHeader className="p-6 pb-4 border-b border-border/40 shrink-0">
                 <DialogTitle className="flex items-center gap-3 text-lg font-bold">
                   <div className="h-9 w-9 rounded-xl bg-accent flex items-center justify-center overflow-hidden border border-border shrink-0">
                     {getFaviconUrl(quickViewCred.url) && !imageErrors[quickViewCred.id] ? (
@@ -1933,8 +1934,16 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                   </div>
                   <div className="flex flex-col items-start gap-0.5">
                     <span>{quickViewCred.title}</span>
-                    <span className="text-[11px] text-muted-foreground font-normal">
-                      Folder: {clientName(quickViewCred.client_id)}
+                    <span className="text-[11px] text-muted-foreground font-normal flex items-center gap-1.5 flex-wrap">
+                      <span>Folder: <span className="font-semibold text-foreground">{clientName(quickViewCred.client_id)}</span></span>
+                      <span className="h-1 w-1 rounded-full bg-border" />
+                      <span>Created: <span className="font-semibold text-foreground">{formatDate(quickViewCred.created_at)}</span></span>
+                      {quickViewCred.updated_at && quickViewCred.updated_at !== quickViewCred.created_at && (
+                        <>
+                          <span className="h-1 w-1 rounded-full bg-border" />
+                          <span>Updated: <span className="font-semibold text-foreground">{formatDate(quickViewCred.updated_at)}</span></span>
+                        </>
+                      )}
                     </span>
                   </div>
                 </DialogTitle>
@@ -1943,271 +1952,282 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                 </DialogDescription>
               </DialogHeader>
 
-              <div className="space-y-4 py-4 max-h-[75vh] overflow-y-auto pr-1">
-                {/* Meta details Category Badge */}
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-muted-foreground font-medium">Category</span>
-                  <Badge variant="outline" className={`${(getCategoryInfo(quickViewCred.category)).color} border px-2 py-0.5 font-medium`}>
-                    {(getCategoryInfo(quickViewCred.category)).label}
-                  </Badge>
-                </div>
-
-                {/* Login URL */}
-                <div className="space-y-1">
-                  <span className="text-xs text-muted-foreground font-semibold">Login Link</span>
-                  <div className="flex items-center justify-between bg-muted/40 rounded-xl px-3 py-2 border border-border/30 text-sm">
-                    <span className="truncate text-foreground max-w-[360px]">
-                      {quickViewCred.url || "—"}
-                    </span>
-                    {quickViewCred.url && (
-                      <a
-                        href={quickViewCred.url.startsWith("http") ? quickViewCred.url : `https://${quickViewCred.url}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-primary hover:text-primary/80 flex items-center justify-center p-1.5 hover:bg-muted/80 rounded-lg cursor-pointer transition-colors"
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                      </a>
-                    )}
-                  </div>
-                </div>
-
-                {/* Username */}
-                <div className="space-y-1">
-                  <span className="text-xs text-muted-foreground font-semibold">Username / Email</span>
-                  <div className="flex items-center justify-between bg-muted/40 rounded-xl px-3 py-2 border border-border/30 text-sm">
-                    <span className="font-mono text-foreground font-medium select-all truncate max-w-[360px]">
-                      {quickViewCred.username || "—"}
-                    </span>
-                    {quickViewCred.username && (
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8 hover:bg-muted/80 cursor-pointer"
-                        onClick={async () => {
-                          await navigator.clipboard.writeText(quickViewCred.username || "");
-                          toast.success("Username copied!");
-                        }}
-                      >
-                        <Copy className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Password */}
-                <div className="space-y-1">
-                  <span className="text-xs text-muted-foreground font-semibold">Password</span>
-                  <div className="flex items-center justify-between bg-muted/40 rounded-xl px-3 py-2 border border-border/30 text-sm">
-                    <span className="font-mono text-foreground font-semibold tracking-wider">
-                      {visibleMap[quickViewCred.id] ? decryptedMap[quickViewCred.id] : "••••••••"}
-                    </span>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8 hover:bg-muted/80 cursor-pointer"
-                        onClick={() => handleToggleReveal(quickViewCred.id)}
-                      >
-                        {visibleMap[quickViewCred.id] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </Button>
-
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8 hover:bg-muted/80 cursor-pointer"
-                        onClick={() => handleCopyPassword(quickViewCred.id)}
-                      >
-                        {copiedId === quickViewCred.id ? (
-                          <Check className="h-4 w-4 text-green-500" />
-                        ) : (
-                          <Copy className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Dynamic Custom Fields */}
-                {quickViewCred.custom_fields && quickViewCred.custom_fields.length > 0 && (
-                  <div className="space-y-2 border-t border-border/40 pt-3">
-                    <span className="text-xs text-muted-foreground font-semibold">Additional Details</span>
-                    <div className="space-y-2">
-                      {quickViewCred.custom_fields.map((cf, idx) => (
-                        <div key={idx} className="flex justify-between items-center bg-accent/20 rounded-xl px-3 py-2 border border-border/20 text-xs">
-                          <span className="text-muted-foreground font-semibold">{cf.label}</span>
-                          <div className="flex items-center gap-1.5 max-w-[280px]">
-                            <span className="font-mono text-foreground select-all truncate">{cf.value}</span>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-6 w-6 hover:bg-muted cursor-pointer shrink-0"
-                              onClick={async () => {
-                                await navigator.clipboard.writeText(cf.value);
-                                toast.success(`${cf.label} copied!`);
-                              }}
-                            >
-                              <Copy className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Notes */}
-                {quickViewCred.notes && (
-                  <div className="space-y-1 border-t border-border/40 pt-3">
-                    <span className="text-xs text-muted-foreground font-semibold">Notes / Description</span>
-                    <div className="text-xs text-foreground bg-accent/10 border border-border/20 p-3 rounded-xl italic leading-relaxed text-muted-foreground/90">
-                      {quickViewCred.notes}
-                    </div>
-                  </div>
-                )}
-
-                {/* Attachment file */}
-                {quickViewCred.file_url && (
-                  <div className="space-y-1 border-t border-border/40 pt-3">
-                    <span className="text-xs text-muted-foreground font-semibold">Attachment</span>
-                    <div className="flex items-center justify-between bg-muted/40 rounded-xl px-3 py-2 border border-border/30 text-sm">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <FileText className="h-4 w-4 text-primary shrink-0" />
-                        <span className="font-mono text-foreground text-xs truncate max-w-[280px]">
-                          {quickViewCred.file_name || "credential-file"}
-                         </span>
+              <Tabs defaultValue="details" className="w-full flex-1 flex flex-col min-h-0">
+                <div className="px-6 border-b border-border/40 shrink-0 bg-muted/20">
+                  <TabsList className="grid grid-cols-2 w-full max-w-[340px] mx-auto p-1 h-9 bg-muted/65 rounded-xl my-2 border border-border/10">
+                    <TabsTrigger value="details" className="text-xs py-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all">
+                      Credentials Detail
+                    </TabsTrigger>
+                    {quickViewCred.permission_level === "edit" ? (
+                      <TabsTrigger value="manage" className="text-xs py-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all">
+                        Access & Settings
+                      </TabsTrigger>
+                    ) : (
+                      <div className="text-center text-[10px] text-muted-foreground self-center select-none opacity-60 font-medium">
+                        Read-Only Mode
                       </div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={downloadingFileId === quickViewCred.id}
-                        className="h-8 text-primary hover:text-primary/80 hover:bg-primary/5 cursor-pointer flex items-center gap-1 shrink-0"
-                        onClick={() => handleDownloadAttachment(quickViewCred.file_url!, quickViewCred.file_name!, quickViewCred.id)}
-                      >
-                        {downloadingFileId === quickViewCred.id ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          "Download"
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                )}
+                    )}
+                  </TabsList>
+                </div>
 
-                {/* Sharing and Folder Movement Controls (Only if edit permissions exist) */}
-                {quickViewCred.permission_level === "edit" && (
-                  <div className="space-y-4 border-t border-border/40 pt-4">
-                    {/* Move to Folder */}
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-semibold text-muted-foreground">Move to Folder</Label>
-                      <div className="flex gap-2">
-                        <Select
-                          value={quickViewMoveFolderId || "none"}
-                          onValueChange={setQuickViewMoveFolderId}
-                        >
-                          <SelectTrigger className="flex-1 bg-muted/10 border border-border/40 rounded-xl cursor-pointer">
-                            <SelectValue placeholder="Select Folder" />
-                          </SelectTrigger>
-                          <SelectContent className="max-h-[200px] overflow-y-auto">
-                            <SelectItem value="none">None (Personal Credentials)</SelectItem>
-                            {clients.map(c => (
-                              <SelectItem key={c.id} value={c.id} className="cursor-pointer">
-                                {c.company_name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                <div className="flex-1 overflow-y-auto p-6 space-y-4 min-h-0">
+                  <TabsContent value="details" className="mt-0 space-y-4 outline-none">
+                    {/* Meta details Category Badge */}
+                    <div className="flex justify-between items-center bg-muted/30 border border-border/30 rounded-xl px-3.5 py-2">
+                      <span className="text-xs text-muted-foreground font-semibold">Category</span>
+                      <Badge variant="outline" className={`${(getCategoryInfo(quickViewCred.category)).color} border px-2.5 py-0.5 font-semibold text-[11px]`}>
+                        {(getCategoryInfo(quickViewCred.category)).label}
+                      </Badge>
+                    </div>
+
+                    {/* Login URL */}
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground font-semibold">Login Link</span>
+                      <div className="flex items-center justify-between bg-muted/40 rounded-xl px-3.5 py-2 border border-border/30 text-xs">
+                        <span className="truncate text-foreground max-w-[340px] font-medium">
+                          {quickViewCred.url || "—"}
+                        </span>
+                        {quickViewCred.url && (
+                          <a
+                            href={quickViewCred.url.startsWith("http") ? quickViewCred.url : `https://${quickViewCred.url}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-primary hover:text-primary/80 flex items-center justify-center p-1.5 hover:bg-muted/80 rounded-lg cursor-pointer transition-colors"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Username */}
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground font-semibold">Username / Email</span>
+                      <div className="flex items-center justify-between bg-muted/40 rounded-xl px-3.5 py-2 border border-border/30 text-xs">
+                        <span className="font-mono text-foreground select-all truncate max-w-[340px] font-medium">
+                          {quickViewCred.username || "—"}
+                        </span>
+                        {quickViewCred.username && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7 hover:bg-muted cursor-pointer shrink-0"
+                            onClick={async () => {
+                              await navigator.clipboard.writeText(quickViewCred.username || "");
+                              toast.success("Username copied!");
+                            }}
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Password */}
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground font-semibold">Password</span>
+                      <div className="flex items-center justify-between bg-muted/40 rounded-xl px-3.5 py-2 border border-border/30 text-xs">
+                        <span className="font-mono text-foreground font-bold tracking-wider select-all">
+                          {visibleMap[quickViewCred.id] ? decryptedMap[quickViewCred.id] : "••••••••"}
+                        </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7 hover:bg-muted cursor-pointer"
+                            onClick={() => handleToggleReveal(quickViewCred.id)}
+                          >
+                            {visibleMap[quickViewCred.id] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7 hover:bg-muted cursor-pointer"
+                            onClick={() => handleCopyPassword(quickViewCred.id)}
+                          >
+                            {copiedId === quickViewCred.id ? (
+                              <Check className="h-3.5 w-3.5 text-green-500" />
+                            ) : (
+                              <Copy className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Dynamic Custom Fields */}
+                    {quickViewCred.custom_fields && quickViewCred.custom_fields.length > 0 && (
+                      <div className="space-y-2 border-t border-border/40 pt-3">
+                        <span className="text-xs text-muted-foreground font-semibold">Additional Details</span>
+                        <div className="space-y-2">
+                          {quickViewCred.custom_fields.map((cf, idx) => (
+                            <div key={idx} className="flex justify-between items-center bg-accent/20 rounded-xl px-3.5 py-2 border border-border/20 text-xs">
+                              <span className="text-muted-foreground font-semibold">{cf.label}</span>
+                              <div className="flex items-center gap-1.5 max-w-[280px]">
+                                <span className="font-mono text-foreground select-all truncate font-medium">{cf.value}</span>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-6 w-6 hover:bg-muted cursor-pointer shrink-0"
+                                  onClick={async () => {
+                                    await navigator.clipboard.writeText(cf.value);
+                                    toast.success(`${cf.label} copied!`);
+                                  }}
+                                >
+                                  <Copy className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Notes */}
+                    {quickViewCred.notes && (
+                      <div className="space-y-1 border-t border-border/40 pt-3">
+                        <span className="text-xs text-muted-foreground font-semibold">Notes / Description</span>
+                        <div className="text-xs text-foreground bg-accent/10 border border-border/20 p-3.5 rounded-xl italic leading-relaxed text-muted-foreground/90 whitespace-pre-wrap">
+                          {quickViewCred.notes}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Attachment file */}
+                    {quickViewCred.file_url && (
+                      <div className="space-y-1 border-t border-border/40 pt-3">
+                        <span className="text-xs text-muted-foreground font-semibold">Attachment</span>
+                        <div className="flex items-center justify-between bg-muted/40 rounded-xl px-3.5 py-2 border border-border/30 text-xs">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <FileText className="h-4 w-4 text-primary shrink-0" />
+                            <span className="font-mono text-foreground text-xs truncate max-w-[280px]">
+                              {quickViewCred.file_name || "credential-file"}
+                             </span>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={downloadingFileId === quickViewCred.id}
+                            className="h-8 text-primary hover:text-primary/80 hover:bg-primary/5 cursor-pointer flex items-center gap-1 shrink-0"
+                            onClick={() => handleDownloadAttachment(quickViewCred.file_url!, quickViewCred.file_name!, quickViewCred.id)}
+                          >
+                            {downloadingFileId === quickViewCred.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              "Download"
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </TabsContent>
+
+                  {quickViewCred.permission_level === "edit" && (
+                    <TabsContent value="manage" className="mt-0 space-y-4 outline-none">
+                      {/* Move to Folder */}
+                      <div className="space-y-1.5 bg-muted/20 border border-border/30 rounded-2xl p-4">
+                        <Label className="text-xs font-semibold text-muted-foreground">Move to Folder</Label>
+                        <div className="flex gap-2 mt-1">
+                          <Select
+                            value={quickViewMoveFolderId || "none"}
+                            onValueChange={setQuickViewMoveFolderId}
+                          >
+                            <SelectTrigger className="flex-1 bg-background border border-border/40 rounded-xl cursor-pointer">
+                              <SelectValue placeholder="Select Folder" />
+                            </SelectTrigger>
+                            <SelectContent className="max-h-[200px] overflow-y-auto">
+                              <SelectItem value="none">None (Personal Credentials)</SelectItem>
+                              {clients.map(c => (
+                                <SelectItem key={c.id} value={c.id} className="cursor-pointer">
+                                  {c.company_name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            size="sm"
+                            onClick={handleQuickViewMoveSubmit}
+                            disabled={submittingQuickViewMove}
+                            className="rounded-xl h-10 shrink-0 cursor-pointer px-4"
+                          >
+                            {submittingQuickViewMove ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              "Move"
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Sharing with Staff */}
+                      <div className="space-y-2 bg-muted/20 border border-border/30 rounded-2xl p-4">
+                        <Label className="text-xs font-semibold text-muted-foreground">Sharing Settings</Label>
+                        <div className="bg-background border border-border/40 rounded-2xl p-3.5 space-y-2.5 max-h-[200px] overflow-y-auto mt-1">
+                          {activeStaff.length === 0 ? (
+                            <div className="text-[10px] text-muted-foreground italic text-center py-2">
+                              No other staff profiles found to share with.
+                            </div>
+                          ) : (
+                            activeStaff.map(s => {
+                              const val = quickViewSharing[s.id] || { selected: false, level: "view" };
+                              return (
+                                <div key={s.id} className="flex items-center justify-between gap-3 text-xs border-b border-border/10 pb-2 last:border-0 last:pb-0">
+                                  <div className="flex items-center gap-2">
+                                    <Checkbox
+                                      id={`qv-share-${s.id}`}
+                                      checked={val.selected}
+                                      onCheckedChange={checked => {
+                                        setQuickViewSharing(prev => ({
+                                          ...prev,
+                                          [s.id]: { ...val, selected: !!checked }
+                                        }));
+                                      }}
+                                    />
+                                    <Label htmlFor={`qv-share-${s.id}`} className="cursor-pointer select-none font-medium">
+                                      {s.full_name}
+                                    </Label>
+                                  </div>
+                                  {val.selected && (
+                                    <Select
+                                      value={val.level}
+                                      onValueChange={lvl => {
+                                        setQuickViewSharing(prev => ({
+                                          ...prev,
+                                          [s.id]: { ...val, level: lvl as any }
+                                        }));
+                                      }}
+                                    >
+                                      <SelectTrigger className="w-[85px] h-7 text-[10px] cursor-pointer bg-background">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent className="text-[10px]">
+                                        <SelectItem value="view" className="text-[10px] cursor-pointer">View Only</SelectItem>
+                                        <SelectItem value="edit" className="text-[10px] cursor-pointer">Can Edit</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  )}
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
                         <Button
                           size="sm"
-                          onClick={handleQuickViewMoveSubmit}
-                          disabled={submittingQuickViewMove}
-                          className="rounded-xl h-10 shrink-0 cursor-pointer"
+                          onClick={handleQuickViewShareSubmit}
+                          disabled={submittingQuickViewShare}
+                          className="w-full rounded-xl cursor-pointer mt-2"
                         >
-                          {submittingQuickViewMove ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
+                          {submittingQuickViewShare ? (
+                            <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
                           ) : (
-                            "Move"
+                            "Save Sharing Settings"
                           )}
                         </Button>
                       </div>
-                    </div>
-
-                    {/* Sharing with Staff */}
-                    <div className="space-y-2">
-                      <Label className="text-xs font-semibold text-muted-foreground">Sharing Settings</Label>
-                      <div className="bg-muted/10 border border-border/40 rounded-2xl p-3 space-y-2.5 max-h-[160px] overflow-y-auto">
-                        {activeStaff.length === 0 ? (
-                          <div className="text-[10px] text-muted-foreground italic text-center py-2">
-                            No other staff profiles found to share with.
-                          </div>
-                        ) : (
-                          activeStaff.map(s => {
-                            const val = quickViewSharing[s.id] || { selected: false, level: "view" };
-                            return (
-                              <div key={s.id} className="flex items-center justify-between gap-3 text-xs">
-                                <div className="flex items-center gap-2">
-                                  <Checkbox
-                                    id={`qv-share-${s.id}`}
-                                    checked={val.selected}
-                                    onCheckedChange={checked => {
-                                      setQuickViewSharing(prev => ({
-                                        ...prev,
-                                        [s.id]: { ...val, selected: !!checked }
-                                      }));
-                                    }}
-                                  />
-                                  <Label htmlFor={`qv-share-${s.id}`} className="cursor-pointer select-none">
-                                    {s.full_name}
-                                  </Label>
-                                </div>
-                                {val.selected && (
-                                  <Select
-                                    value={val.level}
-                                    onValueChange={lvl => {
-                                      setQuickViewSharing(prev => ({
-                                        ...prev,
-                                        [s.id]: { ...val, level: lvl as any }
-                                      }));
-                                    }}
-                                  >
-                                    <SelectTrigger className="w-[80px] h-7 text-[10px] cursor-pointer">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="view" className="text-[10px] cursor-pointer">View</SelectItem>
-                                      <SelectItem value="edit" className="text-[10px] cursor-pointer">Edit</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                )}
-                              </div>
-                            );
-                          })
-                        )}
-                      </div>
-                      <Button
-                        size="sm"
-                        onClick={handleQuickViewShareSubmit}
-                        disabled={submittingQuickViewShare}
-                        className="w-full rounded-xl cursor-pointer"
-                      >
-                        {submittingQuickViewShare ? (
-                          <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                        ) : (
-                          "Save Sharing Settings"
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Audit details for admin */}
-                {isAdmin && (
-                  <div className="text-[10px] text-muted-foreground border-t border-border/40 pt-3.5 space-y-1">
-                    <div>Created at: {formatDate(quickViewCred.created_at)}</div>
-                    <div>Last updated: {formatDate(quickViewCred.updated_at)}</div>
-                  </div>
-                )}
-              </div>
+                    </TabsContent>
+                  )}
+                </div>
+              </Tabs>
             </>
           )}
         </DialogContent>
