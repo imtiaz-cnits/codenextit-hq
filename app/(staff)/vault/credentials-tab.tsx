@@ -59,6 +59,7 @@ interface Client {
   company_name: string;
   permission_level?: "view" | "edit";
   parent_id?: string | null;
+  created_by?: string | null;
 }
 
 interface Profile {
@@ -1866,6 +1867,18 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                     <ScrollArea className="h-40 pr-2">
                       <div className="space-y-3">
                         {activeStaff.map(staff => {
+                          const ownerId = editingCred ? editingCred.created_by : profile?.id;
+                          if (staff.id === ownerId) {
+                            return (
+                              <div key={staff.id} className="flex items-center justify-between text-sm py-1.5 border-b border-border/30 last:border-0 opacity-80">
+                                <span className="font-medium text-muted-foreground">{staff.full_name}</span>
+                                <Badge variant="outline" className="text-[10px] py-0 px-2 font-normal text-emerald-500 border-emerald-200/50 bg-emerald-500/5 dark:bg-emerald-500/10">
+                                  Creator / Owner
+                                </Badge>
+                              </div>
+                            );
+                          }
+
                           const isChecked = sharing[staff.id]?.selected || false;
                           const level = sharing[staff.id]?.level || "view";
 
@@ -2197,6 +2210,17 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                             </div>
                           ) : (
                             activeStaff.map(s => {
+                              if (quickViewCred && s.id === quickViewCred.created_by) {
+                                return (
+                                  <div key={s.id} className="flex items-center justify-between gap-2 text-xs border-b border-border/10 pb-1 last:border-0 last:pb-0 opacity-80 py-0.5">
+                                    <span className="font-medium text-muted-foreground select-none">{s.full_name}</span>
+                                    <Badge variant="outline" className="text-[9px] py-0 px-1.5 font-normal text-emerald-500 border-emerald-200/50 bg-emerald-500/5 dark:bg-emerald-500/10 shrink-0">
+                                      Creator / Owner
+                                    </Badge>
+                                  </div>
+                                );
+                              }
+
                               const val = quickViewSharing[s.id] || { selected: false, level: "view" };
                               return (
                                 <div key={s.id} className="flex items-center justify-between gap-2 text-xs border-b border-border/10 pb-1 last:border-0 last:pb-0">
@@ -2388,6 +2412,18 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
             ) : (
               <div className="space-y-4">
                 {activeStaff.map(s => {
+                  const folder = clients.find(c => c.id === shareFolderId);
+                  if (folder && s.id === folder.created_by) {
+                    return (
+                      <div key={s.id} className="flex items-center justify-between gap-4 p-2 rounded-xl bg-muted/40 border border-border/30 opacity-80 py-2">
+                        <span className="text-sm font-medium text-muted-foreground">{s.full_name}</span>
+                        <Badge variant="outline" className="text-[10px] py-0.5 px-2 font-normal text-emerald-500 border-emerald-200/50 bg-emerald-500/5 dark:bg-emerald-500/10">
+                          Creator / Owner
+                        </Badge>
+                      </div>
+                    );
+                  }
+
                   const sMap = folderSharingMap[s.id] || { selected: false, level: "view" };
                   return (
                     <div key={s.id} className="flex items-center justify-between gap-4 p-2 rounded-xl hover:bg-muted/30 transition-colors">

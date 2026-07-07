@@ -403,26 +403,29 @@ export async function PUT(req: NextRequest) {
 
     if (updateErr) throw updateErr;
 
-    // Synchronize access lists (re-insert all shared permissions)
-    const { error: deleteAccessErr } = await (supabaseAdmin
-      .from("note_access" as any) as any)
-      .delete()
-      .eq("note_id", id);
-
-    if (deleteAccessErr) throw deleteAccessErr;
-
-    if (shared_staff && Array.isArray(shared_staff) && shared_staff.length > 0) {
-      const accessRecords = shared_staff.map((s: any) => ({
-        note_id: id,
-        staff_id: s.staff_id,
-        permission_level: s.permission_level || "view"
-      }));
-
-      const { error: accessErr } = await (supabaseAdmin
+    // Synchronize access lists (only allowed for Creator/Owner or Admin)
+    const isShareManager = isCreator || isAdmin;
+    if (isShareManager) {
+      const { error: deleteAccessErr } = await (supabaseAdmin
         .from("note_access" as any) as any)
-        .insert(accessRecords);
+        .delete()
+        .eq("note_id", id);
 
-      if (accessErr) throw accessErr;
+      if (deleteAccessErr) throw deleteAccessErr;
+
+      if (shared_staff && Array.isArray(shared_staff) && shared_staff.length > 0) {
+        const accessRecords = shared_staff.map((s: any) => ({
+          note_id: id,
+          staff_id: s.staff_id,
+          permission_level: s.permission_level || "view"
+        }));
+
+        const { error: accessErr } = await (supabaseAdmin
+          .from("note_access" as any) as any)
+          .insert(accessRecords);
+
+        if (accessErr) throw accessErr;
+      }
     }
 
     return NextResponse.json({ success: true });

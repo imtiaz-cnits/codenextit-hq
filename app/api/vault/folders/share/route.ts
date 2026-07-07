@@ -100,22 +100,10 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     const isCreator = client?.created_by === user.id;
-    let canShare = isCreator || (isAdmin && !client?.created_by);
+    const canShare = isCreator || isAdmin;
 
     if (!canShare) {
-      const { data: fAccess } = await (supabaseAdmin
-        .from("folder_access" as any) as any)
-        .select("permission_level")
-        .eq("client_id", client_id)
-        .eq("user_id", user.id)
-        .maybeSingle();
-      if (fAccess?.permission_level === "edit") {
-        canShare = true;
-      }
-    }
-
-    if (!canShare) {
-      return NextResponse.json({ error: "Forbidden. You do not have share access to this folder." }, { status: 403 });
+      return NextResponse.json({ error: "Forbidden. Only the folder owner or an admin can manage sharing settings." }, { status: 403 });
     }
 
     // Sync sharing relationships

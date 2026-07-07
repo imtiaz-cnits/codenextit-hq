@@ -161,7 +161,8 @@ export async function GET(req: NextRequest) {
         id: c.id,
         company_name: c.company_name,
         permission_level: permission,
-        parent_id: c.parent_id
+        parent_id: c.parent_id,
+        created_by: c.created_by
       };
     });
 
@@ -322,22 +323,10 @@ export async function DELETE(req: NextRequest) {
     }
 
     const isCreator = client?.created_by === user.id;
-    let canDelete = isCreator || (isAdmin && !client?.created_by);
+    const canDelete = isCreator || isAdmin;
 
     if (!canDelete) {
-      const { data: fAccess } = await (supabaseAdmin
-        .from("folder_access" as any) as any)
-        .select("permission_level")
-        .eq("client_id", id)
-        .eq("user_id", user.id)
-        .maybeSingle();
-      if (fAccess?.permission_level === "edit") {
-        canDelete = true;
-      }
-    }
-
-    if (!canDelete) {
-      return NextResponse.json({ error: "Forbidden. You do not have edit access to delete this folder." }, { status: 403 });
+      return NextResponse.json({ error: "Forbidden. Only the folder owner or an admin can delete this folder." }, { status: 403 });
     }
 
     const { error } = await supabaseAdmin

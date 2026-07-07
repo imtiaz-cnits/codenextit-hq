@@ -358,28 +358,31 @@ export async function PUT(req: NextRequest) {
 
     if (updateErr) throw updateErr;
 
-    // Sync sharing relationships
-    // 1. Delete existing ones
-    const { error: deleteAccessErr } = await (supabaseAdmin
-      .from("credential_access" as any) as any)
-      .delete()
-      .eq("credential_id", id);
-
-    if (deleteAccessErr) throw deleteAccessErr;
-
-    // 2. Insert new ones
-    if (shared_staff && Array.isArray(shared_staff) && shared_staff.length > 0) {
-      const accessRecords = shared_staff.map((s: any) => ({
-        credential_id: id,
-        staff_id: s.staff_id,
-        permission_level: s.permission_level || "view"
-      }));
-
-      const { error: accessErr } = await (supabaseAdmin
+    // Sync sharing relationships (only allowed for Creator/Owner or Admin)
+    const isShareManager = isCreator || isAdmin;
+    if (isShareManager) {
+      // 1. Delete existing ones
+      const { error: deleteAccessErr } = await (supabaseAdmin
         .from("credential_access" as any) as any)
-        .insert(accessRecords);
+        .delete()
+        .eq("credential_id", id);
 
-      if (accessErr) throw accessErr;
+      if (deleteAccessErr) throw deleteAccessErr;
+
+      // 2. Insert new ones
+      if (shared_staff && Array.isArray(shared_staff) && shared_staff.length > 0) {
+        const accessRecords = shared_staff.map((s: any) => ({
+          credential_id: id,
+          staff_id: s.staff_id,
+          permission_level: s.permission_level || "view"
+        }));
+
+        const { error: accessErr } = await (supabaseAdmin
+          .from("credential_access" as any) as any)
+          .insert(accessRecords);
+
+        if (accessErr) throw accessErr;
+      }
     }
 
     return NextResponse.json({ success: true });
@@ -416,28 +419,10 @@ export async function DELETE(req: NextRequest) {
 
     const isAdmin = await checkIsSuperAdmin(user.id);
     const isCreator = existingCred.created_by === user.id;
-    let canDelete = isCreator;
+    const canDelete = isCreator || isAdmin;
 
     if (!canDelete) {
-      // Check credential_access edit
-      const { data: credAccess } = await (supabaseAdmin
-        .from("credential_access" as any) as any)
-        .select("permission_level")
-        .eq("credential_id", id)
-        .eq("staff_id", user.id)
-        .maybeSingle();
-      if (credAccess?.permission_level === "edit") {
-        canDelete = true;
-      }
-    }
-
-    if (!canDelete && existingCred.client_id !== null) {
-      // Check folder edit access
-      canDelete = await checkHasFolderEditAccess(user.id, existingCred.client_id, isAdmin);
-    }
-
-    if (!canDelete) {
-      return NextResponse.json({ error: "Forbidden. You do not have permission to delete this credential." }, { status: 403 });
+      return NextResponse.json({ error: "Forbidden. Only the credential owner or an admin can delete this credential." }, { status: 403 });
     }
 
     const { error } = await (supabaseAdmin

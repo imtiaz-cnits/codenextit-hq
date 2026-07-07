@@ -284,26 +284,30 @@ export async function PUT(req: NextRequest) {
       if (error) throw error;
     }
 
-    // Synchronize access lists (re-insert all shared permissions)
-    const { error: deleteAccessErr } = await (supabaseAdmin
-      .from("note_folder_access" as any) as any)
-      .delete()
-      .eq("folder_id", id);
-
-    if (deleteAccessErr) throw deleteAccessErr;
-
-    if (shared_staff && Array.isArray(shared_staff) && shared_staff.length > 0) {
-      const accessRecords = shared_staff.map((s: any) => ({
-        folder_id: id,
-        staff_id: s.staff_id,
-        permission_level: s.permission_level || "view"
-      }));
-
-      const { error: accessErr } = await (supabaseAdmin
+    // Synchronize access lists (only allowed for Creator/Owner or Admin)
+    const isCreator = existingFolder.created_by === user.id;
+    const isShareManager = isCreator || isAdmin;
+    if (isShareManager) {
+      const { error: deleteAccessErr } = await (supabaseAdmin
         .from("note_folder_access" as any) as any)
-        .insert(accessRecords);
+        .delete()
+        .eq("folder_id", id);
 
-      if (accessErr) throw accessErr;
+      if (deleteAccessErr) throw deleteAccessErr;
+
+      if (shared_staff && Array.isArray(shared_staff) && shared_staff.length > 0) {
+        const accessRecords = shared_staff.map((s: any) => ({
+          folder_id: id,
+          staff_id: s.staff_id,
+          permission_level: s.permission_level || "view"
+        }));
+
+        const { error: accessErr } = await (supabaseAdmin
+          .from("note_folder_access" as any) as any)
+          .insert(accessRecords);
+
+        if (accessErr) throw accessErr;
+      }
     }
 
     return NextResponse.json({ success: true });
