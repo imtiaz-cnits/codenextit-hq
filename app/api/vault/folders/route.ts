@@ -130,21 +130,11 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 2. Expand downwards (Descendants): If a parent folder is visible, all its descendants are visible.
+    // Initialize resolved visible folders (downward inheritance disabled for strict folder privacy)
     const resolvedVisibleIds = new Set<string>(initVisibleIds);
-    let addedNew = true;
-    while (addedNew) {
-      addedNew = false;
-      for (const c of allClients || []) {
-        if (c.parent_id && resolvedVisibleIds.has(c.parent_id) && !resolvedVisibleIds.has(c.id)) {
-          resolvedVisibleIds.add(c.id);
-          addedNew = true;
-        }
-      }
-    }
 
     // 3. Expand upwards (Ancestors): If a child folder is visible, all its ancestors must be visible to navigate.
-    addedNew = true;
+    let addedNew = true;
     while (addedNew) {
       addedNew = false;
       for (const c of allClients || []) {

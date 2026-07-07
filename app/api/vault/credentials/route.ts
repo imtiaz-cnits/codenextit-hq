@@ -106,18 +106,8 @@ export async function GET(req: NextRequest) {
       }
     });
 
-    // Expand downwards only (Descendants get access)
+    // Set visible folders (downward inheritance disabled for strict credential privacy)
     const visibleFolderIds = new Set<string>(explicitFolderIds);
-    let addedNew = true;
-    while (addedNew) {
-      addedNew = false;
-      (clients || []).forEach((c: any) => {
-        if (c.parent_id && visibleFolderIds.has(c.parent_id) && !visibleFolderIds.has(c.id)) {
-          visibleFolderIds.add(c.id);
-          addedNew = true;
-        }
-      });
-    }
 
     // Fetch credentials
     const { data: allCredentials, error: credErr } = await (supabaseAdmin
