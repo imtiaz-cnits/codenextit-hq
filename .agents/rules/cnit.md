@@ -49,6 +49,7 @@ You are working on "CodeNext IT HQ" - a highly secure, modern Agency OS (ERP + C
         - Gather dynamic user-entered custom options using `useMemo` from the loaded data list (by filtering out predefined default options). This ensures new items are collected dynamically in memory without adding extra database schemas.
         - When `value === "create_new"`, conditionally render an input field: `<div className="space-y-1.5 bg-primary/5 p-3 rounded-xl border border-primary/10">` containing the text input for the new item.
         - On form submission, convert the user-entered string to a trimmed lowercase slug (e.g. `finalCategory = newCategoryName.trim().toLowerCase().replace(/\s+/g, "_")`) and save it to the database. The UI's display text will map back to spacing automatically (e.g., using `.replace("_", " ")` with `capitalize` style).
+     - **Modal & Card Spacing Consistency (Slightly Congested Layout):** All interactive popups, modal details view dialogs (e.g. Quick View), and nested forms must maintain a compact, standardized spacing to maximize readability and reduce unnecessary scrolling. Use padding values of `p-4` or `p-5` (never `p-6` or higher for small modal content wrappers). Content spacing within fields should use `space-y-3` or `space-y-2.5` (instead of `space-y-4` or higher) to keep the layout standard and slightly congested.
 
 3. ARCHITECTURE & FOLDER STRUCTURE:
    - Respect the route groups: `app/(staff)` for internal ERP/CRM and `app/(client)` for the client portal.

@@ -15,11 +15,12 @@ import { Checkbox } from "../../../components/ui/checkbox";
 import { ScrollArea } from "../../../components/ui/scroll-area";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "../../../components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "../../../components/ui/alert-dialog";
-import { Key, Server, Globe, Mail, Cpu, ShieldAlert, Eye, EyeOff, Copy, Check, Plus, Edit, Trash2, Search, Users, History, Loader2, ExternalLink, Shield, ShieldCheck, Folder, ChevronLeft, Maximize2, MoreVertical, FileText, Paperclip } from "lucide-react";
+import { Key, Server, Globe, Mail, Cpu, ShieldAlert, Eye, EyeOff, Copy, Check, Plus, Edit, Trash2, Search, Users, History, Loader2, ExternalLink, Shield, ShieldCheck, Folder, ChevronLeft, Maximize2, MoreVertical, FileText, Paperclip, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../../components/ui/dropdown-menu";
 import { formatDate } from "../../../lib/format";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui/tabs";
+import { cn } from "../../../lib/utils";
 
 type CredentialCategory = "hosting" | "social_media" | "email" | "cpanel" | "admin_panel" | "other" | string;
 
@@ -1914,14 +1915,14 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
         <DialogContent className="max-w-[500px] bg-card/95 border border-border/60 rounded-3xl shadow-xl backdrop-blur-md p-0 flex flex-col max-h-[85vh] overflow-hidden">
           {quickViewCred && (
             <>
-              <DialogHeader className="p-6 pb-4 border-b border-border/40 shrink-0">
-                <DialogTitle className="flex items-center gap-3 text-lg font-bold">
-                  <div className="h-9 w-9 rounded-xl bg-accent flex items-center justify-center overflow-hidden border border-border shrink-0">
+              <DialogHeader className="p-4 pb-2.5 border-b border-border/40 shrink-0">
+                <DialogTitle className="flex items-center gap-2.5 text-base font-bold">
+                  <div className="h-8.5 w-8.5 rounded-xl bg-accent flex items-center justify-center overflow-hidden border border-border shrink-0">
                     {getFaviconUrl(quickViewCred.url) && !imageErrors[quickViewCred.id] ? (
                       <img
                         src={getFaviconUrl(quickViewCred.url) || ""}
                         alt="site logo"
-                        className="h-6 w-6 object-contain"
+                        className="h-5.5 w-5.5 object-contain"
                         onError={() => {
                           setImageErrors(prev => ({ ...prev, [quickViewCred.id]: true }));
                         }}
@@ -1932,9 +1933,9 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                       </div>
                     )}
                   </div>
-                  <div className="flex flex-col items-start gap-0.5">
-                    <span>{quickViewCred.title}</span>
-                    <span className="text-[11px] text-muted-foreground font-normal flex items-center gap-1.5 flex-wrap">
+                  <div className="flex flex-col items-start gap-0.5 min-w-0 flex-1">
+                    <span className="truncate w-full leading-tight">{quickViewCred.title}</span>
+                    <span className="text-[10px] text-muted-foreground font-normal flex items-center gap-1.5 flex-wrap">
                       <span>Folder: <span className="font-semibold text-foreground">{clientName(quickViewCred.client_id)}</span></span>
                       <span className="h-1 w-1 rounded-full bg-border" />
                       <span>Created: <span className="font-semibold text-foreground">{formatDate(quickViewCred.created_at)}</span></span>
@@ -1953,29 +1954,41 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
               </DialogHeader>
 
               <Tabs defaultValue="details" className="w-full flex-1 flex flex-col min-h-0">
-                <div className="px-6 border-b border-border/40 shrink-0 bg-muted/20">
-                  <TabsList className="grid grid-cols-2 w-full max-w-[340px] mx-auto p-1 h-9 bg-muted/65 rounded-xl my-2 border border-border/10">
-                    <TabsTrigger value="details" className="text-xs py-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all">
+                {/* Premium responsive tab style wrapper following Generator Log page */}
+                <div className="overflow-x-auto pb-1.5 px-4 border-b border-border/40 shrink-0 bg-muted/20 scrollbar-hide flex justify-center pt-1">
+                  <TabsList className={cn(
+                    "inline-flex w-full max-w-[380px] p-1 h-auto bg-muted/50 rounded-xl whitespace-nowrap my-1",
+                    quickViewCred.permission_level === "edit" ? "md:grid-cols-2" : "md:grid-cols-1"
+                  )}>
+                    <TabsTrigger
+                      value="details"
+                      className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all text-xs inline-flex items-center justify-center"
+                    >
+                      <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
                       Credentials Detail
                     </TabsTrigger>
                     {quickViewCred.permission_level === "edit" ? (
-                      <TabsTrigger value="manage" className="text-xs py-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all">
+                      <TabsTrigger
+                        value="manage"
+                        className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all text-xs inline-flex items-center justify-center"
+                      >
+                        <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" />
                         Access & Settings
                       </TabsTrigger>
                     ) : (
-                      <div className="text-center text-[10px] text-muted-foreground self-center select-none opacity-60 font-medium">
+                      <div className="text-center text-[10px] text-muted-foreground self-center select-none opacity-60 font-medium px-4">
                         Read-Only Mode
                       </div>
                     )}
                   </TabsList>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-6 space-y-4 min-h-0">
-                  <TabsContent value="details" className="mt-0 space-y-4 outline-none">
+                <div className="flex-1 overflow-y-auto p-4 space-y-2.5 min-h-0">
+                  <TabsContent value="details" className="mt-0 space-y-2.5 outline-none">
                     {/* Meta details Category Badge */}
-                    <div className="flex justify-between items-center bg-muted/30 border border-border/30 rounded-xl px-3.5 py-2">
+                    <div className="flex justify-between items-center bg-muted/30 border border-border/30 rounded-xl px-3 py-1.5">
                       <span className="text-xs text-muted-foreground font-semibold">Category</span>
-                      <Badge variant="outline" className={`${(getCategoryInfo(quickViewCred.category)).color} border px-2.5 py-0.5 font-semibold text-[11px]`}>
+                      <Badge variant="outline" className={`${(getCategoryInfo(quickViewCred.category)).color} border px-2 py-0.5 font-semibold text-[10px]`}>
                         {(getCategoryInfo(quickViewCred.category)).label}
                       </Badge>
                     </div>
@@ -1983,7 +1996,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                     {/* Login URL */}
                     <div className="space-y-1">
                       <span className="text-xs text-muted-foreground font-semibold">Login Link</span>
-                      <div className="flex items-center justify-between bg-muted/40 rounded-xl px-3.5 py-2 border border-border/30 text-xs">
+                      <div className="flex items-center justify-between bg-muted/40 rounded-xl px-3 py-1.5 border border-border/30 text-xs">
                         <span className="truncate text-foreground max-w-[340px] font-medium">
                           {quickViewCred.url || "—"}
                         </span>
@@ -1992,9 +2005,9 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                             href={quickViewCred.url.startsWith("http") ? quickViewCred.url : `https://${quickViewCred.url}`}
                             target="_blank"
                             rel="noreferrer"
-                            className="text-primary hover:text-primary/80 flex items-center justify-center p-1.5 hover:bg-muted/80 rounded-lg cursor-pointer transition-colors"
+                            className="text-primary hover:text-primary/80 flex items-center justify-center p-1 hover:bg-muted/80 rounded-lg cursor-pointer transition-colors"
                           >
-                            <ExternalLink className="h-4 w-4" />
+                            <ExternalLink className="h-3.5 w-3.5" />
                           </a>
                         )}
                       </div>
@@ -2003,7 +2016,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                     {/* Username */}
                     <div className="space-y-1">
                       <span className="text-xs text-muted-foreground font-semibold">Username / Email</span>
-                      <div className="flex items-center justify-between bg-muted/40 rounded-xl px-3.5 py-2 border border-border/30 text-xs">
+                      <div className="flex items-center justify-between bg-muted/40 rounded-xl px-3 py-1.5 border border-border/30 text-xs">
                         <span className="font-mono text-foreground select-all truncate max-w-[340px] font-medium">
                           {quickViewCred.username || "—"}
                         </span>
@@ -2011,7 +2024,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                           <Button
                             size="icon"
                             variant="ghost"
-                            className="h-7 w-7 hover:bg-muted cursor-pointer shrink-0"
+                            className="h-6 w-6 hover:bg-muted cursor-pointer shrink-0"
                             onClick={async () => {
                               await navigator.clipboard.writeText(quickViewCred.username || "");
                               toast.success("Username copied!");
@@ -2026,7 +2039,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                     {/* Password */}
                     <div className="space-y-1">
                       <span className="text-xs text-muted-foreground font-semibold">Password</span>
-                      <div className="flex items-center justify-between bg-muted/40 rounded-xl px-3.5 py-2 border border-border/30 text-xs">
+                      <div className="flex items-center justify-between bg-muted/40 rounded-xl px-3 py-1.5 border border-border/30 text-xs">
                         <span className="font-mono text-foreground font-bold tracking-wider select-all">
                           {visibleMap[quickViewCred.id] ? decryptedMap[quickViewCred.id] : "••••••••"}
                         </span>
@@ -2034,15 +2047,15 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                           <Button
                             size="icon"
                             variant="ghost"
-                            className="h-7 w-7 hover:bg-muted cursor-pointer"
+                            className="h-6 w-6 hover:bg-muted cursor-pointer"
                             onClick={() => handleToggleReveal(quickViewCred.id)}
                           >
-                            {visibleMap[quickViewCred.id] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            {visibleMap[quickViewCred.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                           </Button>
                           <Button
                             size="icon"
                             variant="ghost"
-                            className="h-7 w-7 hover:bg-muted cursor-pointer"
+                            className="h-6 w-6 hover:bg-muted cursor-pointer"
                             onClick={() => handleCopyPassword(quickViewCred.id)}
                           >
                             {copiedId === quickViewCred.id ? (
@@ -2057,24 +2070,24 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
 
                     {/* Dynamic Custom Fields */}
                     {quickViewCred.custom_fields && quickViewCred.custom_fields.length > 0 && (
-                      <div className="space-y-2 border-t border-border/40 pt-3">
+                      <div className="space-y-1 border-t border-border/40 pt-2">
                         <span className="text-xs text-muted-foreground font-semibold">Additional Details</span>
-                        <div className="space-y-2">
+                        <div className="space-y-1.5">
                           {quickViewCred.custom_fields.map((cf, idx) => (
-                            <div key={idx} className="flex justify-between items-center bg-accent/20 rounded-xl px-3.5 py-2 border border-border/20 text-xs">
+                            <div key={idx} className="flex justify-between items-center bg-accent/20 rounded-xl px-3 py-1 border border-border/20 text-xs">
                               <span className="text-muted-foreground font-semibold">{cf.label}</span>
                               <div className="flex items-center gap-1.5 max-w-[280px]">
                                 <span className="font-mono text-foreground select-all truncate font-medium">{cf.value}</span>
                                 <Button
                                   size="icon"
                                   variant="ghost"
-                                  className="h-6 w-6 hover:bg-muted cursor-pointer shrink-0"
+                                  className="h-5 w-5 hover:bg-muted cursor-pointer shrink-0"
                                   onClick={async () => {
                                     await navigator.clipboard.writeText(cf.value);
                                     toast.success(`${cf.label} copied!`);
                                   }}
                                 >
-                                  <Copy className="h-3 w-3" />
+                                  <Copy className="h-2.5 w-2.5" />
                                 </Button>
                               </div>
                             </div>
@@ -2085,9 +2098,9 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
 
                     {/* Notes */}
                     {quickViewCred.notes && (
-                      <div className="space-y-1 border-t border-border/40 pt-3">
+                      <div className="space-y-1 border-t border-border/40 pt-2">
                         <span className="text-xs text-muted-foreground font-semibold">Notes / Description</span>
-                        <div className="text-xs text-foreground bg-accent/10 border border-border/20 p-3.5 rounded-xl italic leading-relaxed text-muted-foreground/90 whitespace-pre-wrap">
+                        <div className="text-xs text-foreground bg-accent/10 border border-border/20 p-2.5 rounded-xl italic leading-relaxed text-muted-foreground/90 whitespace-pre-wrap">
                           {quickViewCred.notes}
                         </div>
                       </div>
@@ -2095,9 +2108,9 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
 
                     {/* Attachment file */}
                     {quickViewCred.file_url && (
-                      <div className="space-y-1 border-t border-border/40 pt-3">
+                      <div className="space-y-1 border-t border-border/40 pt-2">
                         <span className="text-xs text-muted-foreground font-semibold">Attachment</span>
-                        <div className="flex items-center justify-between bg-muted/40 rounded-xl px-3.5 py-2 border border-border/30 text-xs">
+                        <div className="flex items-center justify-between bg-muted/40 rounded-xl px-3 py-1 border border-border/30 text-xs">
                           <div className="flex items-center gap-2 min-w-0">
                             <FileText className="h-4 w-4 text-primary shrink-0" />
                             <span className="font-mono text-foreground text-xs truncate max-w-[280px]">
@@ -2108,11 +2121,11 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                             size="sm"
                             variant="ghost"
                             disabled={downloadingFileId === quickViewCred.id}
-                            className="h-8 text-primary hover:text-primary/80 hover:bg-primary/5 cursor-pointer flex items-center gap-1 shrink-0"
+                            className="h-7 text-primary hover:text-primary/80 hover:bg-primary/5 cursor-pointer flex items-center gap-1 shrink-0 text-xs px-2"
                             onClick={() => handleDownloadAttachment(quickViewCred.file_url!, quickViewCred.file_name!, quickViewCred.id)}
                           >
                             {downloadingFileId === quickViewCred.id ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              <Loader2 className="h-3 w-3 animate-spin" />
                             ) : (
                               "Download"
                             )}
@@ -2123,19 +2136,19 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                   </TabsContent>
 
                   {quickViewCred.permission_level === "edit" && (
-                    <TabsContent value="manage" className="mt-0 space-y-4 outline-none">
+                    <TabsContent value="manage" className="mt-0 space-y-2.5 outline-none">
                       {/* Move to Folder */}
-                      <div className="space-y-1.5 bg-muted/20 border border-border/30 rounded-2xl p-4">
+                      <div className="space-y-1 bg-muted/20 border border-border/30 rounded-xl p-2.5">
                         <Label className="text-xs font-semibold text-muted-foreground">Move to Folder</Label>
-                        <div className="flex gap-2 mt-1">
+                        <div className="flex gap-2 mt-0.5">
                           <Select
                             value={quickViewMoveFolderId || "none"}
                             onValueChange={setQuickViewMoveFolderId}
                           >
-                            <SelectTrigger className="flex-1 bg-background border border-border/40 rounded-xl cursor-pointer">
+                            <SelectTrigger className="flex-1 bg-background border border-border/40 rounded-xl cursor-pointer h-8 text-xs">
                               <SelectValue placeholder="Select Folder" />
                             </SelectTrigger>
-                            <SelectContent className="max-h-[200px] overflow-y-auto">
+                            <SelectContent className="max-h-[150px] overflow-y-auto">
                               <SelectItem value="none">None (Personal Credentials)</SelectItem>
                               {clients.map(c => (
                                 <SelectItem key={c.id} value={c.id} className="cursor-pointer">
@@ -2148,10 +2161,10 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                             size="sm"
                             onClick={handleQuickViewMoveSubmit}
                             disabled={submittingQuickViewMove}
-                            className="rounded-xl h-10 shrink-0 cursor-pointer px-4"
+                            className="rounded-xl h-8 shrink-0 cursor-pointer px-4 text-xs"
                           >
                             {submittingQuickViewMove ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
+                              <Loader2 className="h-3 w-3 animate-spin" />
                             ) : (
                               "Move"
                             )}
@@ -2160,18 +2173,18 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                       </div>
 
                       {/* Sharing with Staff */}
-                      <div className="space-y-2 bg-muted/20 border border-border/30 rounded-2xl p-4">
+                      <div className="space-y-1 bg-muted/20 border border-border/30 rounded-xl p-2.5">
                         <Label className="text-xs font-semibold text-muted-foreground">Sharing Settings</Label>
-                        <div className="bg-background border border-border/40 rounded-2xl p-3.5 space-y-2.5 max-h-[200px] overflow-y-auto mt-1">
+                        <div className="bg-background border border-border/40 rounded-xl p-2.5 space-y-1.5 max-h-[140px] overflow-y-auto mt-0.5">
                           {activeStaff.length === 0 ? (
-                            <div className="text-[10px] text-muted-foreground italic text-center py-2">
+                            <div className="text-[10px] text-muted-foreground italic text-center py-1">
                               No other staff profiles found to share with.
                             </div>
                           ) : (
                             activeStaff.map(s => {
                               const val = quickViewSharing[s.id] || { selected: false, level: "view" };
                               return (
-                                <div key={s.id} className="flex items-center justify-between gap-3 text-xs border-b border-border/10 pb-2 last:border-0 last:pb-0">
+                                <div key={s.id} className="flex items-center justify-between gap-2 text-xs border-b border-border/10 pb-1 last:border-0 last:pb-0">
                                   <div className="flex items-center gap-2">
                                     <Checkbox
                                       id={`qv-share-${s.id}`}
@@ -2183,7 +2196,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                                         }));
                                       }}
                                     />
-                                    <Label htmlFor={`qv-share-${s.id}`} className="cursor-pointer select-none font-medium">
+                                    <Label htmlFor={`qv-share-${s.id}`} className="cursor-pointer select-none font-medium text-xs">
                                       {s.full_name}
                                     </Label>
                                   </div>
@@ -2197,7 +2210,7 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                                         }));
                                       }}
                                     >
-                                      <SelectTrigger className="w-[85px] h-7 text-[10px] cursor-pointer bg-background">
+                                      <SelectTrigger className="w-[85px] h-6 text-[10px] cursor-pointer bg-background px-1.5">
                                         <SelectValue />
                                       </SelectTrigger>
                                       <SelectContent className="text-[10px]">
@@ -2215,10 +2228,10 @@ export function CredentialsTab({ clients, onRefreshClients }: { clients: Client[
                           size="sm"
                           onClick={handleQuickViewShareSubmit}
                           disabled={submittingQuickViewShare}
-                          className="w-full rounded-xl cursor-pointer mt-2"
+                          className="w-full rounded-xl cursor-pointer mt-1.5 h-8 text-xs font-semibold"
                         >
                           {submittingQuickViewShare ? (
-                            <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+                            <Loader2 className="h-3 w-3 animate-spin mr-1" />
                           ) : (
                             "Save Sharing Settings"
                           )}
