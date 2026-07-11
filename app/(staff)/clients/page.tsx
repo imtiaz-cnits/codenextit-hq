@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { supabase } from "../../../integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
 import { Button } from "../../../components/ui/button";
@@ -812,28 +812,74 @@ export default function ClientsPage() {
         onOpenChange={setIsSheetOpen}
         onCreated={load}
         editingClient={editingClient}
+        clients={clients}
       />
     </div>
   );
 }
 
-function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
-  open: boolean; onOpenChange: (v: boolean) => void; onCreated: () => void; editingClient: Client | null;
+function ClientSheet({ open, onOpenChange, onCreated, editingClient, clients }: {
+  open: boolean; onOpenChange: (v: boolean) => void; onCreated: () => void; editingClient: Client | null; clients: Client[];
 }) {
   const [submitting, setSubmitting] = useState(false);
   const [f, setF] = useState({
     company_name: "", contact_person: "", email: "", phone: "",
-    address: "", vat_bin: "", currency: "BDT" as "BDT" | "USD",
+    address: "", vat_bin: "", currency: "BDT" as any,
     ltv: "0", notes: "", website: "", industry: "",
     source: "direct",
   });
 
-  const [billingType, setBillingType] = useState<"one_time" | "monthly" | "yearly">("one_time");
+  const [billingType, setBillingType] = useState<string>("one_time");
   const [billingRate, setBillingRate] = useState("0");
   const [billingDuration, setBillingDuration] = useState("1");
 
+  const [newSource, setNewSource] = useState("");
+  const [newCurrency, setNewCurrency] = useState("");
+  const [newBillingModel, setNewBillingModel] = useState("");
+
+  const customSources = useMemo(() => {
+    const predefined = ["direct", "freelancer", "injaaz", "other"];
+    const unique = new Set(clients.map(c => c.source).filter((s): s is string => !!s && !predefined.includes(s)));
+    return Array.from(unique);
+  }, [clients]);
+
+  const customCurrencies = useMemo(() => {
+    const predefined = ["BDT", "USD"];
+    const unique = new Set(clients.map(c => c.currency as string).filter((curr): curr is string => !!curr && !predefined.includes(curr)));
+    return Array.from(unique);
+  }, [clients]);
+
+  const customBillingTypes = useMemo(() => {
+    const predefined = ["one_time", "monthly", "yearly"];
+    const unique = new Set<string>();
+    clients.forEach(c => {
+      if (c.notes) {
+        const match = c.notes.match(/^\[Billing Model: ([^\]]+)\]/);
+        if (match && match[1]) {
+          const rawName = match[1].trim();
+          const slug = rawName.toLowerCase().replace(/\s+/g, "_");
+          if (!predefined.includes(slug)) {
+            unique.add(rawName);
+          }
+        }
+      }
+    });
+    return Array.from(unique);
+  }, [clients]);
+
   useEffect(() => {
     if (editingClient) {
+      let clientNotes = editingClient.notes || "";
+      let modelName = "";
+      let bType: any = "one_time";
+      
+      const match = clientNotes.match(/^\[Billing Model: ([^\]]+)\]/);
+      if (match) {
+        modelName = match[1];
+        bType = modelName.trim().toLowerCase().replace(/\s+/g, "_");
+        clientNotes = clientNotes.replace(/^\[Billing Model: [^\]]+\]\s*/, "");
+      }
+      
       setF({
         company_name: editingClient.company_name,
         contact_person: editingClient.contact_person || "",
@@ -841,26 +887,45 @@ function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
         phone: editingClient.phone || "",
         address: editingClient.address || "",
         vat_bin: editingClient.vat_bin || "",
-        currency: editingClient.currency,
+        currency: editingClient.currency as any,
         ltv: editingClient.ltv.toString(),
-        notes: editingClient.notes || "",
+        notes: clientNotes,
         website: editingClient.website || "",
         industry: editingClient.industry || "",
         source: editingClient.source || "direct",
       });
-      setBillingType("one_time");
+      
+      const predefinedTypes = ["one_time", "monthly", "yearly"];
+      if (modelName) {
+        if (predefinedTypes.includes(bType)) {
+          setBillingType(bType);
+          setNewBillingModel("");
+        } else {
+          setBillingType("create_new");
+          setNewBillingModel(modelName);
+        }
+      } else {
+        setBillingType("one_time");
+        setNewBillingModel("");
+      }
+      
       setBillingRate(editingClient.ltv.toString());
       setBillingDuration("1");
+      setNewSource("");
+      setNewCurrency("");
     } else {
       setF({
         company_name: "", contact_person: "", email: "", phone: "",
-        address: "", vat_bin: "", currency: "BDT", ltv: "0", notes: "",
+        address: "", vat_bin: "", currency: "BDT" as any, ltv: "0", notes: "",
         website: "", industry: "",
         source: "direct",
       });
       setBillingType("one_time");
       setBillingRate("0");
       setBillingDuration("1");
+      setNewSource("");
+      setNewCurrency("");
+      setNewBillingModel("");
     }
   }, [editingClient, open]);
 
@@ -880,15 +945,48 @@ function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
     e.preventDefault();
     setSubmitting(true);
 
+    let finalSource = f.source;
+    if (f.source === "create_new") {
+      finalSource = newSource.trim().toLowerCase().replace(/\s+/g, "_");
+      if (!finalSource) {
+        setSubmitting(false);
+        return toast.error("Please enter a custom client source name.");
+      }
+    }
+
+    let finalCurrency = f.currency;
+    if (f.currency === "create_new") {
+      finalCurrency = newCurrency.trim().toUpperCase() as any;
+      if (!finalCurrency) {
+        setSubmitting(false);
+        return toast.error("Please enter a custom currency code.");
+      }
+    }
+
+    let finalNotes = f.notes || "";
+    if (billingType === "create_new") {
+      if (!newBillingModel.trim()) {
+        setSubmitting(false);
+        return toast.error("Please enter a custom billing model name.");
+      }
+      finalNotes = `[Billing Model: ${newBillingModel.trim()}] ${finalNotes}`.trim();
+    } else if (billingType === "monthly") {
+      finalNotes = `[Billing Model: Monthly Retainer] ${finalNotes}`.trim();
+    } else if (billingType === "yearly") {
+      finalNotes = `[Billing Model: Yearly Retainer] ${finalNotes}`.trim();
+    } else if (billingType === "one_time") {
+      finalNotes = `[Billing Model: One-time] ${finalNotes}`.trim();
+    }
+
     const clientData = {
       company_name: f.company_name,
       contact_person: f.contact_person || null,
       email: f.email || null, phone: f.phone || null,
       address: f.address || null, vat_bin: f.vat_bin || null,
-      currency: f.currency, ltv: Number(f.ltv) || 0,
-      notes: f.notes || null, website: f.website || null,
+      currency: finalCurrency, ltv: Number(f.ltv) || 0,
+      notes: finalNotes || null, website: f.website || null,
       industry: f.industry || null,
-      source: f.source || "direct",
+      source: finalSource || "direct",
     };
 
     const { error } = editingClient
@@ -928,38 +1026,55 @@ function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
                     <SelectItem value="freelancer">Freelancer.com</SelectItem>
                     <SelectItem value="injaaz">Shared with Injaaz</SelectItem>
                     <SelectItem value="other">Other / Shared</SelectItem>
+                    {customSources.map(src => (
+                      <SelectItem key={src} value={src} className="capitalize">{src.replace(/_/g, " ")}</SelectItem>
+                    ))}
+                    <SelectItem value="create_new" className="font-semibold text-primary cursor-pointer border-t border-border mt-1">+ Create New Source...</SelectItem>
                   </SelectContent>
                 </Select>
               </Fld>
-              <Fld label={f.source !== "direct" ? "Client Name" : "Company Name"}>
-                <Input required placeholder={f.source !== "direct" ? "e.g. Tina Wade" : "e.g. MACS School and College"} value={f.company_name} onChange={(e) => setF({ ...f, company_name: e.target.value })} />
+              <Fld label={f.source !== "direct" && f.source !== "create_new" ? "Client Name" : "Company Name"}>
+                <Input required placeholder={f.source !== "direct" && f.source !== "create_new" ? "e.g. Tina Wade" : "e.g. MACS School and College"} value={f.company_name} onChange={(e) => setF({ ...f, company_name: e.target.value })} />
               </Fld>
             </div>
 
+            {f.source === "create_new" && (
+              <div className="space-y-1.5 bg-primary/5 p-3 rounded-xl border border-primary/10">
+                <Label className="text-xs font-semibold text-primary">Custom Source Name</Label>
+                <Input
+                  placeholder="e.g. LinkedIn / Web Search"
+                  value={newSource}
+                  onChange={(e) => setNewSource(e.target.value)}
+                  className="h-8 text-xs bg-background"
+                  required
+                />
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-3">
-              <Fld label={f.source !== "direct" ? "Username / Contact" : "Contact Person"}>
-                <Input placeholder={f.source !== "direct" ? "e.g. tina_wade" : "e.g. Md Nurul Islam"} value={f.contact_person} onChange={(e) => setF({ ...f, contact_person: e.target.value })} />
+              <Fld label={f.source !== "direct" && f.source !== "create_new" ? "Username / Contact" : "Contact Person"}>
+                <Input placeholder={f.source !== "direct" && f.source !== "create_new" ? "e.g. tina_wade" : "e.g. Md Nurul Islam"} value={f.contact_person} onChange={(e) => setF({ ...f, contact_person: e.target.value })} />
               </Fld>
               <Fld label="Industry">
-                <Input placeholder={f.source !== "direct" ? "e.g. Healthcare, Tech" : "e.g. Education"} value={f.industry} onChange={(e) => setF({ ...f, industry: e.target.value })} />
+                <Input placeholder={f.source !== "direct" && f.source !== "create_new" ? "e.g. Healthcare, Tech" : "e.g. Education"} value={f.industry} onChange={(e) => setF({ ...f, industry: e.target.value })} />
               </Fld>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <Fld label="Email">
-                <Input type="email" placeholder={f.source !== "direct" ? "e.g. (Optional) tina@example.com" : "e.g. info@macsschool.edu.bd"} value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
+                <Input type="email" placeholder={f.source !== "direct" && f.source !== "create_new" ? "e.g. (Optional) tina@example.com" : "e.g. info@macsschool.edu.bd"} value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
               </Fld>
               <Fld label="Phone">
-                <Input placeholder={f.source !== "direct" ? "e.g. (Optional) +1..." : "e.g. 01896220299"} value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} />
+                <Input placeholder={f.source !== "direct" && f.source !== "create_new" ? "e.g. (Optional) +1..." : "e.g. 01896220299"} value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} />
               </Fld>
             </div>
 
-            <Fld label={f.source !== "direct" ? "Platform Profile / Website" : "Website"}>
-              <Input value={f.website} onChange={(e) => setF({ ...f, website: e.target.value })} placeholder={f.source !== "direct" ? "e.g. https://freelancer.com/u/tinawade" : "e.g. https://macsschool.edu.bd"} />
+            <Fld label={f.source !== "direct" && f.source !== "create_new" ? "Platform Profile / Website" : "Website"}>
+              <Input value={f.website} onChange={(e) => setF({ ...f, website: e.target.value })} placeholder={f.source !== "direct" && f.source !== "create_new" ? "e.g. https://freelancer.com/u/tinawade" : "e.g. https://macsschool.edu.bd"} />
             </Fld>
 
-            <Fld label={f.source !== "direct" ? "Country / Location" : "Address"}>
-              <Input placeholder={f.source !== "direct" ? "e.g. United States" : "e.g. Jalalpur, Pabna"} value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} />
+            <Fld label={f.source !== "direct" && f.source !== "create_new" ? "Country / Location" : "Address"}>
+              <Input placeholder={f.source !== "direct" && f.source !== "create_new" ? "e.g. United States" : "e.g. Jalalpur, Pabna"} value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} />
             </Fld>
 
             <div className="grid grid-cols-2 gap-3">
@@ -967,39 +1082,80 @@ function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
                 <Input placeholder="e.g. 1234567890" value={f.vat_bin} onChange={(e) => setF({ ...f, vat_bin: e.target.value })} />
               </Fld>
               <Fld label="Currency">
-                <Select value={f.currency} onValueChange={(v) => setF({ ...f, currency: v as "BDT" | "USD" })}>
+                <Select value={f.currency} onValueChange={(v) => setF({ ...f, currency: v as any })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="BDT">BDT</SelectItem>
                     <SelectItem value="USD">USD</SelectItem>
+                    {customCurrencies.map(curr => (
+                      <SelectItem key={curr} value={curr}>{curr}</SelectItem>
+                    ))}
+                    <SelectItem value="create_new" className="font-semibold text-primary cursor-pointer border-t border-border mt-1">+ Create New Currency...</SelectItem>
                   </SelectContent>
                 </Select>
               </Fld>
             </div>
 
+            {f.currency === "create_new" && (
+              <div className="space-y-1.5 bg-primary/5 p-3 rounded-xl border border-primary/10">
+                <Label className="text-xs font-semibold text-primary">Custom Currency Code</Label>
+                <Input
+                  placeholder="e.g. EUR / GBP"
+                  value={newCurrency}
+                  onChange={(e) => setNewCurrency(e.target.value)}
+                  className="h-8 text-xs bg-background"
+                  required
+                />
+              </div>
+            )}
+
             {/* LTV Calculator fields */}
             <div className="grid grid-cols-2 gap-3 pt-3 border-t border-border/30">
               <Fld label="Billing Model">
-                <Select value={billingType} onValueChange={(v) => setBillingType(v as any)}>
+                <Select value={billingType} onValueChange={(v) => setBillingType(v)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="one_time">One-time / Milestone</SelectItem>
                     <SelectItem value="monthly">Monthly Retainer</SelectItem>
                     <SelectItem value="yearly">Yearly Retainer</SelectItem>
+                    {customBillingTypes.map(b => {
+                      const slug = b.trim().toLowerCase().replace(/\s+/g, "_");
+                      return (
+                        <SelectItem key={slug} value={slug}>{b}</SelectItem>
+                      );
+                    })}
+                    <SelectItem value="create_new" className="font-semibold text-primary cursor-pointer border-t border-border mt-1">+ Create New Billing Model...</SelectItem>
                   </SelectContent>
                 </Select>
               </Fld>
               <Fld label={
                 billingType === "one_time" ? "Project Cost" :
-                  billingType === "monthly" ? "Monthly Rate" : "Annual Rate"
+                  billingType === "monthly" ? "Monthly Rate" :
+                    billingType === "yearly" ? "Annual Rate" : "Rate per Period"
               }>
-                <Input type="number" placeholder={billingType === "one_time" ? "e.g. 5000" : billingType === "monthly" ? "e.g. 1500" : "e.g. 12000"} value={billingRate} onChange={(e) => setBillingRate(e.target.value)} />
+                <Input type="number" placeholder={billingType === "one_time" ? "e.g. 5000" : billingType === "monthly" ? "e.g. 1500" : billingType === "yearly" ? "e.g. 12000" : "e.g. 1000"} value={billingRate} onChange={(e) => setBillingRate(e.target.value)} />
               </Fld>
             </div>
 
+            {billingType === "create_new" && (
+              <div className="space-y-1.5 bg-primary/5 p-3 rounded-xl border border-primary/10">
+                <Label className="text-xs font-semibold text-primary">Custom Billing Model Name</Label>
+                <Input
+                  placeholder="e.g. Weekly Retainer / Milestone Contract"
+                  value={newBillingModel}
+                  onChange={(e) => setNewBillingModel(e.target.value)}
+                  className="h-8 text-xs bg-background"
+                  required
+                />
+              </div>
+            )}
+
             {billingType !== "one_time" && (
-              <Fld label={billingType === "monthly" ? "Duration (Months)" : "Duration (Years)"}>
-                <Input type="number" min="1" placeholder={billingType === "monthly" ? "e.g. 12" : "e.g. 3"} value={billingDuration} onChange={(e) => setBillingDuration(e.target.value)} />
+              <Fld label={
+                billingType === "monthly" ? "Duration (Months)" :
+                  billingType === "yearly" ? "Duration (Years)" : "Duration (Periods)"
+              }>
+                <Input type="number" min="1" placeholder={billingType === "monthly" ? "e.g. 12" : billingType === "yearly" ? "e.g. 3" : "e.g. 4"} value={billingDuration} onChange={(e) => setBillingDuration(e.target.value)} />
               </Fld>
             )}
 
