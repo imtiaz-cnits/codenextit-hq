@@ -339,16 +339,45 @@ export default function ClientsPage() {
                             </div>
                           </CardHeader>
                           <CardContent className="space-y-3 pb-4">
-                            <div className="space-y-1.5 text-xs text-muted-foreground">
-                              {c.email && (
-                                <div className="flex items-center gap-2 truncate">
-                                  <Mail className="h-3.5 w-3.5 shrink-0" />{c.email}
-                                </div>
-                              )}
-                              {c.phone && (
-                                <div className="flex items-center gap-2">
-                                  <Phone className="h-3.5 w-3.5 shrink-0" />{c.phone}
-                                </div>
+                            <div className="space-y-1.5 text-xs text-muted-foreground min-h-[40px]">
+                              {c.source && c.source !== "direct" ? (
+                                <>
+                                  {c.website && (
+                                    <div className="flex items-center gap-2 truncate">
+                                      <Globe className="h-3.5 w-3.5 shrink-0 text-primary/70" />
+                                      <span className="truncate">{c.website.replace(/^https?:\/\//i, "")}</span>
+                                    </div>
+                                  )}
+                                  {c.address && (
+                                    <div className="flex items-center gap-2 truncate">
+                                      <MapPin className="h-3.5 w-3.5 shrink-0 text-primary/70" />
+                                      <span className="truncate">{c.address}</span>
+                                    </div>
+                                  )}
+                                  {!c.website && !c.address && (
+                                    <div className="text-muted-foreground/60 italic text-[11px]">
+                                      No profile links or country specified.
+                                    </div>
+                                  )}
+                                </>
+                              ) : (
+                                <>
+                                  {c.email && (
+                                    <div className="flex items-center gap-2 truncate">
+                                      <Mail className="h-3.5 w-3.5 shrink-0 text-primary/70" />{c.email}
+                                    </div>
+                                  )}
+                                  {c.phone && (
+                                    <div className="flex items-center gap-2">
+                                      <Phone className="h-3.5 w-3.5 shrink-0 text-primary/70" />{c.phone}
+                                    </div>
+                                  )}
+                                  {!c.email && !c.phone && (
+                                    <div className="text-muted-foreground/60 italic text-[11px]">
+                                      No contact email or phone.
+                                    </div>
+                                  )}
+                                </>
                               )}
                             </div>
 
