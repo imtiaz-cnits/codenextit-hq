@@ -267,60 +267,60 @@ export default function ClientsPage() {
           <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-none bg-transparent">
               <div className="overflow-x-auto pb-2 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide bg-transparent border-none">
-                <TabsList className="inline-flex w-auto md:grid md:w-full md:max-w-[1000px] p-1 h-auto bg-muted/50 rounded-xl whitespace-nowrap md:grid-cols-9">
+                <TabsList className="inline-flex w-auto md:grid md:w-full md:max-w-[1150px] p-1 h-auto bg-muted/50 rounded-xl whitespace-nowrap md:grid-cols-9">
                   <TabsTrigger
                     value="active"
-                    className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
+                    className="px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
                   >
-                    <Briefcase className="h-4 w-4" /> Active ({activeClients.length})
+                    Active ({activeClients.length})
                   </TabsTrigger>
                   <TabsTrigger
                     value="in_progress"
-                    className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
+                    className="px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
                   >
-                    <Loader2 className="h-4 w-4" /> In Progress ({inProgressClients.length})
+                    In Progress ({inProgressClients.length})
                   </TabsTrigger>
                   <TabsTrigger
                     value="completed"
-                    className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
+                    className="px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
                   >
-                    <CheckCircle className="h-4 w-4" /> Completed ({completedClients.length})
+                    Completed ({completedClients.length})
                   </TabsTrigger>
                   <TabsTrigger
                     value="direct"
-                    className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
+                    className="px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
                   >
-                    <Building2 className="h-4 w-4" /> Direct ({directClients.length})
+                    Direct ({directClients.length})
                   </TabsTrigger>
                   <TabsTrigger
                     value="freelancer"
-                    className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
+                    className="px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
                   >
-                    <Globe className="h-4 w-4" /> Freelancer ({freelancerClients.length})
+                    Freelancer ({freelancerClients.length})
                   </TabsTrigger>
                   <TabsTrigger
                     value="upwork"
-                    className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
+                    className="px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
                   >
-                    <Laptop className="h-4 w-4" /> Upwork ({upworkClients.length})
+                    Upwork ({upworkClients.length})
                   </TabsTrigger>
                   <TabsTrigger
                     value="fiverr"
-                    className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
+                    className="px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
                   >
-                    <Zap className="h-4 w-4" /> Fiverr ({fiverrClients.length})
+                    Fiverr ({fiverrClients.length})
                   </TabsTrigger>
                   <TabsTrigger
                     value="injaaz"
-                    className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
+                    className="px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
                   >
-                    <Handshake className="h-4 w-4" /> Injaaz ({injaazClients.length})
+                    Injaaz ({injaazClients.length})
                   </TabsTrigger>
                   <TabsTrigger
                     value="other"
-                    className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
+                    className="px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
                   >
-                    <Tag className="h-4 w-4" /> Others ({otherClients.length})
+                    Others ({otherClients.length})
                   </TabsTrigger>
                 </TabsList>
               </div>
