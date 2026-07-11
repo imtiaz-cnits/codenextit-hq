@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "../../../components/ui/sheet";
 import { Avatar, AvatarFallback } from "../../../components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../../../components/ui/dialog";
-import { Edit, Trash2, MoreHorizontal, Mail, Phone, Building2, MapPin, Loader2, Plus, Info, Globe, Tag, FileText, Briefcase, ListChecks, CheckCircle, LayoutGrid, List, Laptop, Zap, Handshake } from "lucide-react";
+import { Edit, Trash2, MoreHorizontal, Mail, Phone, Building2, MapPin, Loader2, Plus, Info, Globe, Tag, FileText, Briefcase, ListChecks, CheckCircle, LayoutGrid, List, Handshake } from "lucide-react";
 import { formatCurrency, avatarColor } from "../../../lib/format";
 import { toast } from "sonner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../../components/ui/dropdown-menu";
@@ -106,8 +106,6 @@ export default function ClientsPage() {
 
   const directClients = clients.filter(c => !c.source || c.source === "direct");
   const freelancerClients = clients.filter(c => c.source === "freelancer");
-  const upworkClients = clients.filter(c => c.source === "upwork");
-  const fiverrClients = clients.filter(c => c.source === "fiverr");
   const injaazClients = clients.filter(c => c.source === "injaaz");
   const otherClients = clients.filter(c => c.source === "other");
 
@@ -121,10 +119,6 @@ export default function ClientsPage() {
         return directClients;
       case "freelancer":
         return freelancerClients;
-      case "upwork":
-        return upworkClients;
-      case "fiverr":
-        return fiverrClients;
       case "injaaz":
         return injaazClients;
       case "other":
@@ -148,7 +142,7 @@ export default function ClientsPage() {
       return projs.some(p => p.status === "active" || p.status === "planning");
     })
     .slice(0, 3);
-  
+
   const finalHighlights = [...highlightClients];
   if (finalHighlights.length < 3) {
     clients.forEach(c => {
@@ -223,8 +217,8 @@ export default function ClientsPage() {
                 const clientProjects = projects.filter(p => p.client_id === c.id);
                 const activeProj = clientProjects.find(p => p.status === "active" || p.status === "planning") || clientProjects[0];
                 return (
-                  <Card 
-                    key={c.id} 
+                  <Card
+                    key={c.id}
                     className="group overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 bg-gradient-to-br from-primary/10 via-primary/5 to-card border border-primary/25 dark:from-primary/15 dark:via-primary/5 dark:to-card cursor-pointer relative shadow-sm"
                     onClick={() => { setSelectedClient(c); setIsDetailsOpen(true); }}
                   >
@@ -267,7 +261,7 @@ export default function ClientsPage() {
           <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-none bg-transparent">
               <div className="overflow-x-auto pb-2 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide bg-transparent border-none">
-                <TabsList className="inline-flex w-auto md:grid md:w-full md:max-w-[1150px] p-1 h-auto bg-muted/50 rounded-xl whitespace-nowrap md:grid-cols-9">
+                <TabsList className="inline-flex w-auto md:grid md:w-full md:max-w-[850px] p-1 h-auto bg-muted/50 rounded-xl whitespace-nowrap md:grid-cols-7">
                   <TabsTrigger
                     value="active"
                     className="px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
@@ -299,22 +293,10 @@ export default function ClientsPage() {
                     Freelancer ({freelancerClients.length})
                   </TabsTrigger>
                   <TabsTrigger
-                    value="upwork"
-                    className="px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
-                  >
-                    Upwork ({upworkClients.length})
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="fiverr"
-                    className="px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
-                  >
-                    Fiverr ({fiverrClients.length})
-                  </TabsTrigger>
-                  <TabsTrigger
                     value="injaaz"
                     className="px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
                   >
-                    Injaaz ({injaazClients.length})
+                    Injaazh ({injaazClients.length})
                   </TabsTrigger>
                   <TabsTrigger
                     value="other"
@@ -356,8 +338,8 @@ export default function ClientsPage() {
                     {currentClients.map(c => {
                       const clientProjects = projects.filter(p => p.client_id === c.id);
                       return (
-                        <Card 
-                          key={c.id} 
+                        <Card
+                          key={c.id}
                           className="hover:shadow-elegant transition-all cursor-pointer group relative overflow-hidden bg-card/65 border border-border/50"
                           onClick={() => { setSelectedClient(c); setIsDetailsOpen(true); }}
                         >
@@ -477,7 +459,7 @@ export default function ClientsPage() {
                         >
                           Previous
                         </Button>
-                        
+
                         {Array.from({ length: totalPages }).map((_, idx) => {
                           const pageNum = idx + 1;
                           return (
@@ -492,7 +474,7 @@ export default function ClientsPage() {
                             </Button>
                           );
                         })}
-                        
+
                         <Button
                           variant="outline"
                           size="sm"
@@ -523,9 +505,9 @@ export default function ClientsPage() {
                         {currentClients.map(c => {
                           const clientProjects = projects.filter(p => p.client_id === c.id);
                           return (
-                            <TableRow 
-                              key={c.id} 
-                              className="cursor-pointer hover:bg-muted/30 transition-colors" 
+                            <TableRow
+                              key={c.id}
+                              className="cursor-pointer hover:bg-muted/30 transition-colors"
                               onClick={() => { setSelectedClient(c); setIsDetailsOpen(true); }}
                             >
                               <TableCell>
@@ -559,16 +541,16 @@ export default function ClientsPage() {
                                     </Badge>
                                   ) : (
                                     clientProjects.slice(0, 2).map(p => (
-                                      <Badge 
-                                        key={p.id} 
-                                        variant="secondary" 
+                                      <Badge
+                                        key={p.id}
+                                        variant="secondary"
                                         className="text-[10px] font-normal py-0 px-1.5 flex items-center gap-1 bg-muted/65"
                                       >
                                         <span className={cn(
                                           "h-1 w-1 rounded-full",
                                           p.status === "active" ? "bg-emerald-500" :
-                                          p.status === "completed" ? "bg-blue-500" :
-                                          p.status === "on_hold" ? "bg-amber-500" : "bg-muted-foreground"
+                                            p.status === "completed" ? "bg-blue-500" :
+                                              p.status === "on_hold" ? "bg-amber-500" : "bg-muted-foreground"
                                         )} />
                                         {p.name}: {p.progress}%
                                       </Badge>
@@ -626,7 +608,7 @@ export default function ClientsPage() {
                         >
                           Previous
                         </Button>
-                        
+
                         {Array.from({ length: totalPages }).map((_, idx) => {
                           const pageNum = idx + 1;
                           return (
@@ -641,7 +623,7 @@ export default function ClientsPage() {
                             </Button>
                           );
                         })}
-                        
+
                         <Button
                           variant="outline"
                           size="sm"
@@ -734,7 +716,7 @@ export default function ClientsPage() {
                           <p className="text-muted-foreground text-[10px] uppercase">
                             {selectedClient.source && selectedClient.source !== "direct" ? "Platform Profile" : "Website"}
                           </p>
-                          <a 
+                          <a
                             href={selectedClient.website.startsWith("http") ? selectedClient.website : `https://${selectedClient.website}`}
                             target="_blank"
                             rel="noopener noreferrer"
@@ -768,8 +750,8 @@ export default function ClientsPage() {
                           <div key={p.id} className="bg-muted/40 p-2.5 rounded-xl border border-border/30 space-y-1.5">
                             <div className="flex items-center justify-between">
                               <span className="font-semibold text-foreground truncate max-w-[200px]">{p.name}</span>
-                              <Badge 
-                                variant={p.status === "active" ? "default" : "secondary"} 
+                              <Badge
+                                variant={p.status === "active" ? "default" : "secondary"}
                                 className={cn(
                                   "text-[9px] py-0 px-1.5 font-normal h-4",
                                   p.status === "active" && "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 hover:bg-emerald-500/10",
@@ -799,7 +781,7 @@ export default function ClientsPage() {
                       </div>
                     </div>
                   )}
-                  
+
                   <div className="flex items-center justify-between p-3.5 bg-primary/5 rounded-xl border border-primary/10 mt-1">
                     <div>
                       <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -825,17 +807,17 @@ export default function ClientsPage() {
         </DialogContent>
       </Dialog>
 
-      <ClientSheet 
-        open={isSheetOpen} 
-        onOpenChange={setIsSheetOpen} 
-        onCreated={load} 
-        editingClient={editingClient} 
+      <ClientSheet
+        open={isSheetOpen}
+        onOpenChange={setIsSheetOpen}
+        onCreated={load}
+        editingClient={editingClient}
       />
     </div>
   );
 }
 
-function ClientSheet({ open, onOpenChange, onCreated, editingClient }: { 
+function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
   open: boolean; onOpenChange: (v: boolean) => void; onCreated: () => void; editingClient: Client | null;
 }) {
   const [submitting, setSubmitting] = useState(false);
@@ -897,7 +879,7 @@ function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
-    
+
     const clientData = {
       company_name: f.company_name,
       contact_person: f.contact_person || null,
@@ -909,7 +891,7 @@ function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
       source: f.source || "direct",
     };
 
-    const { error } = editingClient 
+    const { error } = editingClient
       ? await (supabase.from("clients") as any).update(clientData).eq("id", editingClient.id)
       : await (supabase.from("clients") as any).insert(clientData);
 
@@ -944,8 +926,6 @@ function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
                   <SelectContent>
                     <SelectItem value="direct">Direct Client</SelectItem>
                     <SelectItem value="freelancer">Freelancer.com</SelectItem>
-                    <SelectItem value="upwork">Upwork.com</SelectItem>
-                    <SelectItem value="fiverr">Fiverr.com</SelectItem>
                     <SelectItem value="injaaz">Shared with Injaaz</SelectItem>
                     <SelectItem value="other">Other / Shared</SelectItem>
                   </SelectContent>
@@ -955,7 +935,7 @@ function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
                 <Input required placeholder={f.source !== "direct" ? "e.g. Tina Wade" : "e.g. MACS School and College"} value={f.company_name} onChange={(e) => setF({ ...f, company_name: e.target.value })} />
               </Fld>
             </div>
-            
+
             <div className="grid grid-cols-2 gap-3">
               <Fld label={f.source !== "direct" ? "Username / Contact" : "Contact Person"}>
                 <Input placeholder={f.source !== "direct" ? "e.g. tina_wade" : "e.g. Md Nurul Islam"} value={f.contact_person} onChange={(e) => setF({ ...f, contact_person: e.target.value })} />
@@ -964,7 +944,7 @@ function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
                 <Input placeholder={f.source !== "direct" ? "e.g. Healthcare, Tech" : "e.g. Education"} value={f.industry} onChange={(e) => setF({ ...f, industry: e.target.value })} />
               </Fld>
             </div>
-            
+
             <div className="grid grid-cols-2 gap-3">
               <Fld label="Email">
                 <Input type="email" placeholder={f.source !== "direct" ? "e.g. (Optional) tina@example.com" : "e.g. info@macsschool.edu.bd"} value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
@@ -973,15 +953,15 @@ function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
                 <Input placeholder={f.source !== "direct" ? "e.g. (Optional) +1..." : "e.g. 01896220299"} value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} />
               </Fld>
             </div>
-            
+
             <Fld label={f.source !== "direct" ? "Platform Profile / Website" : "Website"}>
               <Input value={f.website} onChange={(e) => setF({ ...f, website: e.target.value })} placeholder={f.source !== "direct" ? "e.g. https://freelancer.com/u/tinawade" : "e.g. https://macsschool.edu.bd"} />
             </Fld>
-            
+
             <Fld label={f.source !== "direct" ? "Country / Location" : "Address"}>
               <Input placeholder={f.source !== "direct" ? "e.g. United States" : "e.g. Jalalpur, Pabna"} value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} />
             </Fld>
-            
+
             <div className="grid grid-cols-2 gap-3">
               <Fld label="VAT / BIN">
                 <Input placeholder="e.g. 1234567890" value={f.vat_bin} onChange={(e) => setF({ ...f, vat_bin: e.target.value })} />
@@ -1011,7 +991,7 @@ function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
               </Fld>
               <Fld label={
                 billingType === "one_time" ? "Project Cost" :
-                billingType === "monthly" ? "Monthly Rate" : "Annual Rate"
+                  billingType === "monthly" ? "Monthly Rate" : "Annual Rate"
               }>
                 <Input type="number" placeholder={billingType === "one_time" ? "e.g. 5000" : billingType === "monthly" ? "e.g. 1500" : "e.g. 12000"} value={billingRate} onChange={(e) => setBillingRate(e.target.value)} />
               </Fld>
@@ -1026,7 +1006,7 @@ function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
             <Fld label="Calculated Lifetime Value">
               <Input type="number" disabled className="bg-muted text-muted-foreground font-semibold" placeholder="Calculated automatically" value={f.ltv} />
             </Fld>
-            
+
             <Fld label="Notes">
               <Textarea placeholder="e.g. Custom billing notes, SLA timelines..." value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} rows={3} />
             </Fld>
