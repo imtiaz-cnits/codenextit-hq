@@ -195,7 +195,8 @@ export async function POST(req: NextRequest) {
       .insert({ 
         company_name: company_name.trim(),
         created_by: user.id,
-        parent_id: parent_id || null
+        parent_id: parent_id || null,
+        is_vault_folder: true
       })
       .select("id, company_name, parent_id")
       .single();

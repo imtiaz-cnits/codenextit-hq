@@ -67,7 +67,7 @@ export default function ProjectsPage() {
 
     const [{ data: p, error: e1 }, { data: c }] = await Promise.all([
       query,
-      supabase.from("clients").select("id, company_name"),
+      supabase.from("clients").select("id, company_name").eq("is_vault_folder", false),
     ]);
     
     if (e1) toast.error(e1.message);

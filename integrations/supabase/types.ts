@@ -71,6 +71,7 @@ export type Database = {
           vat_bin: string | null
           created_by: string | null
           parent_id: string | null
+          is_vault_folder: boolean
         }
         Insert: {
           address?: string | null
@@ -87,6 +88,7 @@ export type Database = {
           vat_bin?: string | null
           created_by?: string | null
           parent_id?: string | null
+          is_vault_folder?: boolean
         }
         Update: {
           address?: string | null
@@ -103,6 +105,7 @@ export type Database = {
           vat_bin?: string | null
           created_by?: string | null
           parent_id?: string | null
+          is_vault_folder?: boolean
         }
         Relationships: []
       }

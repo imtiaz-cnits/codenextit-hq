@@ -45,7 +45,7 @@ export default function InvoicesPage() {
     setLoading(true);
     const [{ data: inv }, { data: cs }] = await Promise.all([
       supabase.from("invoices").select("*").order("issued_at", { ascending: false }),
-      supabase.from("clients").select("id, company_name").order("company_name"),
+      supabase.from("clients").select("id, company_name").eq("is_vault_folder", false).order("company_name"),
     ]);
     setInvoices(inv as Invoice[] ?? []);
     setClients(cs as Client[] ?? []);
@@ -79,7 +79,7 @@ export default function InvoicesPage() {
       const ids = list.map((i) => i.id);
       const [{ data: allItems }, { data: allClients }] = await Promise.all([
         supabase.from("invoice_items").select("*").in("invoice_id", ids).order("position"),
-        supabase.from("clients").select("id, company_name, contact_person, email, phone, address, vat_bin"),
+        supabase.from("clients").select("id, company_name, contact_person, email, phone, address, vat_bin").eq("is_vault_folder", false),
       ]);
       const itemsByInvoice = new Map<string, InvoiceItem[]>();
       (allItems ?? []).forEach((it) => {

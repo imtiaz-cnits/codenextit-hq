@@ -48,7 +48,7 @@ export default function TicketsPage() {
     setLoading(true);
     const [{ data: t, error }, { data: c }] = await Promise.all([
       supabase.from("tickets").select("*").order("created_at", { ascending: false }),
-      supabase.from("clients").select("id, company_name"),
+      supabase.from("clients").select("id, company_name").eq("is_vault_folder", false),
     ]);
     if (error) toast.error(error.message);
     setTickets((t ?? []) as Ticket[]);

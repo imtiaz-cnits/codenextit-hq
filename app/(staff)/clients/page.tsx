@@ -36,7 +36,7 @@ export default function ClientsPage() {
   useEffect(() => { void load(); }, []);
   async function load() {
     setLoading(true);
-    const { data, error } = await supabase.from("clients").select("*").order("ltv", { ascending: false });
+    const { data, error } = await supabase.from("clients").select("*").eq("is_vault_folder", false).order("ltv", { ascending: false });
     if (error) toast.error(error.message);
     setClients((data as any ?? []) as Client[]);
     setLoading(false);

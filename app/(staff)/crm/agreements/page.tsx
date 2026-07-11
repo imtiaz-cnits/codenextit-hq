@@ -96,6 +96,7 @@ export default function AgreementsPage() {
       const { data: clData, error: clErr } = await supabase
         .from("clients")
         .select("id, company_name")
+        .eq("is_vault_folder", false)
         .order("company_name", { ascending: true });
 
       if (clErr) throw clErr;

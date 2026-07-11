@@ -132,7 +132,7 @@ export default function TransactionsPage() {
           .order("date", { ascending: false })
           .order("created_at", { ascending: false }),
         supabase.from("view_founder_equity" as any).select("*"),
-        supabase.from("clients").select("id, company_name").order("company_name", { ascending: true }),
+        supabase.from("clients").select("id, company_name").eq("is_vault_folder", false).order("company_name", { ascending: true }),
         supabase.from("employees").select("id, full_name").order("full_name", { ascending: true }),
         supabase.from("invoices" as any).select("id, number, title, total, client_id").order("number", { ascending: false })
       ]);

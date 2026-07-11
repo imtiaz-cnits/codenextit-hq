@@ -28,7 +28,7 @@ export default function DuePage() {
     setLoading(true);
     const [{ data: inv, error }, { data: c }] = await Promise.all([
       supabase.from("invoices").select("*").neq("status", "paid").neq("status", "cancelled").order("due_at"),
-      supabase.from("clients").select("id, company_name"),
+      supabase.from("clients").select("id, company_name").eq("is_vault_folder", false),
     ]);
     if (error) toast.error(error.message);
     setRows((inv ?? []) as InvoiceRow[]);

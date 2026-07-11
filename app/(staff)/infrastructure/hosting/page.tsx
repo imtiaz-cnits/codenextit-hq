@@ -33,7 +33,7 @@ export default function HostingPage() {
     setLoading(true);
     const [{ data: a, error }, { data: c }] = await Promise.all([
       supabase.from("infrastructure_assets").select("*").in("asset_type", ["hosting", "vps", "subscription"]).order("expires_at"),
-      supabase.from("clients").select("id, company_name"),
+      supabase.from("clients").select("id, company_name").eq("is_vault_folder", false),
     ]);
     if (error) toast.error(error.message);
     setRows((a ?? []) as Asset[]);

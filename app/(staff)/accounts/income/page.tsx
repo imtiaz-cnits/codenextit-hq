@@ -39,7 +39,7 @@ export default function IncomePage() {
     setLoading(true);
     const [{ data: r, error }, { data: c }] = await Promise.all([
       supabase.from("income_entries").select("*").order("date", { ascending: false }),
-      supabase.from("clients").select("id, company_name"),
+      supabase.from("clients").select("id, company_name").eq("is_vault_folder", false),
     ]);
     if (error) toast.error(error.message);
     setRows((r ?? []) as Income[]);

@@ -286,7 +286,7 @@ function UsersPanel() {
       const [{ data: profs }, { data: rolesData }, { data: cs }, { data: customRoles }] = await Promise.all([
         supabase.from("profiles").select("id, email, full_name, designation, client_id, avatar_url"),
         supabase.from("user_roles" as any).select("user_id, role") as any,
-        supabase.from("clients").select("id, company_name").order("company_name"),
+        supabase.from("clients").select("id, company_name").eq("is_vault_folder", false).order("company_name"),
         supabase.from("custom_roles" as any).select("id, name").order("name") as any
       ]);
 
