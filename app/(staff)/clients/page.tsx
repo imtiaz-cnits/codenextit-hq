@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "../../../components/ui/sheet";
 import { Avatar, AvatarFallback } from "../../../components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../../../components/ui/dialog";
-import { Edit, Trash2, MoreHorizontal, Mail, Phone, Building2, MapPin, Loader2, Plus, Info, Globe, Tag, FileText, Briefcase, ListChecks, CheckCircle } from "lucide-react";
+import { Edit, Trash2, MoreHorizontal, Mail, Phone, Building2, MapPin, Loader2, Plus, Info, Globe, Tag, FileText, Briefcase, ListChecks, CheckCircle, LayoutGrid, List } from "lucide-react";
 import { formatCurrency, avatarColor } from "../../../lib/format";
 import { toast } from "sonner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../../components/ui/dropdown-menu";
@@ -27,6 +27,7 @@ interface Client {
   email: string | null; phone: string | null; address: string | null;
   vat_bin: string | null; currency: "BDT" | "USD"; ltv: number; notes: string | null;
   website?: string | null; industry?: string | null;
+  created_at: string;
 }
 
 interface Project {
@@ -43,6 +44,7 @@ export default function ClientsPage() {
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [activeTab, setActiveTab] = useState("active");
+  const [viewMode, setViewMode] = useState<"card" | "list">("card");
 
   useEffect(() => { void load(); }, []);
   async function load() {
@@ -138,23 +140,25 @@ export default function ClientsPage() {
           <Plus className="h-4 w-4 mr-1.5" /> New client
         </Button>
       </div>
-
       {loading ? (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {[1, 2, 3].map(i => (
-              <Card key={i} className="p-4 space-y-3 shadow-sm bg-card/65 border border-border/50">
-                <div className="flex items-center gap-3">
-                  <Skeleton className="h-9 w-9 rounded-full" />
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-4 w-3/4" />
-                    <Skeleton className="h-3 w-1/2" />
+          <div className="space-y-3">
+            <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">Active Clients</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {[1, 2, 3, 4].map(i => (
+                <Card key={i} className="p-4 space-y-3 shadow-sm bg-card/65 border border-border/50">
+                  <div className="flex items-center gap-3">
+                    <Skeleton className="h-9 w-9 rounded-full" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-4 w-3/4" />
+                      <Skeleton className="h-3 w-1/2" />
+                    </div>
                   </div>
-                </div>
-                <Skeleton className="h-8 w-full rounded-xl" />
-                <Skeleton className="h-3 w-2/3" />
-              </Card>
-            ))}
+                  <Skeleton className="h-8 w-full rounded-xl" />
+                  <Skeleton className="h-3 w-2/3" />
+                </Card>
+              ))}
+            </div>
           </div>
           <div className="space-y-3">
             <Skeleton className="h-9 w-[300px] rounded-xl" />
@@ -176,79 +180,102 @@ export default function ClientsPage() {
       ) : (
         <div className="space-y-6">
           {/* Highlights Section */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {finalHighlights.map(c => {
-              const clientProjects = projects.filter(p => p.client_id === c.id);
-              const activeProj = clientProjects.find(p => p.status === "active" || p.status === "planning") || clientProjects[0];
-              return (
-                <Card 
-                  key={c.id} 
-                  className="group overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 bg-card/65 border border-border/50 cursor-pointer relative"
-                  onClick={() => { setSelectedClient(c); setIsDetailsOpen(true); }}
-                >
-                  <CardHeader className="pb-2.5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Avatar className="h-9 w-9 shrink-0">
-                          <AvatarFallback className={avatarColor(c.company_name)}>
-                            <Building2 className="h-4 w-4" />
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0">
-                          <CardTitle className="text-sm font-semibold truncate group-hover:text-primary transition-colors">{c.company_name}</CardTitle>
-                          <CardDescription className="text-[10px] truncate">{c.contact_person || "—"}</CardDescription>
+          <div className="space-y-3">
+            <h2 className="text-sm font-bold tracking-tight text-foreground">Active Clients</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {finalHighlights.map(c => {
+                const clientProjects = projects.filter(p => p.client_id === c.id);
+                const activeProj = clientProjects.find(p => p.status === "active" || p.status === "planning") || clientProjects[0];
+                return (
+                  <Card 
+                    key={c.id} 
+                    className="group overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 bg-card/65 border border-border/50 cursor-pointer relative"
+                    onClick={() => { setSelectedClient(c); setIsDetailsOpen(true); }}
+                  >
+                    <CardHeader className="pb-2.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-9 w-9 shrink-0">
+                            <AvatarFallback className={avatarColor(c.company_name)}>
+                              <Building2 className="h-4 w-4" />
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0">
+                            <CardTitle className="text-sm font-semibold truncate group-hover:text-primary transition-colors">{c.company_name}</CardTitle>
+                            <CardDescription className="text-[10px] truncate">{c.contact_person || "—"}</CardDescription>
+                          </div>
                         </div>
+                        <Badge variant="outline" className="text-[10px]">{c.currency}</Badge>
                       </div>
-                      <Badge variant="outline" className="text-[10px]">{c.currency}</Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-2 pb-3.5 text-[11px] text-muted-foreground">
-                    {activeProj ? (
-                      <div className="bg-primary/5 border border-primary/10 rounded-xl p-2 space-y-1.5">
-                        <div className="flex items-center justify-between font-medium text-foreground">
-                          <span className="truncate">{activeProj.name}</span>
-                          <span>{activeProj.progress}%</span>
+                    </CardHeader>
+                    <CardContent className="space-y-2 pb-3.5 text-[11px] text-muted-foreground">
+                      {activeProj ? (
+                        <div className="bg-primary/5 border border-primary/10 rounded-xl p-2 space-y-1.5">
+                          <div className="flex items-center justify-between font-medium text-foreground">
+                            <span className="truncate">{activeProj.name}</span>
+                            <span>{activeProj.progress}%</span>
+                          </div>
+                          <Progress value={activeProj.progress} className="h-1" />
                         </div>
-                        <Progress value={activeProj.progress} className="h-1" />
+                      ) : (
+                        <div className="text-[10px] italic py-2 text-center bg-muted/30 rounded-xl text-muted-foreground">
+                          No active projects
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between pt-1 text-[11px]">
+                        <span>Lifetime Value</span>
+                        <span className="font-bold text-foreground">{formatCurrency(c.ltv, c.currency)}</span>
                       </div>
-                    ) : (
-                      <div className="text-[10px] italic py-2 text-center bg-muted/30 rounded-xl text-muted-foreground">
-                        No active projects
-                      </div>
-                    )}
-                    <div className="flex items-center justify-between pt-1 text-[11px]">
-                      <span>Lifetime Value</span>
-                      <span className="font-bold text-foreground">{formatCurrency(c.ltv, c.currency)}</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
           </div>
 
           {/* Tabs Listing Section */}
           <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-            <div className="overflow-x-auto pb-2 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide bg-transparent border-none">
-              <TabsList className="inline-flex w-auto md:grid md:w-full md:max-w-[500px] p-1 h-auto bg-muted/50 rounded-xl whitespace-nowrap md:grid-cols-3">
-                <TabsTrigger
-                  value="active"
-                  className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-none bg-transparent">
+              <div className="overflow-x-auto pb-2 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide bg-transparent border-none">
+                <TabsList className="inline-flex w-auto md:grid md:w-full md:max-w-[500px] p-1 h-auto bg-muted/50 rounded-xl whitespace-nowrap md:grid-cols-3">
+                  <TabsTrigger
+                    value="active"
+                    className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
+                  >
+                    <Briefcase className="h-4 w-4" /> Active ({activeClients.length})
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="in_progress"
+                    className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
+                  >
+                    <Loader2 className="h-4 w-4" /> In Progress ({inProgressClients.length})
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="completed"
+                    className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
+                  >
+                    <CheckCircle className="h-4 w-4" /> Completed ({completedClients.length})
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+              <div className="flex items-center gap-1 bg-muted/30 p-1 rounded-xl border border-border/40 shrink-0 mb-2">
+                <Button
+                  variant={viewMode === "card" ? "secondary" : "ghost"}
+                  size="sm"
+                  className="h-8 px-3 rounded-lg cursor-pointer text-xs flex items-center gap-1.5"
+                  onClick={() => setViewMode("card")}
                 >
-                  <Briefcase className="h-4 w-4" /> Active ({activeClients.length})
-                </TabsTrigger>
-                <TabsTrigger
-                  value="in_progress"
-                  className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
+                  <LayoutGrid className="h-3.5 w-3.5" /> Card View
+                </Button>
+                <Button
+                  variant={viewMode === "list" ? "secondary" : "ghost"}
+                  size="sm"
+                  className="h-8 px-3 rounded-lg cursor-pointer text-xs flex items-center gap-1.5"
+                  onClick={() => setViewMode("list")}
                 >
-                  <Loader2 className="h-4 w-4" /> In Progress ({inProgressClients.length})
-                </TabsTrigger>
-                <TabsTrigger
-                  value="completed"
-                  className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
-                >
-                  <CheckCircle className="h-4 w-4" /> Completed ({completedClients.length})
-                </TabsTrigger>
-              </TabsList>
+                  <List className="h-3.5 w-3.5" /> List View
+                </Button>
+              </div>
             </div>
 
             <TabsContent value={activeTab} className="mt-2 outline-none">
@@ -257,6 +284,147 @@ export default function ClientsPage() {
                   <Building2 className="h-10 w-10 mx-auto mb-3 opacity-50 text-muted-foreground" />
                   No accounts found in this tab.
                 </Card>
+              ) : viewMode === "card" ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {currentClients.map(c => {
+                      const clientProjects = projects.filter(p => p.client_id === c.id);
+                      return (
+                        <Card 
+                          key={c.id} 
+                          className="hover:shadow-elegant transition-all cursor-pointer group relative overflow-hidden bg-card/65 border border-border/50"
+                          onClick={() => { setSelectedClient(c); setIsDetailsOpen(true); }}
+                        >
+                          <CardHeader className="pb-3 pr-10">
+                            <div className="flex items-start gap-3">
+                              <Avatar className="h-12 w-12 shrink-0">
+                                <AvatarFallback className={avatarColor(c.company_name)}>
+                                  <Building2 className="h-5 w-5" />
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="flex-1 min-w-0">
+                                <CardTitle className="text-base truncate group-hover:text-primary transition-colors">{c.company_name}</CardTitle>
+                                <CardDescription className="text-xs truncate">{c.contact_person ?? "—"}</CardDescription>
+                              </div>
+                              <Badge variant="outline" className="shrink-0">{c.currency}</Badge>
+                            </div>
+                            
+                            <div className="absolute top-3 right-3" onClick={e => e.stopPropagation()}>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" className="h-8 w-8 p-0 cursor-pointer">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-32">
+                                  <DropdownMenuItem className="cursor-pointer" onClick={() => { setSelectedClient(c); setIsDetailsOpen(true); }}>
+                                    <Info className="h-4 w-4 mr-2" /> View Details
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem className="cursor-pointer" onClick={() => { setEditingClient(c); setIsSheetOpen(true); }}>
+                                    <Edit className="h-4 w-4 mr-2" /> Edit Client
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem className="cursor-pointer text-destructive focus:text-destructive" onClick={() => deleteClient(c.id)}>
+                                    <Trash2 className="h-4 w-4 mr-2" /> Delete
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          </CardHeader>
+                          <CardContent className="space-y-3 pb-4">
+                            <div className="space-y-1.5 text-xs text-muted-foreground">
+                              {c.email && (
+                                <div className="flex items-center gap-2 truncate">
+                                  <Mail className="h-3.5 w-3.5 shrink-0" />{c.email}
+                                </div>
+                              )}
+                              {c.phone && (
+                                <div className="flex items-center gap-2">
+                                  <Phone className="h-3.5 w-3.5 shrink-0" />{c.phone}
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-1.5 flex-wrap pt-2.5 border-t border-border/30">
+                              {clientProjects.length === 0 ? (
+                                <span className="text-[10px] text-muted-foreground italic">No projects yet</span>
+                              ) : (
+                                clientProjects.slice(0, 2).map(p => (
+                                  <Badge 
+                                    key={p.id} 
+                                    variant="secondary" 
+                                    className="text-[10px] font-normal py-0.5 px-1.5 flex items-center gap-1 bg-muted/65"
+                                  >
+                                    <span className={cn(
+                                      "h-1 w-1 rounded-full",
+                                      p.status === "active" ? "bg-emerald-500" :
+                                      p.status === "completed" ? "bg-blue-500" :
+                                      p.status === "on_hold" ? "bg-amber-500" : "bg-muted-foreground"
+                                    )} />
+                                    {p.name} ({p.progress}%)
+                                  </Badge>
+                                ))
+                              )}
+                              {clientProjects.length > 2 && (
+                                <Badge variant="outline" className="text-[10px] font-normal py-0.5 px-1.5">
+                                  +{clientProjects.length - 2} more
+                                </Badge>
+                              )}
+                            </div>
+
+                            <div className="flex items-center justify-between pt-2.5 mt-2 border-t border-border/30">
+                              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Lifetime value</span>
+                              <span className="text-foreground font-bold text-sm">{formatCurrency(Number(c.ltv), c.currency)}</span>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-between border border-border/40 p-4 bg-muted/10 shrink-0 flex-wrap gap-2 rounded-xl mt-4 bg-card/45">
+                      <span className="text-xs text-muted-foreground">
+                        Showing {startIndex + 1} to {Math.min(startIndex + pageSize, totalItems)} of {totalItems} accounts
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={currentPage === 1}
+                          onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                          className="h-8 px-2 cursor-pointer text-xs"
+                        >
+                          Previous
+                        </Button>
+                        
+                        {Array.from({ length: totalPages }).map((_, idx) => {
+                          const pageNum = idx + 1;
+                          return (
+                            <Button
+                              key={pageNum}
+                              variant={currentPage === pageNum ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => setCurrentPage(pageNum)}
+                              className="h-8 w-8 cursor-pointer text-xs"
+                            >
+                              {pageNum}
+                            </Button>
+                          );
+                        })}
+                        
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={currentPage === totalPages}
+                          onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                          className="h-8 px-2 cursor-pointer text-xs"
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               ) : (
                 <Card className="bg-card/45 border-border/50 shadow-sm overflow-hidden">
                   <div className="overflow-x-auto">
@@ -313,7 +481,7 @@ export default function ClientsPage() {
                                       <Badge 
                                         key={p.id} 
                                         variant="secondary" 
-                                        className="text-[10px] font-normal py-0 px-1.5 flex items-center gap-1 bg-muted/60"
+                                        className="text-[10px] font-normal py-0 px-1.5 flex items-center gap-1 bg-muted/65"
                                       >
                                         <span className={cn(
                                           "h-1 w-1 rounded-full",
