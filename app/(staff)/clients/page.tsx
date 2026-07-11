@@ -304,7 +304,7 @@ export default function ClientsPage() {
                           className="hover:shadow-elegant transition-all cursor-pointer group relative overflow-hidden bg-card/65 border border-border/50"
                           onClick={() => { setSelectedClient(c); setIsDetailsOpen(true); }}
                         >
-                          <CardHeader className="pb-3 pr-10">
+                          <CardHeader className="pb-3">
                             <div className="flex items-start gap-3">
                               <Avatar className="h-12 w-12 shrink-0">
                                 <AvatarFallback className={avatarColor(c.company_name)}>
@@ -315,31 +315,30 @@ export default function ClientsPage() {
                                 <CardTitle className="text-base truncate group-hover:text-primary transition-colors">{c.company_name}</CardTitle>
                                 <CardDescription className="text-xs truncate">{c.contact_person ?? "—"}</CardDescription>
                               </div>
-                              <div className="flex flex-col items-end gap-1 shrink-0">
-                                <Badge variant="outline">{c.currency}</Badge>
-                                {getSourceBadge(c.source)}
+                              <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                                <div className="flex flex-col items-end gap-1">
+                                  <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-5 shrink-0">{c.currency}</Badge>
+                                  {getSourceBadge(c.source)}
+                                </div>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" className="h-8 w-8 p-0 cursor-pointer rounded-lg hover:bg-muted/50">
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="w-32">
+                                    <DropdownMenuItem className="cursor-pointer" onClick={() => { setSelectedClient(c); setIsDetailsOpen(true); }}>
+                                      <Info className="h-4 w-4 mr-2" /> View Details
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem className="cursor-pointer" onClick={() => { setEditingClient(c); setIsSheetOpen(true); }}>
+                                      <Edit className="h-4 w-4 mr-2" /> Edit Client
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem className="cursor-pointer text-destructive focus:text-destructive" onClick={() => deleteClient(c.id)}>
+                                      <Trash2 className="h-4 w-4 mr-2" /> Delete
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
                               </div>
-                            </div>
-                            
-                            <div className="absolute top-3 right-3" onClick={e => e.stopPropagation()}>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" className="h-8 w-8 p-0 cursor-pointer">
-                                    <MoreHorizontal className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="w-32">
-                                  <DropdownMenuItem className="cursor-pointer" onClick={() => { setSelectedClient(c); setIsDetailsOpen(true); }}>
-                                    <Info className="h-4 w-4 mr-2" /> View Details
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem className="cursor-pointer" onClick={() => { setEditingClient(c); setIsSheetOpen(true); }}>
-                                    <Edit className="h-4 w-4 mr-2" /> Edit Client
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem className="cursor-pointer text-destructive focus:text-destructive" onClick={() => deleteClient(c.id)}>
-                                    <Trash2 className="h-4 w-4 mr-2" /> Delete
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
                             </div>
                           </CardHeader>
                           <CardContent className="space-y-3 pb-4">
