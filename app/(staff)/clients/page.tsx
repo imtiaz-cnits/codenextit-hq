@@ -711,6 +711,10 @@ function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
     ltv: "0", notes: "", website: "", industry: "",
   });
 
+  const [billingType, setBillingType] = useState<"one_time" | "monthly" | "yearly">("one_time");
+  const [billingRate, setBillingRate] = useState("0");
+  const [billingDuration, setBillingDuration] = useState("1");
+
   useEffect(() => {
     if (editingClient) {
       setF({
@@ -726,14 +730,32 @@ function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
         website: editingClient.website || "",
         industry: editingClient.industry || "",
       });
+      setBillingType("one_time");
+      setBillingRate(editingClient.ltv.toString());
+      setBillingDuration("1");
     } else {
       setF({
         company_name: "", contact_person: "", email: "", phone: "",
         address: "", vat_bin: "", currency: "BDT", ltv: "0", notes: "",
         website: "", industry: "",
       });
+      setBillingType("one_time");
+      setBillingRate("0");
+      setBillingDuration("1");
     }
   }, [editingClient, open]);
+
+  useEffect(() => {
+    const rate = Number(billingRate) || 0;
+    const dur = Number(billingDuration) || 1;
+    let computedLtv = 0;
+    if (billingType === "one_time") {
+      computedLtv = rate;
+    } else {
+      computedLtv = rate * dur;
+    }
+    setF(prev => ({ ...prev, ltv: computedLtv.toString() }));
+  }, [billingType, billingRate, billingDuration]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -762,39 +784,109 @@ function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="overflow-y-auto sm:max-w-md">
-        <SheetHeader>
-          <SheetTitle>{editingClient ? "Edit Client" : "New Client"}</SheetTitle>
-          <SheetDescription>{editingClient ? "Update client profile details." : "Add a new account to your CRM."}</SheetDescription>
-        </SheetHeader>
-        <form onSubmit={submit} className="space-y-4 mt-6">
-          <Fld label="Company name"><Input required value={f.company_name} onChange={(e) => setF({ ...f, company_name: e.target.value })} /></Fld>
-          <div className="grid grid-cols-2 gap-3">
-            <Fld label="Contact person"><Input value={f.contact_person} onChange={(e) => setF({ ...f, contact_person: e.target.value })} /></Fld>
-            <Fld label="Industry"><Input value={f.industry} onChange={(e) => setF({ ...f, industry: e.target.value })} /></Fld>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Fld label="Email"><Input type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Fld>
-            <Fld label="Phone"><Input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} /></Fld>
-          </div>
-          <Fld label="Website"><Input value={f.website} onChange={(e) => setF({ ...f, website: e.target.value })} placeholder="https://..." /></Fld>
-          <Fld label="Address"><Input value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} /></Fld>
-          <div className="grid grid-cols-2 gap-3">
-            <Fld label="VAT / BIN"><Input value={f.vat_bin} onChange={(e) => setF({ ...f, vat_bin: e.target.value })} /></Fld>
-            <Fld label="Currency">
-              <Select value={f.currency} onValueChange={(v) => setF({ ...f, currency: v as "BDT" | "USD" })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="BDT">BDT</SelectItem><SelectItem value="USD">USD</SelectItem></SelectContent>
-              </Select>
+      <SheetContent className="flex flex-col h-full p-0 w-full sm:max-w-lg">
+        {/* Fixed Header */}
+        <div className="py-3 px-6 border-b border-border/40 shrink-0">
+          <SheetHeader>
+            <SheetTitle>{editingClient ? "Edit Client" : "New Client"}</SheetTitle>
+            <SheetDescription>
+              {editingClient ? "Update client profile details." : "Add a new account to your CRM."}
+            </SheetDescription>
+          </SheetHeader>
+        </div>
+
+        {/* Form Wrapper */}
+        <form onSubmit={submit} className="flex flex-col flex-1 min-h-0">
+          {/* Scrollable Body */}
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            <Fld label="Company name">
+              <Input required value={f.company_name} onChange={(e) => setF({ ...f, company_name: e.target.value })} />
+            </Fld>
+            
+            <div className="grid grid-cols-2 gap-3">
+              <Fld label="Contact person">
+                <Input value={f.contact_person} onChange={(e) => setF({ ...f, contact_person: e.target.value })} />
+              </Fld>
+              <Fld label="Industry">
+                <Input value={f.industry} onChange={(e) => setF({ ...f, industry: e.target.value })} />
+              </Fld>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-3">
+              <Fld label="Email">
+                <Input type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
+              </Fld>
+              <Fld label="Phone">
+                <Input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} />
+              </Fld>
+            </div>
+            
+            <Fld label="Website">
+              <Input value={f.website} onChange={(e) => setF({ ...f, website: e.target.value })} placeholder="https://..." />
+            </Fld>
+            
+            <Fld label="Address">
+              <Input value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} />
+            </Fld>
+            
+            <div className="grid grid-cols-2 gap-3">
+              <Fld label="VAT / BIN">
+                <Input value={f.vat_bin} onChange={(e) => setF({ ...f, vat_bin: e.target.value })} />
+              </Fld>
+              <Fld label="Currency">
+                <Select value={f.currency} onValueChange={(v) => setF({ ...f, currency: v as "BDT" | "USD" })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="BDT">BDT</SelectItem>
+                    <SelectItem value="USD">USD</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Fld>
+            </div>
+
+            {/* LTV Calculator fields */}
+            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-border/30">
+              <Fld label="Billing Model">
+                <Select value={billingType} onValueChange={(v) => setBillingType(v as any)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="one_time">One-time / Milestone</SelectItem>
+                    <SelectItem value="monthly">Monthly Retainer</SelectItem>
+                    <SelectItem value="yearly">Yearly Retainer</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Fld>
+              <Fld label={
+                billingType === "one_time" ? "Project Cost" :
+                billingType === "monthly" ? "Monthly Rate" : "Annual Rate"
+              }>
+                <Input type="number" value={billingRate} onChange={(e) => setBillingRate(e.target.value)} />
+              </Fld>
+            </div>
+
+            {billingType !== "one_time" && (
+              <Fld label={billingType === "monthly" ? "Duration (Months)" : "Duration (Years)"}>
+                <Input type="number" min="1" value={billingDuration} onChange={(e) => setBillingDuration(e.target.value)} />
+              </Fld>
+            )}
+
+            <Fld label="Calculated Lifetime Value">
+              <Input type="number" disabled className="bg-muted text-muted-foreground font-semibold" value={f.ltv} />
+            </Fld>
+            
+            <Fld label="Notes">
+              <Textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} rows={3} />
             </Fld>
           </div>
-          <Fld label="Lifetime value"><Input type="number" value={f.ltv} onChange={(e) => setF({ ...f, ltv: e.target.value })} /></Fld>
-          <Fld label="Notes"><Textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} rows={3} /></Fld>
-          <SheetFooter>
-            <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : editingClient ? "Update Client" : "Create Client"}
-            </Button>
-          </SheetFooter>
+
+          {/* Fixed Footer */}
+          <div className="py-3 px-6 border-t border-border shrink-0 bg-card/50">
+            <SheetFooter>
+              <Button type="submit" className="w-full" disabled={submitting}>
+                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : editingClient ? "Update Client" : "Create Client"}
+              </Button>
+            </SheetFooter>
+          </div>
         </form>
       </SheetContent>
     </Sheet>
