@@ -12,11 +12,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "../../../components/ui/sheet";
 import { Avatar, AvatarFallback } from "../../../components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../../../components/ui/dialog";
-import { Edit, Trash2, MoreHorizontal, Mail, Phone, Building2, MapPin, Loader2, Plus, Info, Globe, Tag, FileText } from "lucide-react";
+import { Edit, Trash2, MoreHorizontal, Mail, Phone, Building2, MapPin, Loader2, Plus, Info, Globe, Tag, FileText, Briefcase, ListChecks, CheckCircle } from "lucide-react";
 import { formatCurrency, avatarColor } from "../../../lib/format";
 import { toast } from "sonner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../../components/ui/dropdown-menu";
 import { Skeleton } from "../../../components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../../components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
+import { Progress } from "../../../components/ui/progress";
+import { cn } from "../../../lib/utils";
 
 interface Client {
   id: string; company_name: string; contact_person: string | null;
@@ -25,20 +29,32 @@ interface Client {
   website?: string | null; industry?: string | null;
 }
 
+interface Project {
+  id: string; name: string; client_id: string | null; status: string; progress: number; budget: number; currency: string;
+}
+
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [activeTab, setActiveTab] = useState("active");
 
   useEffect(() => { void load(); }, []);
   async function load() {
     setLoading(true);
-    const { data, error } = await supabase.from("clients").select("*").eq("is_vault_folder", false).order("ltv", { ascending: false });
-    if (error) toast.error(error.message);
-    setClients((data as any ?? []) as Client[]);
+    const [{ data: clientsData, error: clientsErr }, { data: projectsData, error: projectsErr }] = await Promise.all([
+      supabase.from("clients").select("*").eq("is_vault_folder", false).order("ltv", { ascending: false }),
+      supabase.from("projects").select("id, name, client_id, status, progress, budget, currency")
+    ]);
+    if (clientsErr) toast.error(clientsErr.message);
+    if (projectsErr) toast.error(projectsErr.message);
+    setClients((clientsData as any ?? []) as Client[]);
+    setProjects((projectsData as any ?? []) as Project[]);
     setLoading(false);
   }
 
@@ -54,71 +70,345 @@ export default function ClientsPage() {
   const totalLtvBDT = clients.filter((c) => c.currency === "BDT").reduce((s, c) => s + Number(c.ltv), 0);
   const totalLtvUSD = clients.filter((c) => c.currency === "USD").reduce((s, c) => s + Number(c.ltv), 0);
 
+  const activeClients = clients.filter(c => {
+    const projs = projects.filter(p => p.client_id === c.id);
+    return projs.length === 0 || projs.some(p => p.status === 'active' || p.status === 'planning' || p.status === 'on_hold');
+  });
+
+  const inProgressClients = clients.filter(c => {
+    const projs = projects.filter(p => p.client_id === c.id);
+    return projs.some(p => p.status === 'active' || p.status === 'planning');
+  });
+
+  const completedClients = clients.filter(c => {
+    const projs = projects.filter(p => p.client_id === c.id);
+    return projs.length > 0 && projs.every(p => p.status === 'completed' || p.status === 'cancelled');
+  });
+
+  const getFilteredClients = () => {
+    switch (activeTab) {
+      case "in_progress":
+        return inProgressClients;
+      case "completed":
+        return completedClients;
+      case "active":
+      default:
+        return activeClients;
+    }
+  };
+
+  const filteredClients = getFilteredClients();
+  const pageSize = 6;
+  const totalItems = filteredClients.length;
+  const totalPages = Math.ceil(totalItems / pageSize) || 1;
+  const startIndex = (currentPage - 1) * pageSize;
+  const currentClients = filteredClients.slice(startIndex, startIndex + pageSize);
+
+  const highlightClients = clients
+    .filter(c => {
+      const projs = projects.filter(p => p.client_id === c.id);
+      return projs.some(p => p.status === "active" || p.status === "planning");
+    })
+    .slice(0, 3);
+  
+  const finalHighlights = [...highlightClients];
+  if (finalHighlights.length < 3) {
+    clients.forEach(c => {
+      if (finalHighlights.length < 3 && !finalHighlights.some(fh => fh.id === c.id)) {
+        finalHighlights.push(c);
+      }
+    });
+  }
+
+  const handleTabChange = (val: string) => {
+    setActiveTab(val);
+    setCurrentPage(1);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-end justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Clients</h1>
-          <p className="text-muted-foreground mt-1">{clients.length} active accounts · {formatCurrency(totalLtvBDT, "BDT")} + {formatCurrency(totalLtvUSD, "USD")} lifetime value</p>
+          <p className="text-muted-foreground mt-1">
+            {clients.length} active accounts · {formatCurrency(totalLtvBDT, "BDT")} + {formatCurrency(totalLtvUSD, "USD")} lifetime value
+          </p>
         </div>
-        <Button onClick={() => { setEditingClient(null); setIsSheetOpen(true); }}><Plus className="h-4 w-4 mr-1.5" /> New client</Button>
+        <Button onClick={() => { setEditingClient(null); setIsSheetOpen(true); }}>
+          <Plus className="h-4 w-4 mr-1.5" /> New client
+        </Button>
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <Card key={i} className="p-6 space-y-4 shadow-sm">
-              <div className="flex items-start gap-3">
-                <Skeleton className="h-12 w-12 rounded-full" />
-                <div className="flex-1 space-y-2">
-                  <Skeleton className="h-5 w-3/4" />
-                  <Skeleton className="h-3 w-1/2" />
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {[1, 2, 3].map(i => (
+              <Card key={i} className="p-4 space-y-3 shadow-sm bg-card/65 border border-border/50">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="h-9 w-9 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-3 w-1/2" />
+                  </div>
                 </div>
-                <Skeleton className="h-5 w-10 rounded-full" />
-              </div>
-              <div className="space-y-3 pt-2">
-                <Skeleton className="h-3 w-full" />
-                <Skeleton className="h-3 w-5/6" />
-              </div>
-              <div className="flex items-center justify-between pt-3 mt-2 border-t">
-                <Skeleton className="h-3 w-20" />
-                <Skeleton className="h-5 w-24" />
-              </div>
+                <Skeleton className="h-8 w-full rounded-xl" />
+                <Skeleton className="h-3 w-2/3" />
+              </Card>
+            ))}
+          </div>
+          <div className="space-y-3">
+            <Skeleton className="h-9 w-[300px] rounded-xl" />
+            <Card className="bg-card/45 border-border/50 shadow-sm overflow-hidden p-6 space-y-4">
+              {[1, 2, 3, 4].map(i => (
+                <div key={i} className="flex items-center justify-between gap-4 py-2 border-b last:border-0">
+                  <div className="flex items-center gap-3 flex-1">
+                    <Skeleton className="h-8 w-8 rounded-full" />
+                    <Skeleton className="h-4 w-1/3" />
+                  </div>
+                  <Skeleton className="h-4 w-1/4" />
+                  <Skeleton className="h-6 w-20 rounded-full" />
+                  <Skeleton className="h-4 w-12" />
+                </div>
+              ))}
             </Card>
-          ))}
+          </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {clients.map((c) => (
-            <Card 
-              key={c.id} 
-              className="hover:shadow-elegant transition-all cursor-pointer group relative overflow-hidden"
-              onClick={() => { setSelectedClient(c); setIsDetailsOpen(true); }}
-            >
-              <CardHeader className="pb-3">
-                <div className="flex items-start gap-3">
-                  <Avatar className="h-12 w-12 shrink-0">
-                    <AvatarFallback className={avatarColor(c.company_name)}>
-                      <Building2 className="h-5 w-5" />
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <CardTitle className="text-base truncate group-hover:text-primary transition-colors">{c.company_name}</CardTitle>
-                    <CardDescription className="text-xs truncate">{c.contact_person ?? "—"}</CardDescription>
+        <div className="space-y-6">
+          {/* Highlights Section */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {finalHighlights.map(c => {
+              const clientProjects = projects.filter(p => p.client_id === c.id);
+              const activeProj = clientProjects.find(p => p.status === "active" || p.status === "planning") || clientProjects[0];
+              return (
+                <Card 
+                  key={c.id} 
+                  className="group overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 bg-card/65 border border-border/50 cursor-pointer relative"
+                  onClick={() => { setSelectedClient(c); setIsDetailsOpen(true); }}
+                >
+                  <CardHeader className="pb-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Avatar className="h-9 w-9 shrink-0">
+                          <AvatarFallback className={avatarColor(c.company_name)}>
+                            <Building2 className="h-4 w-4" />
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <CardTitle className="text-sm font-semibold truncate group-hover:text-primary transition-colors">{c.company_name}</CardTitle>
+                          <CardDescription className="text-[10px] truncate">{c.contact_person || "—"}</CardDescription>
+                        </div>
+                      </div>
+                      <Badge variant="outline" className="text-[10px]">{c.currency}</Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-2 pb-3.5 text-[11px] text-muted-foreground">
+                    {activeProj ? (
+                      <div className="bg-primary/5 border border-primary/10 rounded-xl p-2 space-y-1.5">
+                        <div className="flex items-center justify-between font-medium text-foreground">
+                          <span className="truncate">{activeProj.name}</span>
+                          <span>{activeProj.progress}%</span>
+                        </div>
+                        <Progress value={activeProj.progress} className="h-1" />
+                      </div>
+                    ) : (
+                      <div className="text-[10px] italic py-2 text-center bg-muted/30 rounded-xl text-muted-foreground">
+                        No active projects
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between pt-1 text-[11px]">
+                      <span>Lifetime Value</span>
+                      <span className="font-bold text-foreground">{formatCurrency(c.ltv, c.currency)}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          {/* Tabs Listing Section */}
+          <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+            <div className="overflow-x-auto pb-2 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide bg-transparent border-none">
+              <TabsList className="inline-flex w-auto md:grid md:w-full md:max-w-[500px] p-1 h-auto bg-muted/50 rounded-xl whitespace-nowrap md:grid-cols-3">
+                <TabsTrigger
+                  value="active"
+                  className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
+                >
+                  <Briefcase className="h-4 w-4" /> Active ({activeClients.length})
+                </TabsTrigger>
+                <TabsTrigger
+                  value="in_progress"
+                  className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
+                >
+                  <Loader2 className="h-4 w-4" /> In Progress ({inProgressClients.length})
+                </TabsTrigger>
+                <TabsTrigger
+                  value="completed"
+                  className="gap-2 px-4 py-[8px] rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm cursor-pointer transition-all"
+                >
+                  <CheckCircle className="h-4 w-4" /> Completed ({completedClients.length})
+                </TabsTrigger>
+              </TabsList>
+            </div>
+
+            <TabsContent value={activeTab} className="mt-2 outline-none">
+              {currentClients.length === 0 ? (
+                <Card className="bg-card/45 border-border/50 shadow-sm p-12 text-center text-muted-foreground">
+                  <Building2 className="h-10 w-10 mx-auto mb-3 opacity-50 text-muted-foreground" />
+                  No accounts found in this tab.
+                </Card>
+              ) : (
+                <Card className="bg-card/45 border-border/50 shadow-sm overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[220px]">Company</TableHead>
+                          <TableHead>Contact Info</TableHead>
+                          <TableHead>Projects Status</TableHead>
+                          <TableHead className="text-right">Lifetime Value</TableHead>
+                          <TableHead className="w-[60px]"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {currentClients.map(c => {
+                          const clientProjects = projects.filter(p => p.client_id === c.id);
+                          return (
+                            <TableRow 
+                              key={c.id} 
+                              className="cursor-pointer hover:bg-muted/30 transition-colors" 
+                              onClick={() => { setSelectedClient(c); setIsDetailsOpen(true); }}
+                            >
+                              <TableCell>
+                                <div className="flex items-center gap-2.5">
+                                  <Avatar className="h-8 w-8 shrink-0">
+                                    <AvatarFallback className={avatarColor(c.company_name)}>
+                                      <Building2 className="h-4 w-4" />
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <div className="min-w-0">
+                                    <span className="font-semibold text-sm block truncate">{c.company_name}</span>
+                                    <span className="text-[10px] text-muted-foreground block truncate">{c.industry || "General Industry"}</span>
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="text-xs space-y-0.5">
+                                  {c.contact_person && <span className="font-medium text-foreground block">{c.contact_person}</span>}
+                                  {c.email && (
+                                    <span className="text-muted-foreground flex items-center gap-1">
+                                      <Mail className="h-3 w-3 shrink-0" />{c.email}
+                                    </span>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {clientProjects.length === 0 ? (
+                                    <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground">
+                                      No projects
+                                    </Badge>
+                                  ) : (
+                                    clientProjects.slice(0, 2).map(p => (
+                                      <Badge 
+                                        key={p.id} 
+                                        variant="secondary" 
+                                        className="text-[10px] font-normal py-0 px-1.5 flex items-center gap-1 bg-muted/60"
+                                      >
+                                        <span className={cn(
+                                          "h-1 w-1 rounded-full",
+                                          p.status === "active" ? "bg-emerald-500" :
+                                          p.status === "completed" ? "bg-blue-500" :
+                                          p.status === "on_hold" ? "bg-amber-500" : "bg-muted-foreground"
+                                        )} />
+                                        {p.name}: {p.progress}%
+                                      </Badge>
+                                    ))
+                                  )}
+                                  {clientProjects.length > 2 && (
+                                    <Badge variant="outline" className="text-[10px] font-normal py-0 px-1.5">
+                                      +{clientProjects.length - 2} more
+                                    </Badge>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <span className="font-bold text-sm text-foreground">{formatCurrency(c.ltv, c.currency)}</span>
+                              </TableCell>
+                              <TableCell onClick={e => e.stopPropagation()}>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" className="h-8 w-8 p-0 cursor-pointer">
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="w-32">
+                                    <DropdownMenuItem className="cursor-pointer" onClick={() => { setSelectedClient(c); setIsDetailsOpen(true); }}>
+                                      <Info className="h-4 w-4 mr-2" /> View Details
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem className="cursor-pointer" onClick={() => { setEditingClient(c); setIsSheetOpen(true); }}>
+                                      <Edit className="h-4 w-4 mr-2" /> Edit Client
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem className="cursor-pointer text-destructive focus:text-destructive" onClick={() => deleteClient(c.id)}>
+                                      <Trash2 className="h-4 w-4 mr-2" /> Delete
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
                   </div>
-                  <Badge variant="outline">{c.currency}</Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-2 text-xs text-muted-foreground pb-4">
-                {c.email && <div className="flex items-center gap-2 truncate"><Mail className="h-3 w-3 shrink-0" />{c.email}</div>}
-                {c.phone && <div className="flex items-center gap-2"><Phone className="h-3 w-3 shrink-0" />{c.phone}</div>}
-                <div className="flex items-center justify-between pt-3 mt-2 border-t">
-                  <span className="text-[10px] uppercase tracking-wider">Lifetime value</span>
-                  <span className="text-foreground font-bold text-sm">{formatCurrency(Number(c.ltv), c.currency)}</span>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-between border-t border-border/40 p-4 bg-muted/10 shrink-0 flex-wrap gap-2">
+                      <span className="text-xs text-muted-foreground">
+                        Showing {startIndex + 1} to {Math.min(startIndex + pageSize, totalItems)} of {totalItems} accounts
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={currentPage === 1}
+                          onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                          className="h-8 px-2 cursor-pointer text-xs"
+                        >
+                          Previous
+                        </Button>
+                        
+                        {Array.from({ length: totalPages }).map((_, idx) => {
+                          const pageNum = idx + 1;
+                          return (
+                            <Button
+                              key={pageNum}
+                              variant={currentPage === pageNum ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => setCurrentPage(pageNum)}
+                              className="h-8 w-8 cursor-pointer text-xs"
+                            >
+                              {pageNum}
+                            </Button>
+                          );
+                        })}
+                        
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={currentPage === totalPages}
+                          onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                          className="h-8 px-2 cursor-pointer text-xs"
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              )}
+            </TabsContent>
+          </Tabs>
         </div>
       )}
 
