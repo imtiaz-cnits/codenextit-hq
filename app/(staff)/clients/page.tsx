@@ -208,20 +208,7 @@ export default function ClientsPage() {
                         <Badge variant="outline" className="text-[10px]">{c.currency}</Badge>
                       </div>
                     </CardHeader>
-                    <CardContent className="space-y-2 pb-3.5 text-[11px] text-muted-foreground">
-                      {activeProj ? (
-                        <div className="bg-primary/5 border border-primary/10 rounded-xl p-2 space-y-1.5">
-                          <div className="flex items-center justify-between font-medium text-foreground">
-                            <span className="truncate">{activeProj.name}</span>
-                            <span>{activeProj.progress}%</span>
-                          </div>
-                          <Progress value={activeProj.progress} className="h-1" />
-                        </div>
-                      ) : (
-                        <div className="text-[10px] italic py-2 text-center bg-muted/30 rounded-xl text-muted-foreground">
-                          No active projects
-                        </div>
-                      )}
+                    <CardContent className="pb-3.5 text-[11px] text-muted-foreground">
                       <div className="flex items-center justify-between pt-1 text-[11px]">
                         <span>Lifetime Value</span>
                         <span className="font-bold text-foreground">{formatCurrency(c.ltv, c.currency)}</span>
@@ -341,33 +328,6 @@ export default function ClientsPage() {
                                 <div className="flex items-center gap-2">
                                   <Phone className="h-3.5 w-3.5 shrink-0" />{c.phone}
                                 </div>
-                              )}
-                            </div>
-
-                            <div className="flex items-center gap-1.5 flex-wrap pt-2.5 border-t border-border/30">
-                              {clientProjects.length === 0 ? (
-                                <span className="text-[10px] text-muted-foreground italic">No projects yet</span>
-                              ) : (
-                                clientProjects.slice(0, 2).map(p => (
-                                  <Badge 
-                                    key={p.id} 
-                                    variant="secondary" 
-                                    className="text-[10px] font-normal py-0.5 px-1.5 flex items-center gap-1 bg-muted/65"
-                                  >
-                                    <span className={cn(
-                                      "h-1 w-1 rounded-full",
-                                      p.status === "active" ? "bg-emerald-500" :
-                                      p.status === "completed" ? "bg-blue-500" :
-                                      p.status === "on_hold" ? "bg-amber-500" : "bg-muted-foreground"
-                                    )} />
-                                    {p.name} ({p.progress}%)
-                                  </Badge>
-                                ))
-                              )}
-                              {clientProjects.length > 2 && (
-                                <Badge variant="outline" className="text-[10px] font-normal py-0.5 px-1.5">
-                                  +{clientProjects.length - 2} more
-                                </Badge>
                               )}
                             </div>
 
@@ -583,78 +543,151 @@ export default function ClientsPage() {
       {/* Details Dialog */}
       <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
         <DialogContent className="sm:max-w-[500px]">
-          {selectedClient && (
-            <>
-              <DialogHeader>
-                <div className="flex items-center gap-4 mb-2">
-                  <Avatar className="h-16 w-16">
-                    <AvatarFallback className={avatarColor(selectedClient.company_name)}>
-                      <Building2 className="h-8 w-8" />
-                    </AvatarFallback>
-                  </Avatar>
+          {selectedClient && (() => {
+            const clientProjects = projects.filter(p => p.client_id === selectedClient.id);
+            const activeCount = clientProjects.filter(p => p.status === 'active' || p.status === 'planning').length;
+            const completedCount = clientProjects.filter(p => p.status === 'completed').length;
+            return (
+              <>
+                <DialogHeader className="pb-2 border-b border-border/40">
+                  <div className="flex items-center gap-4">
+                    <Avatar className="h-14 w-14">
+                      <AvatarFallback className={avatarColor(selectedClient.company_name)}>
+                        <Building2 className="h-7 w-7" />
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <DialogTitle className="text-xl font-bold text-foreground">{selectedClient.company_name}</DialogTitle>
+                      <DialogDescription className="text-xs">{selectedClient.industry || "General Industry"}</DialogDescription>
+                    </div>
+                  </div>
+                </DialogHeader>
+
+                {/* Quick Projects Stats Bar */}
+                <div className="grid grid-cols-3 gap-2 text-center mt-3 bg-muted/40 p-2 rounded-xl border border-border/30">
                   <div>
-                    <DialogTitle className="text-2xl">{selectedClient.company_name}</DialogTitle>
-                    <DialogDescription>{selectedClient.industry || "General Industry"}</DialogDescription>
+                    <p className="text-[9px] uppercase tracking-wider text-muted-foreground">Total Projects</p>
+                    <p className="text-xs font-bold text-foreground">{clientProjects.length}</p>
                   </div>
-                </div>
-              </DialogHeader>
-              
-              <div className="grid grid-cols-1 gap-6 py-4">
-                <div className="space-y-3">
-                  <h4 className="text-sm font-semibold flex items-center gap-2"><Info className="h-4 w-4" /> Contact Information</h4>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div className="space-y-1">
-                      <p className="text-muted-foreground text-[10px] uppercase">Contact Person</p>
-                      <p>{selectedClient.contact_person || "—"}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-muted-foreground text-[10px] uppercase">Email Address</p>
-                      <p>{selectedClient.email || "—"}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-muted-foreground text-[10px] uppercase">Phone Number</p>
-                      <p>{selectedClient.phone || "—"}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-muted-foreground text-[10px] uppercase">VAT / BIN</p>
-                      <p>{selectedClient.vat_bin || "—"}</p>
-                    </div>
+                  <div className="border-x border-border/30">
+                    <p className="text-[9px] uppercase tracking-wider text-muted-foreground">Active</p>
+                    <p className="text-xs font-bold text-emerald-500">{activeCount}</p>
                   </div>
-                </div>
-
-                <div className="space-y-3">
-                  <h4 className="text-sm font-semibold flex items-center gap-2"><MapPin className="h-4 w-4" /> Location</h4>
-                  <p className="text-sm">{selectedClient.address || "No address provided."}</p>
-                </div>
-
-                {selectedClient.notes && (
-                  <div className="space-y-3">
-                    <h4 className="text-sm font-semibold flex items-center gap-2"><FileText className="h-4 w-4" /> Internal Notes</h4>
-                    <div className="bg-muted p-3 rounded-lg text-sm text-muted-foreground italic">
-                      "{selectedClient.notes}"
-                    </div>
-                  </div>
-                )}
-                
-                <div className="flex items-center justify-between p-4 bg-primary/5 rounded-xl border border-primary/10">
                   <div>
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Lifetime Revenue</p>
-                    <p className="text-xl font-black text-primary">{formatCurrency(selectedClient.ltv, selectedClient.currency)}</p>
+                    <p className="text-[9px] uppercase tracking-wider text-muted-foreground">Completed</p>
+                    <p className="text-xs font-bold text-blue-500">{completedCount}</p>
                   </div>
-                  <Badge className="h-fit">{selectedClient.currency}</Badge>
                 </div>
-              </div>
 
-              <DialogFooter className="flex-row gap-2 justify-end sm:justify-end border-t pt-4">
-                <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={() => { setIsDetailsOpen(false); setEditingClient(selectedClient); setIsSheetOpen(true); }}>
-                  <Edit className="h-4 w-4 mr-1.5" /> Edit
-                </Button>
-                <Button variant="destructive" size="sm" className="flex-1 sm:flex-none" onClick={() => deleteClient(selectedClient.id)}>
-                  <Trash2 className="h-4 w-4 mr-1.5" /> Delete
-                </Button>
-              </DialogFooter>
-            </>
-          )}
+                <div className="grid grid-cols-1 gap-4 py-3 text-xs max-h-[350px] overflow-y-auto pr-1">
+                  <div className="space-y-2.5">
+                    <h4 className="text-xs font-semibold flex items-center gap-1.5"><Info className="h-3.5 w-3.5" /> Contact Information</h4>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-0.5">
+                        <p className="text-muted-foreground text-[10px] uppercase">Contact Person</p>
+                        <p className="font-medium text-foreground">{selectedClient.contact_person || "—"}</p>
+                      </div>
+                      <div className="space-y-0.5">
+                        <p className="text-muted-foreground text-[10px] uppercase">Email Address</p>
+                        <p className="font-medium text-foreground truncate">{selectedClient.email || "—"}</p>
+                      </div>
+                      <div className="space-y-0.5">
+                        <p className="text-muted-foreground text-[10px] uppercase">Phone Number</p>
+                        <p className="font-medium text-foreground">{selectedClient.phone || "—"}</p>
+                      </div>
+                      <div className="space-y-0.5">
+                        <p className="text-muted-foreground text-[10px] uppercase">VAT / BIN</p>
+                        <p className="font-medium text-foreground">{selectedClient.vat_bin || "—"}</p>
+                      </div>
+                      {selectedClient.website && (
+                        <div className="space-y-0.5">
+                          <p className="text-muted-foreground text-[10px] uppercase">Website</p>
+                          <a 
+                            href={selectedClient.website.startsWith("http") ? selectedClient.website : `https://${selectedClient.website}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline flex items-center gap-1 cursor-pointer font-medium truncate"
+                          >
+                            <Globe className="h-3 w-3 shrink-0" />
+                            {selectedClient.website}
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 pt-2 border-t border-border/30">
+                    <h4 className="text-xs font-semibold flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" /> Location</h4>
+                    <p className="text-muted-foreground">{selectedClient.address || "No address provided."}</p>
+                  </div>
+
+                  {/* Projects List Section */}
+                  <div className="space-y-2 pt-2 border-t border-border/30">
+                    <h4 className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
+                      <Briefcase className="h-3.5 w-3.5" /> Client Projects ({clientProjects.length})
+                    </h4>
+                    {clientProjects.length === 0 ? (
+                      <p className="text-xs text-muted-foreground italic py-2 text-center bg-muted/20 rounded-lg">
+                        No projects registered for this client.
+                      </p>
+                    ) : (
+                      <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1 scrollbar-thin">
+                        {clientProjects.map(p => (
+                          <div key={p.id} className="bg-muted/40 p-2.5 rounded-xl border border-border/30 space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-foreground truncate max-w-[200px]">{p.name}</span>
+                              <Badge 
+                                variant={p.status === "active" ? "default" : "secondary"} 
+                                className={cn(
+                                  "text-[9px] py-0 px-1.5 font-normal h-4",
+                                  p.status === "active" && "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 hover:bg-emerald-500/10",
+                                  p.status === "completed" && "bg-blue-500/10 text-blue-500 border border-blue-500/20 hover:bg-blue-500/10",
+                                  p.status === "on_hold" && "bg-amber-500/10 text-amber-500 border border-amber-500/20 hover:bg-amber-500/10"
+                                )}
+                              >
+                                {p.status}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                              <span>Budget: {formatCurrency(p.budget, p.currency)}</span>
+                              <span>Progress: {p.progress}%</span>
+                            </div>
+                            <Progress value={p.progress} className="h-1 bg-muted" />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {selectedClient.notes && (
+                    <div className="space-y-1.5 pt-2 border-t border-border/30">
+                      <h4 className="text-xs font-semibold flex items-center gap-1.5"><FileText className="h-3.5 w-3.5" /> Internal Notes</h4>
+                      <div className="bg-muted/50 p-2.5 rounded-xl text-muted-foreground italic">
+                        "{selectedClient.notes}"
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="flex items-center justify-between p-3.5 bg-primary/5 rounded-xl border border-primary/10 mt-1">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Lifetime Revenue</p>
+                      <p className="text-lg font-black text-primary">{formatCurrency(selectedClient.ltv, selectedClient.currency)}</p>
+                    </div>
+                    <Badge className="h-fit">{selectedClient.currency}</Badge>
+                  </div>
+                </div>
+
+                <DialogFooter className="flex-row gap-2 justify-end sm:justify-end border-t pt-3">
+                  <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={() => { setIsDetailsOpen(false); setEditingClient(selectedClient); setIsSheetOpen(true); }}>
+                    <Edit className="h-4 w-4 mr-1.5" /> Edit
+                  </Button>
+                  <Button variant="destructive" size="sm" className="flex-1 sm:flex-none" onClick={() => deleteClient(selectedClient.id)}>
+                    <Trash2 className="h-4 w-4 mr-1.5" /> Delete
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
