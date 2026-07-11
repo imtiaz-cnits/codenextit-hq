@@ -28,11 +28,26 @@ interface Client {
   vat_bin: string | null; currency: "BDT" | "USD"; ltv: number; notes: string | null;
   website?: string | null; industry?: string | null;
   created_at: string;
+  source?: string | null;
 }
 
 interface Project {
   id: string; name: string; client_id: string | null; status: string; progress: number; budget: number; currency: string;
 }
+
+const getSourceBadge = (source: string | null | undefined) => {
+  if (!source || source === "direct") return null;
+  switch (source) {
+    case "freelancer":
+      return <Badge className="bg-sky-500/10 text-sky-500 border border-sky-500/20 hover:bg-sky-500/10 text-[10px] py-0 px-1.5 font-normal h-5 shrink-0">Freelancer</Badge>;
+    case "upwork":
+      return <Badge className="bg-emerald-600/10 text-emerald-500 border border-emerald-600/20 hover:bg-emerald-600/10 text-[10px] py-0 px-1.5 font-normal h-5 shrink-0">Upwork</Badge>;
+    case "fiverr":
+      return <Badge className="bg-green-500/10 text-green-500 border border-green-500/20 hover:bg-green-500/10 text-[10px] py-0 px-1.5 font-normal h-5 shrink-0">Fiverr</Badge>;
+    default:
+      return <Badge variant="outline" className="text-[10px] py-0 px-1.5 font-normal h-5 shrink-0">{source}</Badge>;
+  }
+};
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([]);
@@ -205,7 +220,10 @@ export default function ClientsPage() {
                             <CardDescription className="text-[10px] truncate">{c.contact_person || "—"}</CardDescription>
                           </div>
                         </div>
-                        <Badge variant="outline" className="text-[10px]">{c.currency}</Badge>
+                        <div className="flex items-center gap-1">
+                          {getSourceBadge(c.source)}
+                          <Badge variant="outline" className="text-[10px]">{c.currency}</Badge>
+                        </div>
                       </div>
                     </CardHeader>
                     <CardContent className="pb-3.5 text-[11px] text-muted-foreground">
@@ -293,7 +311,10 @@ export default function ClientsPage() {
                                 <CardTitle className="text-base truncate group-hover:text-primary transition-colors">{c.company_name}</CardTitle>
                                 <CardDescription className="text-xs truncate">{c.contact_person ?? "—"}</CardDescription>
                               </div>
-                              <Badge variant="outline" className="shrink-0">{c.currency}</Badge>
+                              <div className="flex flex-col items-end gap-1 shrink-0">
+                                <Badge variant="outline">{c.currency}</Badge>
+                                {getSourceBadge(c.source)}
+                              </div>
                             </div>
                             
                             <div className="absolute top-3 right-3" onClick={e => e.stopPropagation()}>
@@ -557,7 +578,10 @@ export default function ClientsPage() {
                       </AvatarFallback>
                     </Avatar>
                     <div>
-                      <DialogTitle className="text-xl font-bold text-foreground">{selectedClient.company_name}</DialogTitle>
+                      <div className="flex items-center gap-2">
+                        <DialogTitle className="text-xl font-bold text-foreground">{selectedClient.company_name}</DialogTitle>
+                        {getSourceBadge(selectedClient.source)}
+                      </div>
                       <DialogDescription className="text-xs">{selectedClient.industry || "General Industry"}</DialogDescription>
                     </div>
                   </div>
@@ -584,8 +608,14 @@ export default function ClientsPage() {
                     <h4 className="text-xs font-semibold flex items-center gap-1.5"><Info className="h-3.5 w-3.5" /> Contact Information</h4>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-0.5">
-                        <p className="text-muted-foreground text-[10px] uppercase">Contact Person</p>
+                        <p className="text-muted-foreground text-[10px] uppercase">
+                          {selectedClient.source && selectedClient.source !== "direct" ? "Username / Contact" : "Contact Person"}
+                        </p>
                         <p className="font-medium text-foreground">{selectedClient.contact_person || "—"}</p>
+                      </div>
+                      <div className="space-y-0.5">
+                        <p className="text-muted-foreground text-[10px] uppercase">Client Source</p>
+                        <p className="font-medium text-foreground capitalize">{selectedClient.source || "Direct Client"}</p>
                       </div>
                       <div className="space-y-0.5">
                         <p className="text-muted-foreground text-[10px] uppercase">Email Address</p>
@@ -601,7 +631,9 @@ export default function ClientsPage() {
                       </div>
                       {selectedClient.website && (
                         <div className="space-y-0.5">
-                          <p className="text-muted-foreground text-[10px] uppercase">Website</p>
+                          <p className="text-muted-foreground text-[10px] uppercase">
+                            {selectedClient.source && selectedClient.source !== "direct" ? "Platform Profile" : "Website"}
+                          </p>
                           <a 
                             href={selectedClient.website.startsWith("http") ? selectedClient.website : `https://${selectedClient.website}`}
                             target="_blank"
@@ -617,7 +649,7 @@ export default function ClientsPage() {
                   </div>
 
                   <div className="space-y-1.5 pt-2 border-t border-border/30">
-                    <h4 className="text-xs font-semibold flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" /> Location</h4>
+                    <h4 className="text-xs font-semibold flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" /> {selectedClient.source && selectedClient.source !== "direct" ? "Country / Location" : "Location"}</h4>
                     <p className="text-muted-foreground">{selectedClient.address || "No address provided."}</p>
                   </div>
 
@@ -709,6 +741,7 @@ function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
     company_name: "", contact_person: "", email: "", phone: "",
     address: "", vat_bin: "", currency: "BDT" as "BDT" | "USD",
     ltv: "0", notes: "", website: "", industry: "",
+    source: "direct",
   });
 
   const [billingType, setBillingType] = useState<"one_time" | "monthly" | "yearly">("one_time");
@@ -729,6 +762,7 @@ function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
         notes: editingClient.notes || "",
         website: editingClient.website || "",
         industry: editingClient.industry || "",
+        source: editingClient.source || "direct",
       });
       setBillingType("one_time");
       setBillingRate(editingClient.ltv.toString());
@@ -738,6 +772,7 @@ function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
         company_name: "", contact_person: "", email: "", phone: "",
         address: "", vat_bin: "", currency: "BDT", ltv: "0", notes: "",
         website: "", industry: "",
+        source: "direct",
       });
       setBillingType("one_time");
       setBillingRate("0");
@@ -769,6 +804,7 @@ function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
       currency: f.currency, ltv: Number(f.ltv) || 0,
       notes: f.notes || null, website: f.website || null,
       industry: f.industry || null,
+      source: f.source || "direct",
     };
 
     const { error } = editingClient 
@@ -799,34 +835,48 @@ function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
         <form onSubmit={submit} className="flex flex-col flex-1 min-h-0">
           {/* Scrollable Body */}
           <div className="flex-1 overflow-y-auto p-6 pt-3 space-y-4">
-            <Fld label="Company name">
-              <Input required placeholder="e.g. MACS School and College" value={f.company_name} onChange={(e) => setF({ ...f, company_name: e.target.value })} />
-            </Fld>
+            <div className="grid grid-cols-2 gap-3 pb-3 border-b border-border/30">
+              <Fld label="Client Source">
+                <Select value={f.source} onValueChange={(v) => setF({ ...f, source: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="direct">Direct Client</SelectItem>
+                    <SelectItem value="freelancer">Freelancer.com</SelectItem>
+                    <SelectItem value="upwork">Upwork.com</SelectItem>
+                    <SelectItem value="fiverr">Fiverr.com</SelectItem>
+                    <SelectItem value="other">Other Marketplace</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Fld>
+              <Fld label={f.source !== "direct" ? "Client Name" : "Company Name"}>
+                <Input required placeholder={f.source !== "direct" ? "e.g. Tina Wade" : "e.g. MACS School and College"} value={f.company_name} onChange={(e) => setF({ ...f, company_name: e.target.value })} />
+              </Fld>
+            </div>
             
             <div className="grid grid-cols-2 gap-3">
-              <Fld label="Contact person">
-                <Input placeholder="e.g. Md Nurul Islam" value={f.contact_person} onChange={(e) => setF({ ...f, contact_person: e.target.value })} />
+              <Fld label={f.source !== "direct" ? "Username / Contact" : "Contact Person"}>
+                <Input placeholder={f.source !== "direct" ? "e.g. tina_wade" : "e.g. Md Nurul Islam"} value={f.contact_person} onChange={(e) => setF({ ...f, contact_person: e.target.value })} />
               </Fld>
               <Fld label="Industry">
-                <Input placeholder="e.g. Education" value={f.industry} onChange={(e) => setF({ ...f, industry: e.target.value })} />
+                <Input placeholder={f.source !== "direct" ? "e.g. Healthcare, Tech" : "e.g. Education"} value={f.industry} onChange={(e) => setF({ ...f, industry: e.target.value })} />
               </Fld>
             </div>
             
             <div className="grid grid-cols-2 gap-3">
               <Fld label="Email">
-                <Input type="email" placeholder="e.g. info@macsschool.edu.bd" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
+                <Input type="email" placeholder={f.source !== "direct" ? "e.g. (Optional) tina@example.com" : "e.g. info@macsschool.edu.bd"} value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
               </Fld>
               <Fld label="Phone">
-                <Input placeholder="e.g. 01896220299" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} />
+                <Input placeholder={f.source !== "direct" ? "e.g. (Optional) +1..." : "e.g. 01896220299"} value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} />
               </Fld>
             </div>
             
-            <Fld label="Website">
-              <Input value={f.website} onChange={(e) => setF({ ...f, website: e.target.value })} placeholder="e.g. https://macsschool.edu.bd" />
+            <Fld label={f.source !== "direct" ? "Platform Profile / Website" : "Website"}>
+              <Input value={f.website} onChange={(e) => setF({ ...f, website: e.target.value })} placeholder={f.source !== "direct" ? "e.g. https://freelancer.com/u/tinawade" : "e.g. https://macsschool.edu.bd"} />
             </Fld>
             
-            <Fld label="Address">
-              <Input placeholder="e.g. Jalalpur, Pabna" value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} />
+            <Fld label={f.source !== "direct" ? "Country / Location" : "Address"}>
+              <Input placeholder={f.source !== "direct" ? "e.g. United States" : "e.g. Jalalpur, Pabna"} value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} />
             </Fld>
             
             <div className="grid grid-cols-2 gap-3">
