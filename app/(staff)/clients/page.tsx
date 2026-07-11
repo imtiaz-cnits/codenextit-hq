@@ -44,8 +44,10 @@ const getSourceBadge = (source: string | null | undefined) => {
       return <Badge className="bg-emerald-600/10 text-emerald-500 border border-emerald-600/20 hover:bg-emerald-600/10 text-[10px] py-0 px-1.5 font-normal h-5 shrink-0">Upwork</Badge>;
     case "fiverr":
       return <Badge className="bg-green-500/10 text-green-500 border border-green-500/20 hover:bg-green-500/10 text-[10px] py-0 px-1.5 font-normal h-5 shrink-0">Fiverr</Badge>;
+    case "injaaz":
+      return <Badge className="bg-amber-500/10 text-amber-500 border border-amber-500/20 hover:bg-amber-500/10 text-[10px] py-0 px-1.5 font-normal h-5 shrink-0">Injaaz</Badge>;
     default:
-      return <Badge variant="outline" className="text-[10px] py-0 px-1.5 font-normal h-5 shrink-0">{source}</Badge>;
+      return <Badge variant="outline" className="text-[10px] py-0 px-1.5 font-normal h-5 shrink-0 capitalize">{source}</Badge>;
   }
 };
 
@@ -226,11 +228,13 @@ export default function ClientsPage() {
                         </div>
                       </div>
                     </CardHeader>
-                    <CardContent className="pb-3.5 text-[11px] text-muted-foreground">
-                      <div className="flex items-center justify-between pt-1 text-[11px]">
-                        <span>Lifetime Value</span>
-                        <span className="font-bold text-foreground">{formatCurrency(c.ltv, c.currency)}</span>
-                      </div>
+                    <CardContent className="pb-3.5 text-[11px] text-muted-foreground min-h-[30px]">
+                      {(!c.source || c.source === "direct") && (
+                        <div className="flex items-center justify-between pt-1 text-[11px]">
+                          <span>Lifetime Value</span>
+                          <span className="font-bold text-foreground">{formatCurrency(c.ltv, c.currency)}</span>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 );
@@ -381,10 +385,12 @@ export default function ClientsPage() {
                               )}
                             </div>
 
-                            <div className="flex items-center justify-between pt-2.5 mt-2 border-t border-border/30">
-                              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Lifetime value</span>
-                              <span className="text-foreground font-bold text-sm">{formatCurrency(Number(c.ltv), c.currency)}</span>
-                            </div>
+                            {(!c.source || c.source === "direct") && (
+                              <div className="flex items-center justify-between pt-2.5 mt-2 border-t border-border/30">
+                                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Lifetime value</span>
+                                <span className="text-foreground font-bold text-sm">{formatCurrency(Number(c.ltv), c.currency)}</span>
+                              </div>
+                            )}
                           </CardContent>
                         </Card>
                       );
@@ -731,7 +737,9 @@ export default function ClientsPage() {
                   
                   <div className="flex items-center justify-between p-3.5 bg-primary/5 rounded-xl border border-primary/10 mt-1">
                     <div>
-                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Lifetime Revenue</p>
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                        {selectedClient.source && selectedClient.source !== "direct" ? "Contract Volume" : "Lifetime Revenue"}
+                      </p>
                       <p className="text-lg font-black text-primary">{formatCurrency(selectedClient.ltv, selectedClient.currency)}</p>
                     </div>
                     <Badge className="h-fit">{selectedClient.currency}</Badge>
@@ -873,7 +881,8 @@ function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
                     <SelectItem value="freelancer">Freelancer.com</SelectItem>
                     <SelectItem value="upwork">Upwork.com</SelectItem>
                     <SelectItem value="fiverr">Fiverr.com</SelectItem>
-                    <SelectItem value="other">Other Marketplace</SelectItem>
+                    <SelectItem value="injaaz">Shared with Injaaz</SelectItem>
+                    <SelectItem value="other">Other / Shared</SelectItem>
                   </SelectContent>
                 </Select>
               </Fld>
