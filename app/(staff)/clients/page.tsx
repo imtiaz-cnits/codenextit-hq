@@ -210,26 +210,28 @@ export default function ClientsPage() {
                     onClick={() => { setSelectedClient(c); setIsDetailsOpen(true); }}
                   >
                     <CardHeader className="pb-2.5">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Avatar className="h-9 w-9 shrink-0">
-                            <AvatarFallback className={avatarColor(c.company_name)}>
-                              <Building2 className="h-4 w-4" />
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="min-w-0">
-                            <CardTitle className="text-sm font-semibold truncate group-hover:text-primary transition-colors">{c.company_name}</CardTitle>
-                            <CardDescription className="text-[10px] truncate">{c.contact_person || "—"}</CardDescription>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          {getSourceBadge(c.source)}
-                          <Badge variant="outline" className="text-[10px]">{c.currency}</Badge>
+                      <div className="flex items-center gap-2">
+                        <Avatar className="h-9 w-9 shrink-0">
+                          <AvatarFallback className={avatarColor(c.company_name)}>
+                            <Building2 className="h-4 w-4" />
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <CardTitle className="text-sm font-semibold truncate group-hover:text-primary transition-colors">{c.company_name}</CardTitle>
+                          <CardDescription className="text-[10px] truncate">{c.contact_person || "—"}</CardDescription>
                         </div>
                       </div>
                     </CardHeader>
                     <CardContent className="pb-3.5 text-[11px] text-muted-foreground min-h-[30px]">
-                      {(!c.source || c.source === "direct") && (
+                      {c.source && c.source !== "direct" ? (
+                        <div className="flex items-center justify-between pt-1 text-[11px]">
+                          <span>Billing Info</span>
+                          <div className="flex items-center gap-1.5">
+                            {getSourceBadge(c.source)}
+                            <Badge variant="outline" className="text-[9px] py-0 px-1.5 h-4.5 shrink-0">{c.currency}</Badge>
+                          </div>
+                        </div>
+                      ) : (
                         <div className="flex items-center justify-between pt-1 text-[11px]">
                           <span>Lifetime Value</span>
                           <span className="font-bold text-foreground">{formatCurrency(c.ltv, c.currency)}</span>
@@ -315,11 +317,7 @@ export default function ClientsPage() {
                                 <CardTitle className="text-base truncate group-hover:text-primary transition-colors">{c.company_name}</CardTitle>
                                 <CardDescription className="text-xs truncate">{c.contact_person ?? "—"}</CardDescription>
                               </div>
-                              <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
-                                <div className="flex flex-col items-end gap-1">
-                                  <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-5 shrink-0">{c.currency}</Badge>
-                                  {getSourceBadge(c.source)}
-                                </div>
+                              <div onClick={e => e.stopPropagation()} className="shrink-0">
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
                                     <Button variant="ghost" className="h-8 w-8 p-0 cursor-pointer rounded-lg hover:bg-muted/50">
@@ -384,12 +382,25 @@ export default function ClientsPage() {
                               )}
                             </div>
 
-                            {(!c.source || c.source === "direct") && (
-                              <div className="flex items-center justify-between pt-2.5 mt-2 border-t border-border/30">
-                                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Lifetime value</span>
-                                <span className="text-foreground font-bold text-sm">{formatCurrency(Number(c.ltv), c.currency)}</span>
-                              </div>
-                            )}
+                            <div className="flex items-center justify-between pt-2.5 mt-2 border-t border-border/30 h-7">
+                              {c.source && c.source !== "direct" ? (
+                                <>
+                                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Billing Info</span>
+                                  <div className="flex items-center gap-1.5">
+                                    {getSourceBadge(c.source)}
+                                    <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-5 shrink-0">{c.currency}</Badge>
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Lifetime value</span>
+                                  <div className="flex items-center gap-1.5">
+                                    <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-5 shrink-0">{c.currency}</Badge>
+                                    <span className="text-foreground font-bold text-sm">{formatCurrency(Number(c.ltv), c.currency)}</span>
+                                  </div>
+                                </>
+                              )}
+                            </div>
                           </CardContent>
                         </Card>
                       );
