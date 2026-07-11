@@ -798,40 +798,40 @@ function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
         {/* Form Wrapper */}
         <form onSubmit={submit} className="flex flex-col flex-1 min-h-0">
           {/* Scrollable Body */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          <div className="flex-1 overflow-y-auto p-6 pt-3 space-y-4">
             <Fld label="Company name">
-              <Input required value={f.company_name} onChange={(e) => setF({ ...f, company_name: e.target.value })} />
+              <Input required placeholder="e.g. MACS School and College" value={f.company_name} onChange={(e) => setF({ ...f, company_name: e.target.value })} />
             </Fld>
             
             <div className="grid grid-cols-2 gap-3">
               <Fld label="Contact person">
-                <Input value={f.contact_person} onChange={(e) => setF({ ...f, contact_person: e.target.value })} />
+                <Input placeholder="e.g. Md Nurul Islam" value={f.contact_person} onChange={(e) => setF({ ...f, contact_person: e.target.value })} />
               </Fld>
               <Fld label="Industry">
-                <Input value={f.industry} onChange={(e) => setF({ ...f, industry: e.target.value })} />
+                <Input placeholder="e.g. Education" value={f.industry} onChange={(e) => setF({ ...f, industry: e.target.value })} />
               </Fld>
             </div>
             
             <div className="grid grid-cols-2 gap-3">
               <Fld label="Email">
-                <Input type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
+                <Input type="email" placeholder="e.g. info@macsschool.edu.bd" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
               </Fld>
               <Fld label="Phone">
-                <Input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} />
+                <Input placeholder="e.g. 01896220299" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} />
               </Fld>
             </div>
             
             <Fld label="Website">
-              <Input value={f.website} onChange={(e) => setF({ ...f, website: e.target.value })} placeholder="https://..." />
+              <Input value={f.website} onChange={(e) => setF({ ...f, website: e.target.value })} placeholder="e.g. https://macsschool.edu.bd" />
             </Fld>
             
             <Fld label="Address">
-              <Input value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} />
+              <Input placeholder="e.g. Jalalpur, Pabna" value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} />
             </Fld>
             
             <div className="grid grid-cols-2 gap-3">
               <Fld label="VAT / BIN">
-                <Input value={f.vat_bin} onChange={(e) => setF({ ...f, vat_bin: e.target.value })} />
+                <Input placeholder="e.g. 1234567890" value={f.vat_bin} onChange={(e) => setF({ ...f, vat_bin: e.target.value })} />
               </Fld>
               <Fld label="Currency">
                 <Select value={f.currency} onValueChange={(v) => setF({ ...f, currency: v as "BDT" | "USD" })}>
@@ -860,22 +860,22 @@ function ClientSheet({ open, onOpenChange, onCreated, editingClient }: {
                 billingType === "one_time" ? "Project Cost" :
                 billingType === "monthly" ? "Monthly Rate" : "Annual Rate"
               }>
-                <Input type="number" value={billingRate} onChange={(e) => setBillingRate(e.target.value)} />
+                <Input type="number" placeholder={billingType === "one_time" ? "e.g. 5000" : billingType === "monthly" ? "e.g. 1500" : "e.g. 12000"} value={billingRate} onChange={(e) => setBillingRate(e.target.value)} />
               </Fld>
             </div>
 
             {billingType !== "one_time" && (
               <Fld label={billingType === "monthly" ? "Duration (Months)" : "Duration (Years)"}>
-                <Input type="number" min="1" value={billingDuration} onChange={(e) => setBillingDuration(e.target.value)} />
+                <Input type="number" min="1" placeholder={billingType === "monthly" ? "e.g. 12" : "e.g. 3"} value={billingDuration} onChange={(e) => setBillingDuration(e.target.value)} />
               </Fld>
             )}
 
             <Fld label="Calculated Lifetime Value">
-              <Input type="number" disabled className="bg-muted text-muted-foreground font-semibold" value={f.ltv} />
+              <Input type="number" disabled className="bg-muted text-muted-foreground font-semibold" placeholder="Calculated automatically" value={f.ltv} />
             </Fld>
             
             <Fld label="Notes">
-              <Textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} rows={3} />
+              <Textarea placeholder="e.g. Custom billing notes, SLA timelines..." value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} rows={3} />
             </Fld>
           </div>
 
