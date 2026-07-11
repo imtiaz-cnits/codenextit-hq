@@ -189,7 +189,7 @@ export default function ClientsPage() {
                 return (
                   <Card 
                     key={c.id} 
-                    className="group overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 bg-card/65 border border-border/50 cursor-pointer relative"
+                    className="group overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 bg-gradient-to-br from-primary/10 via-primary/5 to-card border border-primary/25 dark:from-primary/15 dark:via-primary/5 dark:to-card cursor-pointer relative shadow-sm"
                     onClick={() => { setSelectedClient(c); setIsDetailsOpen(true); }}
                   >
                     <CardHeader className="pb-2.5">
@@ -286,7 +286,7 @@ export default function ClientsPage() {
                 </Card>
               ) : viewMode === "card" ? (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                     {currentClients.map(c => {
                       const clientProjects = projects.filter(p => p.client_id === c.id);
                       return (
